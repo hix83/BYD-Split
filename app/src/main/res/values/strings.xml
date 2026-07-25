@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BYD Split</string>
+    <string name="driver_zone">Зона водителя · ⅓</string>
+    <string name="passenger_zone">Дальняя зона · ⅔</string>
+    <string name="choose_app">Выберите приложение</string>
+    <string name="search_apps">Поиск приложений</string>
+    <string name="no_apps">Подходящие приложения не найдены</string>
+    <string name="open_app">Открыть</string>
+    <string name="change_app">Изменить</string>
+    <string name="launch_failed">Не удалось запустить приложение</string>
+    <string name="bridge_unavailable">ADB ещё не разрешён. Откройте настройки BYD Split и подтвердите штатный запрос ADB.</string>
+    <string name="accessibility_service_label">Кнопка микрофона BYD Split</string>
+    <string name="accessibility_service_description">Передаёт кнопку микрофона на руле в открытый чат MAX.</string>
+</resources>
