@@ -94,6 +94,20 @@ final class LocalAdbManager {
         }
     }
 
+    synchronized boolean startMainActivity() {
+        try {
+            client.connect();
+            String output = client.shell(
+                    "am start -n ru.logunov.bydsplit/.MainActivity");
+            return !output.contains("Error:")
+                    && !output.contains("Exception");
+        } catch (Exception error) {
+            client.close();
+            Log.e(TAG, "Cannot foreground BYD Split", error);
+            return false;
+        }
+    }
+
     private static String daemonCommand(
             String apk, String className, String logName) {
         return "pkill -f '^app_process /system/bin "

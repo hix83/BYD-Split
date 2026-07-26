@@ -102,6 +102,12 @@ public final class MainActivity extends Activity {
         return false;
     }
 
+    static boolean isActive() {
+        MainActivity activity = currentActivity.get();
+        return activity != null && !activity.isFinishing()
+                && !activity.isDestroyed();
+    }
+
     static boolean handleSteeringPulse(boolean longPress) {
         MainActivity activity = currentActivity.get();
         if (activity == null
