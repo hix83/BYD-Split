@@ -1,15 +1,9 @@
 package ru.logunov.bydsplit;
 
 import android.app.Activity;
-import android.content.ComponentName;
-import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.provider.Settings;
-import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -22,24 +16,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public final class SettingsActivity extends Activity {
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable periodicRefresh = new Runnable() {
-        @Override
-        public void run() {
-            refreshStatus();
-            handler.postDelayed(this, 3000);
-        }
-    };
-
-    private ShellBridgeClient bridgeClient;
-    private TextView adbStatus;
-    private TextView bridgeStatus;
-    private TextView inputStatus;
-    private TextView steeringStatus;
-    private TextView accessibilityStatus;
-    private TextView summary;
-    private Button restartButton;
-    private Button authorizeButton;
+    private Button oneTwoButton;
+    private Button twoOneButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,7 +25,6 @@ public final class SettingsActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setDimAmount(0.68f);
         setFinishOnTouchOutside(true);
-        bridgeClient = new ShellBridgeClient(this);
         setContentView(createContent());
         getWindow().getDecorView().post(() -> {
             int width = Math.round(
@@ -56,25 +33,6 @@ public final class SettingsActivity extends Activity {
                     getResources().getDisplayMetrics().heightPixels * 0.86f);
             getWindow().setLayout(width, height);
         });
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        handler.removeCallbacks(periodicRefresh);
-        periodicRefresh.run();
-    }
-
-    @Override
-    protected void onPause() {
-        handler.removeCallbacks(periodicRefresh);
-        super.onPause();
-    }
-
-    @Override
-    protected void onDestroy() {
-        bridgeClient.close();
-        super.onDestroy();
     }
 
     private View createContent() {
@@ -108,72 +66,38 @@ public final class SettingsActivity extends Activity {
         root.addView(header);
 
         TextView intro = text(
-                "Здесь собраны разрешения, автозапуск и состояние компонентов, "
-                        + "которые обеспечивают два интерактивных окна.",
+                "Настройте расположение панелей, автозапуск и режим "
+                        + "Android Emulator.",
                 16, getColor(R.color.text_secondary));
         LinearLayout.LayoutParams introParams = fullWidthWrap();
         introParams.topMargin = dp(12);
         introParams.bottomMargin = dp(22);
         root.addView(intro, introParams);
 
-        LinearLayout statusCard = card();
-        statusCard.addView(sectionTitle("Готовность системы"));
-        summary = text("Проверяем…", 16, getColor(R.color.text_secondary));
-        addWithTop(statusCard, summary, 8);
-        adbStatus = addStatus(statusCard, "ADB на головном устройстве");
-        bridgeStatus = addStatus(statusCard, "Встроенный ADB-клиент");
-        inputStatus = addStatus(statusCard, "Касания и мультитач");
-        steeringStatus = addStatus(statusCard, "Кнопка микрофона на руле");
-        accessibilityStatus = addStatus(statusCard, "Доступ к MAX");
-
-        LinearLayout statusActions = horizontalActions();
-        Button refresh = actionButton("Проверить");
-        refresh.setOnClickListener(view -> refreshStatus());
-        statusActions.addView(refresh, weightedButtonParams());
-        restartButton = actionButton("Перезапустить помощники");
-        restartButton.setOnClickListener(view -> restartHelpers());
-        LinearLayout.LayoutParams restartParams = weightedButtonParams();
-        restartParams.setMarginStart(dp(10));
-        statusActions.addView(restartButton, restartParams);
-        addWithTop(statusCard, statusActions, 18);
-
-        authorizeButton = actionButton("Разрешить ADB и запустить помощники");
-        authorizeButton.setOnClickListener(view -> authorizeAndStart());
-        addWithTop(statusCard, authorizeButton, 10);
-        root.addView(statusCard, fullWidthWrap());
-
-        LinearLayout permissionCard = card();
-        permissionCard.addView(sectionTitle("Разрешения и первый запуск"));
-        TextView permissionHelp = text(
-                "Специальные возможности нужны только для определения открытого "
-                        + "чата MAX. При первом запуске подтвердите штатный запрос "
-                        + "ADB и выберите «Всегда разрешать». После этого приложение "
-                        + "само запускает все помощники.",
+        LinearLayout layoutCard = card();
+        layoutCard.addView(sectionTitle("Расположение панелей"));
+        TextView layoutHelp = text(
+                "Выберите, какая панель будет шире. Размер меняется сразу, "
+                        + "без перезапуска открытых приложений.",
                 15, getColor(R.color.text_secondary));
-        addWithTop(permissionCard, permissionHelp, 8);
+        addWithTop(layoutCard, layoutHelp, 8);
 
-        LinearLayout permissionActions = horizontalActions();
-        Button accessibility = actionButton("Специальные возможности");
-        accessibility.setOnClickListener(view ->
-                openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-        permissionActions.addView(accessibility, weightedButtonParams());
-        Button developer = actionButton("Настройки разработчика");
-        developer.setOnClickListener(view ->
-                openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
-        LinearLayout.LayoutParams developerParams = weightedButtonParams();
-        developerParams.setMarginStart(dp(10));
-        permissionActions.addView(developer, developerParams);
-        addWithTop(permissionCard, permissionActions, 16);
-
-        TextView fallbackHelp = text(
-                "Компьютер и скрипты из tools нужны только как резервный способ "
-                        + "восстановления, если прошивка DiLink не разрешает "
-                        + "локальное ADB-подключение.",
-                14, getColor(R.color.text_secondary));
-        addWithTop(permissionCard, fallbackHelp, 12);
-        LinearLayout.LayoutParams permissionParams = fullWidthWrap();
-        permissionParams.topMargin = dp(16);
-        root.addView(permissionCard, permissionParams);
+        LinearLayout layoutActions = horizontalActions();
+        oneTwoButton = actionButton("1 : 2");
+        oneTwoButton.setContentDescription(
+                "Маленькая панель у водителя, большая справа");
+        oneTwoButton.setOnClickListener(view -> setDriverPaneLarge(false));
+        layoutActions.addView(oneTwoButton, weightedButtonParams());
+        twoOneButton = actionButton("2 : 1");
+        twoOneButton.setContentDescription(
+                "Большая панель у водителя, маленькая справа");
+        twoOneButton.setOnClickListener(view -> setDriverPaneLarge(true));
+        LinearLayout.LayoutParams twoOneParams = weightedButtonParams();
+        twoOneParams.setMarginStart(dp(10));
+        layoutActions.addView(twoOneButton, twoOneParams);
+        addWithTop(layoutCard, layoutActions, 16);
+        updateLayoutButtons();
+        root.addView(layoutCard, fullWidthWrap());
 
         LinearLayout behaviorCard = card();
         behaviorCard.addView(sectionTitle("Поведение"));
@@ -198,7 +122,6 @@ public final class SettingsActivity extends Activity {
                             ? "BYD-функции отключены, реальные приложения сохранены"
                             : "Режим DiLink включён",
                     Toast.LENGTH_SHORT).show();
-            refreshStatus();
         });
         addWithTop(behaviorCard, demoMode, 8);
         TextView demoHelp = text(
@@ -213,133 +136,22 @@ public final class SettingsActivity extends Activity {
         return scroll;
     }
 
-    private void refreshStatus() {
-        boolean emulatorMode = AppPreferences.isDemoModeEnabled(this);
-        setStatus(adbStatus, isAdbEnabled(), null);
-        boolean accessibilityEnabled = isAccessibilityEnabled();
-        setStatus(accessibilityStatus,
-                emulatorMode || accessibilityEnabled,
-                emulatorMode ? "не требуется в эмуляторе" : null);
-        summary.setText("Проверяем ADB-помощники…");
-        bridgeClient.checkHealth(health -> runOnUiThread(() -> {
-            if (isFinishing() || isDestroyed()) {
-                return;
-            }
-            setStatus(bridgeStatus, health.bridge,
-                    health.bridge ? null : "нажмите «Разрешить ADB»");
-            setStatus(inputStatus, health.input,
-                    health.input ? null
-                            : health.bridge ? "можно перезапустить"
-                            : "мост недоступен");
-            setStatus(steeringStatus,
-                    emulatorMode || health.steering,
-                    emulatorMode ? "не требуется в эмуляторе"
-                            : health.bridge ? "можно перезапустить"
-                            : "мост недоступен");
-            restartButton.setEnabled(true);
-            authorizeButton.setEnabled(!health.bridge);
-            boolean ready = health.bridge && health.input
-                    && (emulatorMode
-                    || health.steering && accessibilityEnabled);
-            summary.setText(ready
-                    ? "Система готова к работе"
-                    : "Требуется настройка — проверьте пункты ниже");
-            summary.setTextColor(ready
-                    ? getColor(R.color.success)
-                    : getColor(R.color.warning));
-        }));
+    private void setDriverPaneLarge(boolean driverPaneLarge) {
+        AppPreferences.setDriverPaneLarge(this, driverPaneLarge);
+        updateLayoutButtons();
+        MainActivity.applyPanelLayoutFromSettings();
     }
 
-    private void restartHelpers() {
-        restartButton.setEnabled(false);
-        restartButton.setText("Запускаем…");
-        java.util.function.Consumer<Boolean> callback =
-                success -> runOnUiThread(() -> {
-            restartButton.setText("Перезапустить помощники");
-            Toast.makeText(this,
-                    success ? "Помощники перезапущены"
-                            : "Не удалось: сначала выполните ADB-bootstrap",
-                    Toast.LENGTH_LONG).show();
-            handler.postDelayed(this::refreshStatus, 800);
-        });
-        if (AppPreferences.isDemoModeEnabled(this)) {
-            bridgeClient.restartInput(callback);
-        } else {
-            bridgeClient.restartHelpers(callback);
-        }
+    private void updateLayoutButtons() {
+        boolean driverPaneLarge = AppPreferences.isDriverPaneLarge(this);
+        styleLayoutButton(oneTwoButton, !driverPaneLarge);
+        styleLayoutButton(twoOneButton, driverPaneLarge);
     }
 
-    private void authorizeAndStart() {
-        authorizeButton.setEnabled(false);
-        authorizeButton.setText("Ожидаем подтверждение на экране…");
-        boolean includeSteering = !AppPreferences.isDemoModeEnabled(this);
-        bridgeClient.bootstrap(includeSteering, success -> runOnUiThread(() -> {
-            authorizeButton.setText("Разрешить ADB и запустить помощники");
-            authorizeButton.setEnabled(!success);
-            Toast.makeText(this,
-                    success
-                            ? "ADB разрешён, помощники запущены"
-                            : "Не удалось подключиться к локальному ADB",
-                    Toast.LENGTH_LONG).show();
-            handler.postDelayed(this::refreshStatus, 700);
-        }));
-    }
-
-    private boolean isAdbEnabled() {
-        try {
-            return Settings.Global.getInt(
-                    getContentResolver(), Settings.Global.ADB_ENABLED, 0) == 1;
-        } catch (RuntimeException ignored) {
-            return false;
-        }
-    }
-
-    private boolean isAccessibilityEnabled() {
-        String enabled = Settings.Secure.getString(
-                getContentResolver(),
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-        if (enabled == null) {
-            return false;
-        }
-        ComponentName expected = new ComponentName(
-                this, SteeringAccessibilityService.class);
-        TextUtils.SimpleStringSplitter splitter =
-                new TextUtils.SimpleStringSplitter(':');
-        splitter.setString(enabled);
-        for (String value : splitter) {
-            ComponentName component = ComponentName.unflattenFromString(value);
-            if (expected.equals(component)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void openSettings(String action) {
-        try {
-            startActivity(new Intent(action));
-        } catch (RuntimeException error) {
-            startActivity(new Intent(Settings.ACTION_SETTINGS));
-        }
-    }
-
-    private TextView addStatus(LinearLayout parent, String label) {
-        TextView view = text("●  " + label + " — проверяем", 16,
-                getColor(R.color.text_secondary));
-        addWithTop(parent, view, 10);
-        return view;
-    }
-
-    private void setStatus(TextView view, boolean ready, String detail) {
-        String raw = view.getText().toString();
-        int separator = raw.indexOf(" — ");
-        String label = separator >= 0 ? raw.substring(3, separator)
-                : raw.substring(Math.min(3, raw.length()));
-        view.setText("●  " + label + " — "
-                + (detail != null ? detail : ready ? "готово" : "не включено"));
-        view.setTextColor(ready
-                ? getColor(R.color.success)
-                : getColor(R.color.warning));
+    private void styleLayoutButton(Button button, boolean selected) {
+        button.setTextColor(selected ? Color.BLACK : Color.WHITE);
+        button.setBackground(rounded(
+                getColor(selected ? R.color.accent : R.color.button), 14));
     }
 
     private LinearLayout card() {

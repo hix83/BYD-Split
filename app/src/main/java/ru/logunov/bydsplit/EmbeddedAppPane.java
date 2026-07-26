@@ -24,6 +24,7 @@ import android.widget.Toast;
 
 final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callback {
     private static final String TAG = "BYD_EMBEDDED";
+    private static final int PANE_CORNER_RADIUS_DP = 15;
     // Hidden in the public SDK, but supported by Android 12's VirtualDisplay.
     private static final int VIRTUAL_DISPLAY_FLAG_SUPPORTS_TOUCH = 1 << 6;
 
@@ -63,12 +64,13 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         this.changeAction = changeAction;
         this.settingsAction = settingsAction;
 
-        setBackground(rounded(Color.BLACK, 22));
+        setBackground(rounded(Color.BLACK, PANE_CORNER_RADIUS_DP));
         setClipToOutline(true);
         setOutlineProvider(new ViewOutlineProvider() {
             @Override
             public void getOutline(View view, Outline outline) {
-                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(22));
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(),
+                        dp(PANE_CORNER_RADIUS_DP));
             }
         });
 

@@ -55,6 +55,7 @@ final class LocalAdbManager {
                 command += " " + daemonCommand(apk,
                         "ru.logunov.bydsplit.SteeringInputDaemon",
                         "byd-split-steering.log");
+                command += " " + accessibilityCommand();
             }
             client.shellV2(command);
             return true;
@@ -116,5 +117,21 @@ final class LocalAdbManager {
                 + " app_process /system/bin " + className
                 + " </dev/null >/data/local/tmp/" + logName
                 + " 2>&1 &";
+    }
+
+    private static String accessibilityCommand() {
+        String service = "ru.logunov.bydsplit/"
+                + "ru.logunov.bydsplit.SteeringAccessibilityService";
+        return "service='" + service + "'; "
+                + "enabled=$(settings get secure "
+                + "enabled_accessibility_services); "
+                + "case \":$enabled:\" in "
+                + "*\":$service:\"*) ;; "
+                + "\":null:\"|\"::\") enabled=\"$service\" ;; "
+                + "*) enabled=\"$enabled:$service\" ;; "
+                + "esac; "
+                + "settings put secure enabled_accessibility_services "
+                + "\"$enabled\"; "
+                + "settings put secure accessibility_enabled 1;";
     }
 }

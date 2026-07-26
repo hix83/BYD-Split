@@ -108,6 +108,14 @@ public final class MainActivity extends Activity {
                 && !activity.isDestroyed();
     }
 
+    static void applyPanelLayoutFromSettings() {
+        MainActivity activity = currentActivity.get();
+        if (activity != null && !activity.isFinishing()
+                && !activity.isDestroyed()) {
+            activity.runOnUiThread(activity::applyPanelLayout);
+        }
+    }
+
     static boolean handleSteeringPulse(boolean longPress) {
         MainActivity activity = currentActivity.get();
         if (activity == null
@@ -137,10 +145,13 @@ public final class MainActivity extends Activity {
         driverSlot = new FrameLayout(this);
         farSlot = new FrameLayout(this);
 
+        boolean driverPaneLarge = AppPreferences.isDriverPaneLarge(this);
         LinearLayout.LayoutParams driverParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+                0, ViewGroup.LayoutParams.MATCH_PARENT,
+                driverPaneLarge ? 2f : 1f);
         LinearLayout.LayoutParams farParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT, 2f);
+                0, ViewGroup.LayoutParams.MATCH_PARENT,
+                driverPaneLarge ? 1f : 2f);
         driverParams.setMarginEnd(dp(5));
         farParams.setMarginStart(dp(5));
         root.addView(driverSlot, driverParams);
@@ -148,6 +159,21 @@ public final class MainActivity extends Activity {
         setContentView(root);
         refreshPane(KEY_DRIVER_APP);
         refreshPane(KEY_FAR_APP);
+    }
+
+    private void applyPanelLayout() {
+        if (driverSlot == null || farSlot == null) {
+            return;
+        }
+        boolean driverPaneLarge = AppPreferences.isDriverPaneLarge(this);
+        LinearLayout.LayoutParams driverParams =
+                (LinearLayout.LayoutParams) driverSlot.getLayoutParams();
+        LinearLayout.LayoutParams farParams =
+                (LinearLayout.LayoutParams) farSlot.getLayoutParams();
+        driverParams.weight = driverPaneLarge ? 2f : 1f;
+        farParams.weight = driverPaneLarge ? 1f : 2f;
+        driverSlot.setLayoutParams(driverParams);
+        farSlot.setLayoutParams(farParams);
     }
 
     private View createPane(String title, AppEntry entry, String preferenceKey,
@@ -185,7 +211,7 @@ public final class MainActivity extends Activity {
                                     String preferenceKey, boolean driverPane) {
         FrameLayout pane = new FrameLayout(this);
         pane.setBackground(roundedBackground(
-                driverPane ? Color.rgb(24, 31, 40) : Color.rgb(20, 26, 34), 22));
+                driverPane ? Color.rgb(24, 31, 40) : Color.rgb(20, 26, 34), 15));
         pane.setPadding(dp(12), dp(12), dp(12), dp(12));
 
         LinearLayout content = new LinearLayout(this);
