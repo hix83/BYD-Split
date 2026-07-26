@@ -176,19 +176,26 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        post(this::createDisplayAndLaunch);
+        post(() -> attachSurfaceOrCreateDisplay(holder));
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        if (virtualDisplay == null && width > 0 && height > 0) {
-            post(this::createDisplayAndLaunch);
+        if (width > 0 && height > 0) {
+            post(() -> attachSurfaceOrCreateDisplay(holder));
         }
     }
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        release();
+        if (virtualDisplay != null) {
+            // Activity can temporarily lose its SurfaceView when a camera,
+            // settings or another full-screen app covers BYD Split. Keep the
+            // VirtualDisplay and its task alive; only detach video output.
+            virtualDisplay.setSurface(null);
+            Log.i(TAG, paneName + " surface detached from display "
+                    + virtualDisplay.getDisplay().getDisplayId());
+        }
     }
 
     void release() {
@@ -424,6 +431,24 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                                 R.string.bridge_unavailable));
                     }
                 }));
+    }
+
+    private void attachSurfaceOrCreateDisplay(SurfaceHolder holder) {
+        Surface surface = holder.getSurface();
+        if (!surface.isValid() || getWidth() <= 0 || getHeight() <= 0) {
+            return;
+        }
+        if (virtualDisplay == null) {
+            createDisplayAndLaunch();
+            return;
+        }
+        virtualDisplay.resize(
+                getWidth(),
+                getHeight(),
+                getResources().getDisplayMetrics().densityDpi);
+        virtualDisplay.setSurface(surface);
+        Log.i(TAG, paneName + " surface attached to existing display "
+                + virtualDisplay.getDisplay().getDisplayId());
     }
 
     @SuppressLint("ClickableViewAccessibility")
