@@ -11,8 +11,12 @@ final class AppPreferences {
     static final String KEY_AUTO_START = "auto_start";
     static final String KEY_DEMO_MODE = "demo_mode";
     static final String KEY_PANEL_LAYOUT = "panel_layout";
+    static final String KEY_STEERING_SHORT_SCAN = "steering_short_scan";
+    static final String KEY_STEERING_LONG_SCAN = "steering_long_scan";
     static final String PANEL_LAYOUT_ONE_TWO = "1_2";
     static final String PANEL_LAYOUT_TWO_ONE = "2_1";
+    static final int DEFAULT_STEERING_SHORT_SCAN = 290;
+    static final int DEFAULT_STEERING_LONG_SCAN = 312;
 
     private AppPreferences() {
     }
@@ -41,6 +45,24 @@ final class AppPreferences {
                         driverPaneLarge
                                 ? PANEL_LAYOUT_TWO_ONE
                                 : PANEL_LAYOUT_ONE_TWO)
+                .apply();
+    }
+
+    static int getSteeringShortScan(Context context) {
+        return get(context).getInt(
+                KEY_STEERING_SHORT_SCAN, DEFAULT_STEERING_SHORT_SCAN);
+    }
+
+    static int getSteeringLongScan(Context context) {
+        return get(context).getInt(
+                KEY_STEERING_LONG_SCAN, DEFAULT_STEERING_LONG_SCAN);
+    }
+
+    static void setSteeringScans(
+            Context context, int shortScan, int longScan) {
+        get(context).edit()
+                .putInt(KEY_STEERING_SHORT_SCAN, shortScan)
+                .putInt(KEY_STEERING_LONG_SCAN, longScan)
                 .apply();
     }
 

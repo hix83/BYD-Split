@@ -15,9 +15,16 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
-public final class SettingsActivity extends Activity {
+public final class SettingsActivity extends Activity
+        implements SteeringEventServer.KeyCaptureListener {
     private Button oneTwoButton;
     private Button twoOneButton;
+    private Button steeringAssignButton;
+    private Button steeringResetButton;
+    private TextView steeringStatus;
+    private ShellBridgeClient bridgeClient;
+    private int steeringCaptureStage;
+    private int capturedShortScan;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -25,6 +32,7 @@ public final class SettingsActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setDimAmount(0.68f);
         setFinishOnTouchOutside(true);
+        bridgeClient = new ShellBridgeClient(this);
         setContentView(createContent());
         getWindow().getDecorView().post(() -> {
             int width = Math.round(
@@ -33,6 +41,14 @@ public final class SettingsActivity extends Activity {
                     getResources().getDisplayMetrics().heightPixels * 0.86f);
             getWindow().setLayout(width, height);
         });
+    }
+
+    @Override
+    protected void onDestroy() {
+        SteeringEventServer.cancelKeyCapture(this);
+        bridgeClient.cancelSteeringKeyCapture(
+                ignored -> bridgeClient.close());
+        super.onDestroy();
     }
 
     private View createContent() {
@@ -66,8 +82,8 @@ public final class SettingsActivity extends Activity {
         root.addView(header);
 
         TextView intro = text(
-                "Настройте расположение панелей, автозапуск и режим "
-                        + "Android Emulator.",
+                "Настройте расположение панелей, кнопку на руле, "
+                        + "автозапуск и режим Android Emulator.",
                 16, getColor(R.color.text_secondary));
         LinearLayout.LayoutParams introParams = fullWidthWrap();
         introParams.topMargin = dp(12);
@@ -99,6 +115,36 @@ public final class SettingsActivity extends Activity {
         updateLayoutButtons();
         root.addView(layoutCard, fullWidthWrap());
 
+        LinearLayout steeringCard = card();
+        steeringCard.addView(sectionTitle("Кнопка микрофона на руле"));
+        TextView steeringHelp = text(
+                "Назначение выполняется в два шага: сначала коротко нажмите "
+                        + "нужную кнопку, затем нажмите и удерживайте её. "
+                        + "Это учитывает разные коды короткого и долгого "
+                        + "нажатия в прошивке BYD.",
+                15, getColor(R.color.text_secondary));
+        addWithTop(steeringCard, steeringHelp, 8);
+        steeringStatus = text("", 15, getColor(R.color.text_secondary));
+        addWithTop(steeringCard, steeringStatus, 12);
+
+        LinearLayout steeringActions = horizontalActions();
+        steeringAssignButton = actionButton("Назначить кнопку");
+        steeringAssignButton.setOnClickListener(
+                view -> beginSteeringAssignment());
+        steeringActions.addView(
+                steeringAssignButton, weightedButtonParams());
+        steeringResetButton = actionButton("Сбросить");
+        steeringResetButton.setOnClickListener(
+                view -> resetSteeringAssignment());
+        LinearLayout.LayoutParams resetParams = weightedButtonParams();
+        resetParams.setMarginStart(dp(10));
+        steeringActions.addView(steeringResetButton, resetParams);
+        addWithTop(steeringCard, steeringActions, 14);
+        updateSteeringStatus();
+        LinearLayout.LayoutParams steeringParams = fullWidthWrap();
+        steeringParams.topMargin = dp(16);
+        root.addView(steeringCard, steeringParams);
+
         LinearLayout behaviorCard = card();
         behaviorCard.addView(sectionTitle("Поведение"));
         Switch autoStart = settingsSwitch(
@@ -122,6 +168,7 @@ public final class SettingsActivity extends Activity {
                             ? "BYD-функции отключены, реальные приложения сохранены"
                             : "Режим DiLink включён",
                     Toast.LENGTH_SHORT).show();
+            updateSteeringControlsEnabled();
         });
         addWithTop(behaviorCard, demoMode, 8);
         TextView demoHelp = text(
@@ -134,6 +181,112 @@ public final class SettingsActivity extends Activity {
         behaviorParams.topMargin = dp(16);
         root.addView(behaviorCard, behaviorParams);
         return scroll;
+    }
+
+    private void beginSteeringAssignment() {
+        steeringCaptureStage = 1;
+        steeringStatus.setText(
+                "Шаг 1 из 2: коротко нажмите нужную кнопку на руле…");
+        steeringStatus.setTextColor(getColor(R.color.warning));
+        steeringAssignButton.setText("Ожидаем нажатие…");
+        steeringAssignButton.setEnabled(false);
+        steeringResetButton.setEnabled(false);
+        requestNextSteeringKey();
+    }
+
+    @Override
+    public void onSteeringKeyCaptured(int scanCode) {
+        runOnUiThread(() -> handleCapturedSteeringKey(scanCode));
+    }
+
+    private void handleCapturedSteeringKey(int scanCode) {
+        if (steeringCaptureStage == 1) {
+            capturedShortScan = scanCode;
+            steeringCaptureStage = 2;
+            steeringStatus.setText(
+                    "Шаг 2 из 2: теперь нажмите и удерживайте "
+                            + "эту же кнопку…");
+            getWindow().getDecorView().postDelayed(() -> {
+                if (steeringCaptureStage == 2) {
+                    requestNextSteeringKey();
+                }
+            }, 250);
+            return;
+        }
+        if (steeringCaptureStage != 2) {
+            return;
+        }
+        steeringCaptureStage = 0;
+        AppPreferences.setSteeringScans(
+                this, capturedShortScan, scanCode);
+        updateSteeringStatus();
+        steeringAssignButton.setEnabled(false);
+        steeringResetButton.setEnabled(false);
+        getWindow().getDecorView().postDelayed(() -> {
+            SteeringEventServer.cancelKeyCapture(this);
+            restartSteeringHelper("Кнопка назначена");
+        }, 1500);
+    }
+
+    private void requestNextSteeringKey() {
+        SteeringEventServer.beginKeyCapture(this);
+        bridgeClient.captureNextSteeringKey(success -> {
+            if (success) {
+                return;
+            }
+            runOnUiThread(() -> {
+                SteeringEventServer.cancelKeyCapture(this);
+                steeringCaptureStage = 0;
+                updateSteeringStatus();
+                Toast.makeText(this,
+                        "Помощник кнопки руля недоступен",
+                        Toast.LENGTH_LONG).show();
+            });
+        });
+    }
+
+    private void resetSteeringAssignment() {
+        SteeringEventServer.cancelKeyCapture(this);
+        bridgeClient.cancelSteeringKeyCapture(ignored -> {
+            // The helper restart below also clears capture state.
+        });
+        steeringCaptureStage = 0;
+        AppPreferences.setSteeringScans(
+                this,
+                AppPreferences.DEFAULT_STEERING_SHORT_SCAN,
+                AppPreferences.DEFAULT_STEERING_LONG_SCAN);
+        updateSteeringStatus();
+        restartSteeringHelper("Назначение сброшено");
+    }
+
+    private void restartSteeringHelper(String successMessage) {
+        steeringAssignButton.setEnabled(false);
+        steeringResetButton.setEnabled(false);
+        bridgeClient.restartHelpers(success -> runOnUiThread(() -> {
+            updateSteeringControlsEnabled();
+            Toast.makeText(this,
+                    success ? successMessage
+                            : "Коды сохранены, но помощник не перезапустился",
+                    Toast.LENGTH_LONG).show();
+        }));
+    }
+
+    private void updateSteeringStatus() {
+        steeringStatus.setText(
+                "Сейчас: короткое — scan "
+                        + AppPreferences.getSteeringShortScan(this)
+                        + ", долгое — scan "
+                        + AppPreferences.getSteeringLongScan(this));
+        steeringStatus.setTextColor(getColor(R.color.text_secondary));
+        steeringAssignButton.setText("Назначить кнопку");
+        updateSteeringControlsEnabled();
+    }
+
+    private void updateSteeringControlsEnabled() {
+        boolean enabled = !AppPreferences.isDemoModeEnabled(this)
+                && steeringCaptureStage == 0;
+        steeringAssignButton.setEnabled(enabled);
+        steeringResetButton.setEnabled(enabled);
     }
 
     private void setDriverPaneLarge(boolean driverPaneLarge) {

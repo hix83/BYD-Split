@@ -50,11 +50,15 @@ final class LocalAdbManager {
         try {
             String command = daemonCommand(apk,
                     "ru.logunov.bydsplit.ShellInputDaemon",
-                    "byd-split-input.log");
+                    "byd-split-input.log", "");
             if (includeSteering) {
+                String steeringArgs =
+                        AppPreferences.getSteeringShortScan(context)
+                                + " "
+                                + AppPreferences.getSteeringLongScan(context);
                 command += " " + daemonCommand(apk,
                         "ru.logunov.bydsplit.SteeringInputDaemon",
-                        "byd-split-steering.log");
+                        "byd-split-steering.log", steeringArgs);
                 command += " " + accessibilityCommand();
             }
             client.shellV2(command);
@@ -110,11 +114,12 @@ final class LocalAdbManager {
     }
 
     private static String daemonCommand(
-            String apk, String className, String logName) {
+            String apk, String className, String logName, String arguments) {
         return "pkill -f '^app_process /system/bin "
-                + className.replace(".", "\\.") + "$' 2>/dev/null; "
+                + className.replace(".", "\\.") + "( |$)' 2>/dev/null; "
                 + "nohup env CLASSPATH=" + apk
                 + " app_process /system/bin " + className
+                + (arguments.isEmpty() ? "" : " " + arguments)
                 + " </dev/null >/data/local/tmp/" + logName
                 + " 2>&1 &";
     }

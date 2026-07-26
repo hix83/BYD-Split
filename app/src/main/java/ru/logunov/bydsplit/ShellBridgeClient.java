@@ -89,6 +89,16 @@ final class ShellBridgeClient {
         });
     }
 
+    void captureNextSteeringKey(Consumer<Boolean> callback) {
+        executor.execute(() -> callback.accept(sendCommand(
+                "BYD_STEERING_CAPTURE_V1 " + TOKEN, 37530)));
+    }
+
+    void cancelSteeringKeyCapture(Consumer<Boolean> callback) {
+        executor.execute(() -> callback.accept(sendCommand(
+                "BYD_STEERING_CAPTURE_CANCEL_V1 " + TOKEN, 37530)));
+    }
+
     void enterPair(String primaryPackage, String secondaryPackage,
                    Consumer<Boolean> callback) {
         if (!PACKAGE_NAME.matcher(primaryPackage).matches()

@@ -29,22 +29,31 @@ public final class SteeringInputDaemon {
     private static final int HEALTH_PORT = 37530;
     private static final int EV_KEY = 1;
     private static final int KEY_DOWN = 1;
-    private static final int SCAN_VOICE_SHORT = 290;
-    private static final int SCAN_VOICE_LONG = 312;
-    private static final long GESTURE_QUIET_PERIOD_MS = 750;
+    private static final int KEY_UP = 0;
+    private static final int DEFAULT_SCAN_VOICE_SHORT = 290;
+    private static final int DEFAULT_SCAN_VOICE_LONG = 312;
+    private static final long GESTURE_QUIET_PERIOD_MS = 80;
+    private static final long LONG_HOLD_MS = 650;
     private static long lastVoiceSignalAt;
+    private static volatile boolean captureNextKey;
 
     private SteeringInputDaemon() {
     }
 
     public static void main(String[] args) {
+        int shortScan = parseScanCode(
+                args, 0, DEFAULT_SCAN_VOICE_SHORT);
+        int longScan = parseScanCode(
+                args, 1, DEFAULT_SCAN_VOICE_LONG);
+        System.out.println("Steering configuration short=" + shortScan
+                + " long=" + longScan);
         Thread healthThread = new Thread(
                 SteeringInputDaemon::serveHealth, "byd-steering-health");
         healthThread.setDaemon(true);
         healthThread.start();
         while (true) {
             try {
-                monitor(findSimulatedKeyDevice());
+                monitor(findSimulatedKeyDevice(), shortScan, longScan);
             } catch (Exception error) {
                 error.printStackTrace();
                 SystemClock.sleep(1000);
@@ -66,8 +75,18 @@ public final class SteeringInputDaemon {
                                     socket.getOutputStream(),
                                     StandardCharsets.UTF_8));
                     String request = reader.readLine();
-                    writer.write(("BYD_STEERING_PING_V1 " + TOKEN)
-                            .equals(request) ? "OK\n" : "ERR\n");
+                    if (("BYD_STEERING_CAPTURE_V1 " + TOKEN)
+                            .equals(request)) {
+                        captureNextKey = true;
+                        writer.write("OK\n");
+                    } else if (("BYD_STEERING_CAPTURE_CANCEL_V1 " + TOKEN)
+                            .equals(request)) {
+                        captureNextKey = false;
+                        writer.write("OK\n");
+                    } else {
+                        writer.write(("BYD_STEERING_PING_V1 " + TOKEN)
+                                .equals(request) ? "OK\n" : "ERR\n");
+                    }
                     writer.flush();
                 } catch (Exception ignored) {
                     // Health check failures must not stop steering monitoring.
@@ -79,18 +98,23 @@ public final class SteeringInputDaemon {
     }
 
     private static File findSimulatedKeyDevice() throws Exception {
-        // DiLink 5 exposes its "simulate-keys" driver at event6. The sysfs
-        // name lookup below is retained as a fallback for other revisions.
-        File diLink5Device = new File("/dev/input/event6");
-        if (diLink5Device.exists()) {
-            return diLink5Device;
-        }
+        // Input event numbers are assigned dynamically and can change after
+        // a reboot. Always resolve the BYD driver by name.
         File inputClass = new File("/sys/class/input");
         File[] entries = inputClass.listFiles();
         if (entries != null) {
             for (File entry : entries) {
                 if (!entry.getName().startsWith("event")) {
                     continue;
+                }
+                String canonicalPath = entry.getCanonicalPath();
+                if (canonicalPath.contains("simulate_keys")
+                        || canonicalPath.contains("simulate-keys")) {
+                    File device = new File(
+                            "/dev/input/" + entry.getName());
+                    System.out.println("Steering device=" + device
+                            + " source=" + canonicalPath);
+                    return device;
                 }
                 File nameFile = new File(entry, "device/name");
                 if (!nameFile.isFile()) {
@@ -99,7 +123,10 @@ public final class SteeringInputDaemon {
                 try (BufferedReader reader = new BufferedReader(
                         new FileReader(nameFile))) {
                     if ("simulate-keys".equals(reader.readLine())) {
-                        return new File("/dev/input/" + entry.getName());
+                        File device = new File(
+                                "/dev/input/" + entry.getName());
+                        System.out.println("Steering device=" + device);
+                        return device;
                     }
                 }
             }
@@ -107,10 +134,12 @@ public final class SteeringInputDaemon {
         throw new IllegalStateException("simulate-keys input device not found");
     }
 
-    private static void monitor(File device) throws Exception {
+    private static void monitor(
+            File device, int shortScan, int longScan) throws Exception {
         int recordSize = Process.is64Bit() ? 24 : 16;
         int typeOffset = Process.is64Bit() ? 16 : 8;
         byte[] record = new byte[recordSize];
+        long sharedCodeDownAt = 0;
         try (BufferedInputStream input = new BufferedInputStream(
                 new FileInputStream(device))) {
             while (true) {
@@ -120,26 +149,67 @@ public final class SteeringInputDaemon {
                 int type = Short.toUnsignedInt(buffer.getShort(typeOffset));
                 int code = Short.toUnsignedInt(buffer.getShort(typeOffset + 2));
                 int value = buffer.getInt(typeOffset + 4);
-                if (type == EV_KEY && value == KEY_DOWN
-                        && (code == SCAN_VOICE_SHORT
-                        || code == SCAN_VOICE_LONG)) {
-                    long now = SystemClock.uptimeMillis();
-                    long quietFor = now - lastVoiceSignalAt;
-                    lastVoiceSignalAt = now;
-                    if (quietFor < GESTURE_QUIET_PERIOD_MS) {
-                        System.out.println("Steering scan=" + code
-                                + " ignored-repeat");
-                        continue;
-                    }
-                    boolean handled = notifyApp(
-                            code == SCAN_VOICE_LONG ? "LONG" : "SHORT");
-                    System.out.println("Steering time=" + now + " scan=" + code
+                if (type == EV_KEY && value == KEY_DOWN && captureNextKey) {
+                    captureNextKey = false;
+                    boolean handled = notifyApp("CAPTURE " + code);
+                    System.out.println("Steering captured scan=" + code
                             + " handled=" + handled);
                     if (handled) {
                         stopBydVoice();
                     }
+                    continue;
+                }
+                if (type != EV_KEY
+                        || (code != shortScan && code != longScan)) {
+                    continue;
+                }
+                if (shortScan == longScan) {
+                    if (value == KEY_DOWN) {
+                        sharedCodeDownAt = SystemClock.uptimeMillis();
+                    } else if (value == KEY_UP && sharedCodeDownAt > 0) {
+                        long duration = SystemClock.uptimeMillis()
+                                - sharedCodeDownAt;
+                        sharedCodeDownAt = 0;
+                        dispatchVoiceSignal(
+                                code,
+                                duration >= LONG_HOLD_MS
+                                        ? "LONG" : "SHORT");
+                    }
+                } else if (value == KEY_DOWN) {
+                    dispatchVoiceSignal(
+                            code, code == longScan ? "LONG" : "SHORT");
                 }
             }
+        }
+    }
+
+    private static void dispatchVoiceSignal(int code, String kind) {
+        long now = SystemClock.uptimeMillis();
+        long quietFor = now - lastVoiceSignalAt;
+        lastVoiceSignalAt = now;
+        if (quietFor < GESTURE_QUIET_PERIOD_MS) {
+            System.out.println("Steering scan=" + code
+                    + " ignored-repeat");
+            return;
+        }
+        boolean handled = notifyApp(kind);
+        System.out.println("Steering time=" + now + " scan=" + code
+                + " kind=" + kind + " handled=" + handled);
+        if (handled) {
+            stopBydVoice();
+        }
+    }
+
+    private static int parseScanCode(
+            String[] args, int index, int fallback) {
+        if (index >= args.length) {
+            return fallback;
+        }
+        try {
+            int value = Integer.parseInt(args[index]);
+            return value > 0 && value <= 0xffff ? value : fallback;
+        } catch (NumberFormatException ignored) {
+            return fallback;
         }
     }
 

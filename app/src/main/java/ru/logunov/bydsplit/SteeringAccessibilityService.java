@@ -14,7 +14,6 @@ import java.util.List;
 
 public final class SteeringAccessibilityService extends AccessibilityService {
     private static final String TAG = "BYD_STEERING";
-    private static final int BYD_MICROPHONE_KEY_CODE = 304;
     private long lastMaxTreeLogAt;
     private static volatile boolean maxChatOpen;
 
@@ -72,21 +71,21 @@ public final class SteeringAccessibilityService extends AccessibilityService {
         Log.i(TAG, "key code=" + event.getKeyCode()
                 + " scan=" + event.getScanCode()
                 + " action=" + event.getAction());
-        if (event.getKeyCode() != BYD_MICROPHONE_KEY_CODE) {
-            return false;
-        }
-        if (!maxChatOpen) {
-            Log.i(TAG, "Microphone key left to BYD Voice: no open MAX chat");
-            return false;
-        }
-        if (event.getAction() == KeyEvent.ACTION_DOWN
-                && event.getRepeatCount() > 0) {
+        if (SteeringEventServer.isKeyCaptureActive()) {
+            Log.i(TAG, "Steering key suppressed during assignment");
             return true;
         }
-        boolean handled = MainActivity.handleSteeringMicrophone(
-                event.getAction() == KeyEvent.ACTION_DOWN);
-        Log.i(TAG, "Microphone routed to MAX, handled=" + handled);
-        return handled;
+        int scanCode = event.getScanCode() > 0
+                ? event.getScanCode() : event.getKeyCode();
+        boolean assignedKey =
+                scanCode == AppPreferences.getSteeringShortScan(this)
+                        || scanCode == AppPreferences
+                        .getSteeringLongScan(this);
+        if (maxChatOpen && assignedKey) {
+            Log.i(TAG, "Assigned steering key suppressed for open MAX chat");
+            return true;
+        }
+        return false;
     }
 
     private boolean inspectMaxChat(AccessibilityNodeInfo node) {

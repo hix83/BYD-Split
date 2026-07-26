@@ -118,9 +118,12 @@ public final class MainActivity extends Activity {
 
     static boolean handleSteeringPulse(boolean longPress) {
         MainActivity activity = currentActivity.get();
+        if (SteeringEventServer.isKeyCaptureActive()) {
+            return true;
+        }
+        boolean maxChatOpen = SteeringAccessibilityService.isMaxChatOpen();
         if (activity == null
-                || (longPress
-                && !SteeringAccessibilityService.isMaxChatOpen())) {
+                || (longPress && !maxChatOpen)) {
             return false;
         }
         for (EmbeddedAppPane pane : activity.activePanes) {
@@ -131,7 +134,9 @@ public final class MainActivity extends Activity {
                 return true;
             }
         }
-        return false;
+        // A short click has no action while MAX is idle, but it still belongs
+        // to MAX while a chat is open and must not launch BYD Voice.
+        return maxChatOpen && !longPress;
     }
 
     private void render() {

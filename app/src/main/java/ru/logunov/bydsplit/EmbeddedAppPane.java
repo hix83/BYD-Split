@@ -25,6 +25,7 @@ import android.widget.Toast;
 final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callback {
     private static final String TAG = "BYD_EMBEDDED";
     private static final int PANE_CORNER_RADIUS_DP = 15;
+    private static final long DOUBLE_CLICK_WINDOW_MS = 550;
     // Hidden in the public SDK, but supported by Android 12's VirtualDisplay.
     private static final int VIRTUAL_DISPLAY_FLAG_SUPPORTS_TOUCH = 1 << 6;
 
@@ -51,6 +52,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         RECORDING_LOCKED,
         PAUSING,
         AWAITING_SEND,
+        CONFIRMING_SEND,
+        DELETING,
         SENDING
     }
 
@@ -281,7 +284,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         return longPress
                 ? voiceState == VoiceState.IDLE
                 : voiceState == VoiceState.RECORDING_LOCKED
-                || voiceState == VoiceState.AWAITING_SEND;
+                || voiceState == VoiceState.AWAITING_SEND
+                || voiceState == VoiceState.CONFIRMING_SEND;
     }
 
     void handleSteeringPulse(boolean longPress) {
@@ -322,26 +326,60 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             return;
         }
 
-        VoiceState nextState;
-        int actionX;
         if (voiceState == VoiceState.RECORDING_LOCKED) {
             voiceState = VoiceState.PAUSING;
-            nextState = VoiceState.AWAITING_SEND;
-            actionX = getWidth() / 2;
-        } else {
-            voiceState = VoiceState.SENDING;
-            nextState = VoiceState.IDLE;
-            actionX = startX;
+            tapVoiceAction(
+                    displayId,
+                    getWidth() / 2,
+                    y,
+                    VoiceState.PAUSING,
+                    VoiceState.AWAITING_SEND);
+            return;
         }
+        if (voiceState == VoiceState.AWAITING_SEND) {
+            voiceState = VoiceState.CONFIRMING_SEND;
+            int generation = ++voiceGestureGeneration;
+            postDelayed(() -> {
+                if (generation != voiceGestureGeneration
+                        || voiceState != VoiceState.CONFIRMING_SEND
+                        || virtualDisplay == null
+                        || virtualDisplay.getDisplay().getDisplayId()
+                        != displayId) {
+                    return;
+                }
+                voiceState = VoiceState.SENDING;
+                tapVoiceAction(
+                        displayId,
+                        startX,
+                        y,
+                        VoiceState.SENDING,
+                        VoiceState.IDLE);
+            }, DOUBLE_CLICK_WINDOW_MS);
+            return;
+        }
+        if (voiceState == VoiceState.CONFIRMING_SEND) {
+            voiceGestureGeneration++;
+            voiceState = VoiceState.DELETING;
+            tapVoiceAction(
+                    displayId,
+                    dp(24),
+                    y,
+                    VoiceState.DELETING,
+                    VoiceState.IDLE);
+        }
+    }
+
+    private void tapVoiceAction(
+            int displayId, int x, int y,
+            VoiceState expectedState, VoiceState nextState) {
         shellBridgeClient.injectSingleFingerMotion(
-                displayId, MotionEvent.ACTION_DOWN, actionX, y);
+                displayId, MotionEvent.ACTION_DOWN, x, y);
         postDelayed(() -> {
-            if ((voiceState == VoiceState.PAUSING
-                    || voiceState == VoiceState.SENDING)
+            if (voiceState == expectedState
                     && virtualDisplay != null
                     && virtualDisplay.getDisplay().getDisplayId() == displayId) {
                 shellBridgeClient.injectSingleFingerMotion(
-                        displayId, MotionEvent.ACTION_UP, actionX, y);
+                        displayId, MotionEvent.ACTION_UP, x, y);
                 voiceState = nextState;
             }
         }, 60);
