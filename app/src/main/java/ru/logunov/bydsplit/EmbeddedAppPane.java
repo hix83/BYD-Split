@@ -28,6 +28,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.function.Function;
 import java.util.function.IntConsumer;
 
 final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callback {
@@ -43,6 +44,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private final Runnable changeAction;
     private final Runnable settingsAction;
     private final IntConsumer carouselAction;
+    private final Function<Integer, AppEntry> adjacentAppProvider;
+    private final IntConsumer interactiveCommitAction;
     private final SurfaceView surfaceView;
     private final FrameLayout controlsOverlay;
     private final LinearLayout pageIndicator;
@@ -54,6 +57,13 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private ImageView transitionIncoming;
     private Bitmap transitionIncomingBitmap;
     private int appSwitchGeneration;
+    private boolean interactiveGesture;
+    private boolean interactiveReady;
+    private boolean interactiveReleased;
+    private boolean interactiveCommit;
+    private int interactiveDirection;
+    private float interactiveOffset;
+    private String interactiveOriginalComponent;
     private long lastMoveSentAt;
     private float touchStartX;
     private float touchStartY;
@@ -76,7 +86,10 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     EmbeddedAppPane(Context context, AppEntry entry, String paneName,
                     ShellBridgeClient shellBridgeClient,
                     Runnable changeAction, Runnable settingsAction,
-                    IntConsumer carouselAction, int pageIndex, int pageCount) {
+                    IntConsumer carouselAction,
+                    Function<Integer, AppEntry> adjacentAppProvider,
+                    IntConsumer interactiveCommitAction,
+                    int pageIndex, int pageCount) {
         super(context);
         this.entry = entry;
         this.paneName = paneName;
@@ -84,6 +97,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         this.changeAction = changeAction;
         this.settingsAction = settingsAction;
         this.carouselAction = carouselAction;
+        this.adjacentAppProvider = adjacentAppProvider;
+        this.interactiveCommitAction = interactiveCommitAction;
 
         setBackground(rounded(Color.BLACK, PANE_CORNER_RADIUS_DP));
         setClipToOutline(true);
@@ -236,6 +251,19 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             return;
         }
         captureCurrentFrameAndLaunch(displayId, direction);
+    }
+
+    void completeInteractiveSwitch(
+            AppEntry nextEntry, int pageIndex, int pageCount) {
+        boolean wasMax = isMaxPane();
+        voiceGestureGeneration++;
+        voiceState = VoiceState.IDLE;
+        if (wasMax) {
+            SteeringAccessibilityService.setMaxChatOpen(false);
+        }
+        entry = nextEntry;
+        changeView.setText("  " + entry.label + "  ·  Изменить  ");
+        updatePageIndicator(pageIndex, pageCount);
     }
 
     private void captureCurrentFrameAndLaunch(int displayId, int direction) {
@@ -391,18 +419,303 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         surfaceView.setAlpha(1f);
     }
 
+    private void beginInteractiveEdgeDrag(int direction) {
+        AppEntry target = adjacentAppProvider.apply(direction);
+        if (target == null || virtualDisplay == null || getWidth() <= 0) {
+            return;
+        }
+        clearTransitionSnapshot();
+        interactiveGesture = true;
+        interactiveReady = false;
+        interactiveReleased = false;
+        interactiveCommit = false;
+        interactiveDirection = direction;
+        interactiveOffset = 0f;
+        interactiveOriginalComponent = entry.component.flattenToString();
+        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        int generation = ++appSwitchGeneration;
+        Bitmap currentBitmap = Bitmap.createBitmap(
+                Math.max(1, surfaceView.getWidth()),
+                Math.max(1, surfaceView.getHeight()),
+                Bitmap.Config.ARGB_8888);
+        PixelCopy.request(
+                surfaceView,
+                currentBitmap,
+                result -> {
+                    if (!isCurrentInteractiveGesture(
+                            generation, displayId, direction)) {
+                        currentBitmap.recycle();
+                        return;
+                    }
+                    if (result != PixelCopy.SUCCESS) {
+                        currentBitmap.recycle();
+                        resetInteractiveState();
+                        return;
+                    }
+                    ImageView current = new ImageView(getContext());
+                    current.setScaleType(ImageView.ScaleType.FIT_XY);
+                    current.setImageBitmap(currentBitmap);
+                    transitionSnapshot = current;
+                    transitionBitmap = currentBitmap;
+                    addView(current, 1, new LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT));
+                    shellBridgeClient.launchOnDisplay(
+                            target.component.flattenToString(),
+                            displayId,
+                            success -> post(() -> {
+                                if (!isCurrentInteractiveGesture(
+                                        generation, displayId, direction)) {
+                                    return;
+                                }
+                                if (!success) {
+                                    clearTransitionSnapshot();
+                                    resetInteractiveState();
+                                    showFailure(getResources().getString(
+                                            R.string.bridge_unavailable));
+                                    return;
+                                }
+                                postDelayed(() -> captureInteractiveTarget(
+                                        generation, displayId, direction), 45);
+                            }));
+                },
+                new Handler(Looper.getMainLooper()));
+    }
+
+    private void captureInteractiveTarget(
+            int generation, int displayId, int direction) {
+        if (!isCurrentInteractiveGesture(generation, displayId, direction)) {
+            return;
+        }
+        Bitmap incomingBitmap = Bitmap.createBitmap(
+                Math.max(1, surfaceView.getWidth()),
+                Math.max(1, surfaceView.getHeight()),
+                Bitmap.Config.ARGB_8888);
+        PixelCopy.request(
+                surfaceView,
+                incomingBitmap,
+                result -> {
+                    if (!isCurrentInteractiveGesture(
+                            generation, displayId, direction)) {
+                        incomingBitmap.recycle();
+                        return;
+                    }
+                    if (result != PixelCopy.SUCCESS) {
+                        incomingBitmap.recycle();
+                        cancelInteractiveAfterLoad(displayId, generation);
+                        return;
+                    }
+                    ImageView incoming = new ImageView(getContext());
+                    incoming.setScaleType(ImageView.ScaleType.FIT_XY);
+                    incoming.setImageBitmap(incomingBitmap);
+                    transitionIncoming = incoming;
+                    transitionIncomingBitmap = incomingBitmap;
+                    addView(incoming, indexOfChild(transitionSnapshot) + 1,
+                            new LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT));
+                    interactiveReady = true;
+                    applyInteractiveOffset();
+                    if (interactiveReleased) {
+                        settleInteractiveEdgeDrag();
+                    }
+                },
+                new Handler(Looper.getMainLooper()));
+    }
+
+    private boolean isCurrentInteractiveGesture(
+            int generation, int displayId, int direction) {
+        return generation == appSwitchGeneration
+                && interactiveGesture
+                && interactiveDirection == direction
+                && virtualDisplay != null
+                && virtualDisplay.getDisplay().getDisplayId() == displayId;
+    }
+
+    private void updateInteractiveOffset(float rawOffset) {
+        float width = Math.max(1, getWidth());
+        interactiveOffset = interactiveDirection > 0
+                ? Math.max(-width, Math.min(0f, rawOffset))
+                : Math.max(0f, Math.min(width, rawOffset));
+        if (interactiveReady) {
+            applyInteractiveOffset();
+        }
+    }
+
+    private void applyInteractiveOffset() {
+        if (transitionSnapshot == null || transitionIncoming == null) {
+            return;
+        }
+        float width = getWidth();
+        transitionSnapshot.setTranslationX(interactiveOffset);
+        transitionIncoming.setTranslationX(
+                interactiveOffset + interactiveDirection * width);
+    }
+
+    private void finishInteractiveEdgeDrag() {
+        interactiveReleased = true;
+        interactiveCommit = Math.abs(interactiveOffset)
+                >= getWidth() * 0.45f;
+        if (interactiveReady) {
+            settleInteractiveEdgeDrag();
+        }
+    }
+
+    private void settleInteractiveEdgeDrag() {
+        if (!interactiveGesture || !interactiveReady
+                || transitionSnapshot == null
+                || transitionIncoming == null) {
+            return;
+        }
+        int generation = appSwitchGeneration;
+        if (interactiveCommit) {
+            float targetOffset = interactiveDirection > 0
+                    ? -getWidth() : getWidth();
+            long duration = settleDuration(
+                    targetOffset - interactiveOffset);
+            transitionIncoming.animate()
+                    .translationX(0f)
+                    .setDuration(duration)
+                    .start();
+            transitionSnapshot.animate()
+                    .translationX(targetOffset)
+                    .setDuration(duration)
+                    .withEndAction(() -> {
+                        if (generation != appSwitchGeneration) {
+                            return;
+                        }
+                        int committedDirection = interactiveDirection;
+                        interactiveCommitAction.accept(committedDirection);
+                        clearTransitionSnapshot();
+                        resetInteractiveState();
+                    })
+                    .start();
+            return;
+        }
+
+        long duration = settleDuration(-interactiveOffset);
+        transitionIncoming.animate()
+                .translationX(interactiveDirection * getWidth())
+                .setDuration(duration)
+                .start();
+        transitionSnapshot.animate()
+                .translationX(0f)
+                .setDuration(duration)
+                .withEndAction(() ->
+                        cancelInteractiveAfterLoad(
+                                virtualDisplay == null ? -1
+                                        : virtualDisplay.getDisplay()
+                                        .getDisplayId(),
+                                generation))
+                .start();
+    }
+
+    private long settleDuration(float remainingDistance) {
+        float fraction = Math.min(
+                1f, Math.abs(remainingDistance) / Math.max(1, getWidth()));
+        return Math.max(90L, Math.round(230f * fraction));
+    }
+
+    private void cancelInteractiveAfterLoad(int displayId, int generation) {
+        if (generation != appSwitchGeneration || virtualDisplay == null
+                || virtualDisplay.getDisplay().getDisplayId() != displayId) {
+            return;
+        }
+        String component = interactiveOriginalComponent;
+        shellBridgeClient.launchOnDisplay(
+                component,
+                displayId,
+                success -> post(() -> {
+                    if (generation != appSwitchGeneration) {
+                        return;
+                    }
+                    clearTransitionSnapshot();
+                    resetInteractiveState();
+                    if (!success) {
+                        showFailure(getResources().getString(
+                                R.string.bridge_unavailable));
+                    }
+                }));
+    }
+
+    private void resetInteractiveState() {
+        interactiveGesture = false;
+        interactiveReady = false;
+        interactiveReleased = false;
+        interactiveCommit = false;
+        interactiveDirection = 0;
+        interactiveOffset = 0f;
+        interactiveOriginalComponent = null;
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private void addCarouselEdge(boolean start) {
         View edge = new View(getContext());
         edge.setContentDescription(start
                 ? "Предыдущее приложение" : "Следующее приложение");
-        addSwipeListener(edge, start ? -1 : 1);
+        addEdgeDragListener(edge, start ? -1 : 1);
         LayoutParams params = new LayoutParams(
                 dp(22), ViewGroup.LayoutParams.MATCH_PARENT,
                 (start ? Gravity.START : Gravity.END) | Gravity.CENTER_VERTICAL);
         params.topMargin = dp(16);
         params.bottomMargin = dp(36);
         addView(edge, params);
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void addEdgeDragListener(View view, int direction) {
+        final float[] start = new float[2];
+        view.setOnTouchListener((target, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    start[0] = event.getRawX();
+                    start[1] = event.getRawY();
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    float dx = event.getRawX() - start[0];
+                    float dy = event.getRawY() - start[1];
+                    boolean expectedDirection = direction > 0
+                            ? dx < 0 : dx > 0;
+                    if (!interactiveGesture
+                            && expectedDirection
+                            && Math.abs(dx) >= dp(8)
+                            && Math.abs(dx) > Math.abs(dy) * 1.15f) {
+                        beginInteractiveEdgeDrag(direction);
+                    }
+                    if (interactiveGesture
+                            && interactiveDirection == direction) {
+                        updateInteractiveOffset(dx);
+                    }
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    float finalDx = event.getRawX() - start[0];
+                    float finalDy = event.getRawY() - start[1];
+                    if (interactiveGesture
+                            && interactiveDirection == direction) {
+                        updateInteractiveOffset(finalDx);
+                        finishInteractiveEdgeDrag();
+                    } else if (Math.abs(finalDx) >= dp(36)
+                            && Math.abs(finalDx)
+                            > Math.abs(finalDy) * 1.25f) {
+                        int delta = finalDx < 0 ? 1 : -1;
+                        if (delta == direction) {
+                            carouselAction.accept(delta);
+                        }
+                    }
+                    target.performClick();
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    if (interactiveGesture
+                            && interactiveDirection == direction) {
+                        interactiveCommit = false;
+                        interactiveReleased = true;
+                        settleInteractiveEdgeDrag();
+                    }
+                    return true;
+                default:
+                    return true;
+            }
+        });
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -420,7 +733,9 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     if (Math.abs(dx) >= dp(36)
                             && Math.abs(dx) > Math.abs(dy) * 1.25f) {
                         int delta = dx < 0 ? 1 : -1;
-                        if (edgeDirection == 0 || delta == edgeDirection) {
+                        if (!interactiveGesture
+                                && (edgeDirection == 0
+                                || delta == edgeDirection)) {
                             carouselAction.accept(delta);
                         }
                     }
@@ -483,6 +798,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         appSwitchGeneration++;
         voiceState = VoiceState.IDLE;
         clearTransitionSnapshot();
+        resetInteractiveState();
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;
@@ -494,7 +810,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     }
 
     void setVoiceRecording(boolean pressed) {
-        if (virtualDisplay == null || !isMaxPane()) {
+        if (virtualDisplay == null || !isMaxPane()
+                || interactiveGesture) {
             return;
         }
         int displayId = virtualDisplay.getDisplay().getDisplayId();
@@ -558,11 +875,11 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     }
 
     boolean canHandleSteeringPulse(boolean longPress) {
-        return longPress
+        return !interactiveGesture && (longPress
                 ? voiceState == VoiceState.IDLE
                 : voiceState == VoiceState.RECORDING_LOCKED
                 || voiceState == VoiceState.AWAITING_SEND
-                || voiceState == VoiceState.CONFIRMING_SEND;
+                || voiceState == VoiceState.CONFIRMING_SEND);
     }
 
     void handleSteeringPulse(boolean longPress) {

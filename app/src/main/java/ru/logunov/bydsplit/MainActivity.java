@@ -269,6 +269,8 @@ public final class MainActivity extends Activity {
                 () -> chooseApp(preferenceKey),
                 this::openSettings,
                 delta -> moveCarousel(preferenceKey, delta),
+                delta -> getAdjacentApp(preferenceKey, delta),
+                delta -> commitInteractiveCarousel(preferenceKey, delta),
                 index,
                 count
         );
@@ -482,6 +484,38 @@ public final class MainActivity extends Activity {
         if (pane != null) {
             pane.switchApp(
                     apps.get(nextIndex), nextIndex, apps.size(), delta);
+        }
+    }
+
+    private AppEntry getAdjacentApp(String preferenceKey, int delta) {
+        boolean driver = KEY_DRIVER_APP.equals(preferenceKey);
+        List<AppEntry> apps = driver ? driverApps : farApps;
+        int currentIndex = driver ? driverAppIndex : farAppIndex;
+        int targetIndex = currentIndex + delta;
+        return targetIndex < 0 || targetIndex >= apps.size()
+                ? null : apps.get(targetIndex);
+    }
+
+    private void commitInteractiveCarousel(
+            String preferenceKey, int delta) {
+        boolean driver = KEY_DRIVER_APP.equals(preferenceKey);
+        List<AppEntry> apps = driver ? driverApps : farApps;
+        int currentIndex = driver ? driverAppIndex : farAppIndex;
+        int nextIndex = currentIndex + delta;
+        if (nextIndex < 0 || nextIndex >= apps.size()) {
+            return;
+        }
+        if (driver) {
+            driverAppIndex = nextIndex;
+        } else {
+            farAppIndex = nextIndex;
+        }
+        updateCurrentEntries();
+        saveCarousel(driver);
+        EmbeddedAppPane pane = driver ? driverEmbeddedPane : farEmbeddedPane;
+        if (pane != null) {
+            pane.completeInteractiveSwitch(
+                    apps.get(nextIndex), nextIndex, apps.size());
         }
     }
 
