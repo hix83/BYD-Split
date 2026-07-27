@@ -203,7 +203,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         }
     }
 
-    void switchApp(AppEntry nextEntry, int pageIndex, int pageCount) {
+    void switchApp(AppEntry nextEntry, int pageIndex, int pageCount,
+                   int direction) {
         boolean wasMax = isMaxPane();
         voiceGestureGeneration++;
         voiceState = VoiceState.IDLE;
@@ -218,9 +219,40 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             return;
         }
         int displayId = virtualDisplay.getDisplay().getDisplayId();
+        if (direction == 0 || getWidth() <= 0) {
+            launchSwitchedApp(displayId, 0);
+            return;
+        }
+        float distance = getWidth() * 0.16f;
+        float exitX = direction > 0 ? -distance : distance;
+        surfaceView.animate().cancel();
+        surfaceView.animate()
+                .translationX(exitX)
+                .alpha(0f)
+                .setDuration(130)
+                .withEndAction(() -> launchSwitchedApp(displayId, direction))
+                .start();
+    }
+
+    private void launchSwitchedApp(int displayId, int direction) {
         shellBridgeClient.launchOnDisplay(
                 entry.component.flattenToString(), displayId,
                 success -> post(() -> {
+                    if (success && direction != 0) {
+                        float distance = getWidth() * 0.16f;
+                        surfaceView.setTranslationX(
+                                direction > 0 ? distance : -distance);
+                        surfaceView.setAlpha(0f);
+                        surfaceView.animate()
+                                .translationX(0f)
+                                .alpha(1f)
+                                .setDuration(180)
+                                .start();
+                    } else {
+                        surfaceView.animate().cancel();
+                        surfaceView.setTranslationX(0f);
+                        surfaceView.setAlpha(1f);
+                    }
                     if (!success) {
                         showFailure(getResources().getString(
                                 R.string.bridge_unavailable));

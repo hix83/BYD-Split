@@ -66,7 +66,7 @@ if [ "$protocol" = "BYD_EMBED_V1" ]; then
         exit 1
     fi
 
-    result=$(/system/bin/am start --display "$display_id" \
+    result=$(/system/bin/am start --display "$display_id" --no-animation \
         -n "$component" 2>&1)
     /system/bin/sleep 0.2
     task_id=$(/system/bin/am stack list |

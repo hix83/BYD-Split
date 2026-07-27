@@ -422,6 +422,7 @@ public final class MainActivity extends Activity {
         boolean driver = KEY_DRIVER_APP.equals(preferenceKey);
         List<AppEntry> apps = driver ? driverApps : farApps;
         int currentIndex = driver ? driverAppIndex : farAppIndex;
+        int requestedDirection = pickingDirection;
         int existingIndex = indexOf(apps, selected.component);
         int nextIndex;
         if (existingIndex >= 0) {
@@ -453,7 +454,11 @@ public final class MainActivity extends Activity {
         if (pane == null) {
             refreshPane(preferenceKey);
         } else {
-            pane.switchApp(current, nextIndex, apps.size());
+            int transitionDirection = requestedDirection != 0
+                    ? requestedDirection
+                    : Integer.compare(nextIndex, currentIndex);
+            pane.switchApp(
+                    current, nextIndex, apps.size(), transitionDirection);
         }
     }
 
@@ -476,7 +481,7 @@ public final class MainActivity extends Activity {
         EmbeddedAppPane pane = driver ? driverEmbeddedPane : farEmbeddedPane;
         if (pane != null) {
             pane.switchApp(
-                    apps.get(nextIndex), nextIndex, apps.size());
+                    apps.get(nextIndex), nextIndex, apps.size(), delta);
         }
     }
 
