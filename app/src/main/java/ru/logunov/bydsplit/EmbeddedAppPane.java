@@ -4,14 +4,18 @@ import android.annotation.SuppressLint;
 import android.app.ActivityOptions;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.PixelCopy;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -19,6 +23,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -44,6 +49,11 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private final TextView changeView;
     private final Runnable hideControlsRunnable = this::hidePaneControls;
     private VirtualDisplay virtualDisplay;
+    private ImageView transitionSnapshot;
+    private Bitmap transitionBitmap;
+    private ImageView transitionIncoming;
+    private Bitmap transitionIncomingBitmap;
+    private int appSwitchGeneration;
     private long lastMoveSentAt;
     private float touchStartX;
     private float touchStartY;
@@ -220,44 +230,165 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         }
         int displayId = virtualDisplay.getDisplay().getDisplayId();
         if (direction == 0 || getWidth() <= 0) {
-            launchSwitchedApp(displayId, 0);
+            launchSwitchedApp(
+                    entry.component.flattenToString(),
+                    displayId, 0, null, ++appSwitchGeneration);
             return;
         }
-        float distance = getWidth() * 0.16f;
+        captureCurrentFrameAndLaunch(displayId, direction);
+    }
+
+    private void captureCurrentFrameAndLaunch(int displayId, int direction) {
+        clearTransitionSnapshot();
+        int generation = ++appSwitchGeneration;
+        String component = entry.component.flattenToString();
+        Bitmap snapshot = Bitmap.createBitmap(
+                Math.max(1, surfaceView.getWidth()),
+                Math.max(1, surfaceView.getHeight()),
+                Bitmap.Config.ARGB_8888);
+        PixelCopy.request(
+                surfaceView,
+                snapshot,
+                result -> {
+                    if (generation != appSwitchGeneration
+                            || virtualDisplay == null
+                            || virtualDisplay.getDisplay().getDisplayId()
+                            != displayId) {
+                        snapshot.recycle();
+                        return;
+                    }
+                    ImageView overlay = null;
+                    if (result == PixelCopy.SUCCESS) {
+                        overlay = new ImageView(getContext());
+                        overlay.setScaleType(ImageView.ScaleType.FIT_XY);
+                        overlay.setImageBitmap(snapshot);
+                        transitionSnapshot = overlay;
+                        transitionBitmap = snapshot;
+                        addView(overlay, 1, new LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT));
+                    } else {
+                        snapshot.recycle();
+                    }
+                    launchSwitchedApp(
+                            component, displayId, direction,
+                            overlay, generation);
+                },
+                new Handler(Looper.getMainLooper()));
+    }
+
+    private void launchSwitchedApp(
+            String component, int displayId, int direction,
+            ImageView snapshot, int generation) {
+        shellBridgeClient.launchOnDisplay(
+                component, displayId,
+                success -> post(() -> {
+                    if (generation != appSwitchGeneration) {
+                        return;
+                    }
+                    if (!success) {
+                        clearTransitionSnapshot();
+                        showFailure(getResources().getString(
+                                R.string.bridge_unavailable));
+                        return;
+                    }
+                    if (direction == 0 || snapshot == null) {
+                        clearTransitionSnapshot();
+                        surfaceView.setTranslationX(0f);
+                        surfaceView.setAlpha(1f);
+                        return;
+                    }
+                    postDelayed(() -> captureIncomingFrameAndAnimate(
+                            snapshot, direction, generation), 45);
+                }));
+    }
+
+    private void captureIncomingFrameAndAnimate(
+            ImageView snapshot, int direction, int generation) {
+        if (generation != appSwitchGeneration
+                || snapshot != transitionSnapshot) {
+            return;
+        }
+        Bitmap incomingBitmap = Bitmap.createBitmap(
+                Math.max(1, surfaceView.getWidth()),
+                Math.max(1, surfaceView.getHeight()),
+                Bitmap.Config.ARGB_8888);
+        PixelCopy.request(
+                surfaceView,
+                incomingBitmap,
+                result -> {
+                    if (generation != appSwitchGeneration
+                            || snapshot != transitionSnapshot) {
+                        incomingBitmap.recycle();
+                        return;
+                    }
+                    if (result != PixelCopy.SUCCESS) {
+                        incomingBitmap.recycle();
+                        clearTransitionSnapshot();
+                        return;
+                    }
+                    ImageView incoming = new ImageView(getContext());
+                    incoming.setScaleType(ImageView.ScaleType.FIT_XY);
+                    incoming.setImageBitmap(incomingBitmap);
+                    transitionIncoming = incoming;
+                    transitionIncomingBitmap = incomingBitmap;
+                    addView(incoming, indexOfChild(snapshot) + 1,
+                            new LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT));
+                    animateCapturedTransition(
+                            snapshot, incoming, direction, generation);
+                },
+                new Handler(Looper.getMainLooper()));
+    }
+
+    private void animateCapturedTransition(
+            ImageView snapshot, ImageView incoming,
+            int direction, int generation) {
+        float distance = getWidth();
         float exitX = direction > 0 ? -distance : distance;
-        surfaceView.animate().cancel();
-        surfaceView.animate()
+        incoming.setTranslationX(-exitX);
+        snapshot.animate().cancel();
+        incoming.animate().cancel();
+        incoming.animate()
+                .translationX(0f)
+                .setDuration(230)
+                .start();
+        snapshot.animate()
                 .translationX(exitX)
-                .alpha(0f)
-                .setDuration(130)
-                .withEndAction(() -> launchSwitchedApp(displayId, direction))
+                .setDuration(230)
+                .withEndAction(() -> {
+                    if (generation == appSwitchGeneration) {
+                        clearTransitionSnapshot();
+                    }
+                })
                 .start();
     }
 
-    private void launchSwitchedApp(int displayId, int direction) {
-        shellBridgeClient.launchOnDisplay(
-                entry.component.flattenToString(), displayId,
-                success -> post(() -> {
-                    if (success && direction != 0) {
-                        float distance = getWidth() * 0.16f;
-                        surfaceView.setTranslationX(
-                                direction > 0 ? distance : -distance);
-                        surfaceView.setAlpha(0f);
-                        surfaceView.animate()
-                                .translationX(0f)
-                                .alpha(1f)
-                                .setDuration(180)
-                                .start();
-                    } else {
-                        surfaceView.animate().cancel();
-                        surfaceView.setTranslationX(0f);
-                        surfaceView.setAlpha(1f);
-                    }
-                    if (!success) {
-                        showFailure(getResources().getString(
-                                R.string.bridge_unavailable));
-                    }
-                }));
+    private void clearTransitionSnapshot() {
+        if (transitionSnapshot != null) {
+            transitionSnapshot.animate().cancel();
+            removeView(transitionSnapshot);
+            transitionSnapshot.setImageDrawable(null);
+            transitionSnapshot = null;
+        }
+        if (transitionBitmap != null) {
+            transitionBitmap.recycle();
+            transitionBitmap = null;
+        }
+        if (transitionIncoming != null) {
+            transitionIncoming.animate().cancel();
+            removeView(transitionIncoming);
+            transitionIncoming.setImageDrawable(null);
+            transitionIncoming = null;
+        }
+        if (transitionIncomingBitmap != null) {
+            transitionIncomingBitmap.recycle();
+            transitionIncomingBitmap = null;
+        }
+        surfaceView.animate().cancel();
+        surfaceView.setTranslationX(0f);
+        surfaceView.setAlpha(1f);
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -349,7 +480,9 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
 
     void release() {
         voiceGestureGeneration++;
+        appSwitchGeneration++;
         voiceState = VoiceState.IDLE;
+        clearTransitionSnapshot();
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;
