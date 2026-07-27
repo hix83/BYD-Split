@@ -5,14 +5,17 @@ import android.app.ActivityOptions;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Outline;
+import android.graphics.Paint;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.util.LruCache;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.PixelCopy;
@@ -50,6 +53,22 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private final FrameLayout controlsOverlay;
     private final LinearLayout pageIndicator;
     private final TextView changeView;
+    private final LruCache<String, Bitmap> frameCache =
+            new LruCache<String, Bitmap>(16 * 1024) {
+                @Override
+                protected int sizeOf(String key, Bitmap bitmap) {
+                    return Math.max(1, bitmap.getAllocationByteCount() / 1024);
+                }
+
+                @Override
+                protected void entryRemoved(
+                        boolean evicted, String key,
+                        Bitmap oldValue, Bitmap newValue) {
+                    if (oldValue != newValue && !oldValue.isRecycled()) {
+                        oldValue.recycle();
+                    }
+                }
+            };
     private final Runnable hideControlsRunnable = this::hidePaneControls;
     private VirtualDisplay virtualDisplay;
     private ImageView transitionSnapshot;
@@ -64,6 +83,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private int interactiveDirection;
     private float interactiveOffset;
     private String interactiveOriginalComponent;
+    private String interactiveTargetComponent;
     private long lastMoveSentAt;
     private float touchStartX;
     private float touchStartY;
@@ -231,6 +251,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     void switchApp(AppEntry nextEntry, int pageIndex, int pageCount,
                    int direction) {
         boolean wasMax = isMaxPane();
+        String previousComponent = entry.component.flattenToString();
         voiceGestureGeneration++;
         voiceState = VoiceState.IDLE;
         if (wasMax) {
@@ -250,7 +271,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     displayId, 0, null, ++appSwitchGeneration);
             return;
         }
-        captureCurrentFrameAndLaunch(displayId, direction);
+        captureCurrentFrameAndLaunch(
+                displayId, direction, previousComponent);
     }
 
     void completeInteractiveSwitch(
@@ -266,7 +288,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         updatePageIndicator(pageIndex, pageCount);
     }
 
-    private void captureCurrentFrameAndLaunch(int displayId, int direction) {
+    private void captureCurrentFrameAndLaunch(
+            int displayId, int direction, String previousComponent) {
         clearTransitionSnapshot();
         int generation = ++appSwitchGeneration;
         String component = entry.component.flattenToString();
@@ -287,6 +310,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     }
                     ImageView overlay = null;
                     if (result == PixelCopy.SUCCESS) {
+                        cacheFrame(previousComponent, snapshot);
                         overlay = new ImageView(getContext());
                         overlay.setScaleType(ImageView.ScaleType.FIT_XY);
                         overlay.setImageBitmap(snapshot);
@@ -355,6 +379,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                         clearTransitionSnapshot();
                         return;
                     }
+                    cacheFrame(
+                            entry.component.flattenToString(), incomingBitmap);
                     ImageView incoming = new ImageView(getContext());
                     incoming.setScaleType(ImageView.ScaleType.FIT_XY);
                     incoming.setImageBitmap(incomingBitmap);
@@ -419,6 +445,71 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         surfaceView.setAlpha(1f);
     }
 
+    private void cacheFrame(String component, Bitmap source) {
+        if (component == null || source == null || source.isRecycled()) {
+            return;
+        }
+        Bitmap cached = source.copy(Bitmap.Config.ARGB_8888, false);
+        if (cached != null) {
+            frameCache.put(component, cached);
+        }
+    }
+
+    private Bitmap cachedFrameOrPlaceholder(AppEntry app) {
+        Bitmap cached = frameCache.get(app.component.flattenToString());
+        if (cached != null && !cached.isRecycled()) {
+            Bitmap copy = cached.copy(Bitmap.Config.ARGB_8888, false);
+            if (copy != null) {
+                return copy;
+            }
+        }
+        int width = Math.max(1, surfaceView.getWidth());
+        int height = Math.max(1, surfaceView.getHeight());
+        Bitmap placeholder = Bitmap.createBitmap(
+                width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(placeholder);
+        canvas.drawColor(0xFF111923);
+        int iconSize = Math.min(dp(96), Math.min(width, height) / 4);
+        int iconLeft = (width - iconSize) / 2;
+        int iconTop = (height - iconSize) / 2 - dp(28);
+        android.graphics.Rect oldBounds = app.icon.copyBounds();
+        app.icon.setBounds(
+                iconLeft, iconTop, iconLeft + iconSize, iconTop + iconSize);
+        app.icon.draw(canvas);
+        app.icon.setBounds(oldBounds);
+        Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        labelPaint.setColor(Color.WHITE);
+        labelPaint.setTextAlign(Paint.Align.CENTER);
+        labelPaint.setTextSize(dp(20));
+        canvas.drawText(
+                app.label.toString(),
+                width / 2f,
+                iconTop + iconSize + dp(38),
+                labelPaint);
+        return placeholder;
+    }
+
+    private void cacheDisplayedFrame(String component) {
+        if (virtualDisplay == null
+                || !surfaceView.getHolder().getSurface().isValid()) {
+            return;
+        }
+        Bitmap displayed = Bitmap.createBitmap(
+                Math.max(1, surfaceView.getWidth()),
+                Math.max(1, surfaceView.getHeight()),
+                Bitmap.Config.ARGB_8888);
+        PixelCopy.request(
+                surfaceView,
+                displayed,
+                result -> {
+                    if (result == PixelCopy.SUCCESS) {
+                        cacheFrame(component, displayed);
+                    }
+                    displayed.recycle();
+                },
+                new Handler(Looper.getMainLooper()));
+    }
+
     private void beginInteractiveEdgeDrag(int direction) {
         AppEntry target = adjacentAppProvider.apply(direction);
         if (target == null || virtualDisplay == null || getWidth() <= 0) {
@@ -432,6 +523,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         interactiveDirection = direction;
         interactiveOffset = 0f;
         interactiveOriginalComponent = entry.component.flattenToString();
+        interactiveTargetComponent = target.component.flattenToString();
         int displayId = virtualDisplay.getDisplay().getDisplayId();
         int generation = ++appSwitchGeneration;
         Bitmap currentBitmap = Bitmap.createBitmap(
@@ -452,6 +544,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                         resetInteractiveState();
                         return;
                     }
+                    cacheFrame(interactiveOriginalComponent, currentBitmap);
                     ImageView current = new ImageView(getContext());
                     current.setScaleType(ImageView.ScaleType.FIT_XY);
                     current.setImageBitmap(currentBitmap);
@@ -460,57 +553,13 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     addView(current, 1, new LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT));
-                    shellBridgeClient.launchOnDisplay(
-                            target.component.flattenToString(),
-                            displayId,
-                            success -> post(() -> {
-                                if (!isCurrentInteractiveGesture(
-                                        generation, displayId, direction)) {
-                                    return;
-                                }
-                                if (!success) {
-                                    clearTransitionSnapshot();
-                                    resetInteractiveState();
-                                    showFailure(getResources().getString(
-                                            R.string.bridge_unavailable));
-                                    return;
-                                }
-                                postDelayed(() -> captureInteractiveTarget(
-                                        generation, displayId, direction), 45);
-                            }));
-                },
-                new Handler(Looper.getMainLooper()));
-    }
-
-    private void captureInteractiveTarget(
-            int generation, int displayId, int direction) {
-        if (!isCurrentInteractiveGesture(generation, displayId, direction)) {
-            return;
-        }
-        Bitmap incomingBitmap = Bitmap.createBitmap(
-                Math.max(1, surfaceView.getWidth()),
-                Math.max(1, surfaceView.getHeight()),
-                Bitmap.Config.ARGB_8888);
-        PixelCopy.request(
-                surfaceView,
-                incomingBitmap,
-                result -> {
-                    if (!isCurrentInteractiveGesture(
-                            generation, displayId, direction)) {
-                        incomingBitmap.recycle();
-                        return;
-                    }
-                    if (result != PixelCopy.SUCCESS) {
-                        incomingBitmap.recycle();
-                        cancelInteractiveAfterLoad(displayId, generation);
-                        return;
-                    }
+                    Bitmap incomingBitmap = cachedFrameOrPlaceholder(target);
                     ImageView incoming = new ImageView(getContext());
                     incoming.setScaleType(ImageView.ScaleType.FIT_XY);
                     incoming.setImageBitmap(incomingBitmap);
                     transitionIncoming = incoming;
                     transitionIncomingBitmap = incomingBitmap;
-                    addView(incoming, indexOfChild(transitionSnapshot) + 1,
+                    addView(incoming, indexOfChild(current) + 1,
                             new LayoutParams(
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                     ViewGroup.LayoutParams.MATCH_PARENT));
@@ -586,8 +635,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                         }
                         int committedDirection = interactiveDirection;
                         interactiveCommitAction.accept(committedDirection);
-                        clearTransitionSnapshot();
-                        resetInteractiveState();
+                        launchCommittedInteractiveTarget(generation);
                     })
                     .start();
             return;
@@ -601,12 +649,12 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         transitionSnapshot.animate()
                 .translationX(0f)
                 .setDuration(duration)
-                .withEndAction(() ->
-                        cancelInteractiveAfterLoad(
-                                virtualDisplay == null ? -1
-                                        : virtualDisplay.getDisplay()
-                                        .getDisplayId(),
-                                generation))
+                .withEndAction(() -> {
+                    if (generation == appSwitchGeneration) {
+                        clearTransitionSnapshot();
+                        resetInteractiveState();
+                    }
+                })
                 .start();
     }
 
@@ -616,12 +664,12 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         return Math.max(90L, Math.round(230f * fraction));
     }
 
-    private void cancelInteractiveAfterLoad(int displayId, int generation) {
-        if (generation != appSwitchGeneration || virtualDisplay == null
-                || virtualDisplay.getDisplay().getDisplayId() != displayId) {
+    private void launchCommittedInteractiveTarget(int generation) {
+        if (generation != appSwitchGeneration || virtualDisplay == null) {
             return;
         }
-        String component = interactiveOriginalComponent;
+        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        String component = interactiveTargetComponent;
         shellBridgeClient.launchOnDisplay(
                 component,
                 displayId,
@@ -629,13 +677,44 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     if (generation != appSwitchGeneration) {
                         return;
                     }
-                    clearTransitionSnapshot();
-                    resetInteractiveState();
                     if (!success) {
+                        clearTransitionSnapshot();
+                        resetInteractiveState();
                         showFailure(getResources().getString(
                                 R.string.bridge_unavailable));
+                        return;
                     }
+                    postDelayed(() -> cacheCommittedFrameAndFinish(
+                            component, displayId, generation), 45);
                 }));
+    }
+
+    private void cacheCommittedFrameAndFinish(
+            String component, int displayId, int generation) {
+        if (generation != appSwitchGeneration || virtualDisplay == null
+                || virtualDisplay.getDisplay().getDisplayId() != displayId) {
+            return;
+        }
+        Bitmap displayed = Bitmap.createBitmap(
+                Math.max(1, surfaceView.getWidth()),
+                Math.max(1, surfaceView.getHeight()),
+                Bitmap.Config.ARGB_8888);
+        PixelCopy.request(
+                surfaceView,
+                displayed,
+                result -> {
+                    if (generation != appSwitchGeneration) {
+                        displayed.recycle();
+                        return;
+                    }
+                    if (result == PixelCopy.SUCCESS) {
+                        cacheFrame(component, displayed);
+                    }
+                    displayed.recycle();
+                    clearTransitionSnapshot();
+                    resetInteractiveState();
+                },
+                new Handler(Looper.getMainLooper()));
     }
 
     private void resetInteractiveState() {
@@ -646,6 +725,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         interactiveDirection = 0;
         interactiveOffset = 0f;
         interactiveOriginalComponent = null;
+        interactiveTargetComponent = null;
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -799,6 +879,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         voiceState = VoiceState.IDLE;
         clearTransitionSnapshot();
         resetInteractiveState();
+        frameCache.evictAll();
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;
@@ -1054,12 +1135,15 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         }
 
         int displayId = virtualDisplay.getDisplay().getDisplayId();
+        String launchedComponent = entry.component.flattenToString();
         shellBridgeClient.launchOnDisplay(
-                entry.component.flattenToString(),
+                launchedComponent,
                 displayId,
                 success -> post(() -> {
                     if (success) {
                         Log.i(TAG, entry.component + " -> display " + displayId);
+                        postDelayed(() ->
+                                cacheDisplayedFrame(launchedComponent), 80);
                     } else {
                         showFailure(getResources().getString(
                                 R.string.bridge_unavailable));
