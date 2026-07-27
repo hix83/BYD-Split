@@ -19,8 +19,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import java.util.function.IntConsumer;
 
 final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callback {
     private static final String TAG = "BYD_EMBEDDED";
@@ -29,13 +32,16 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     // Hidden in the public SDK, but supported by Android 12's VirtualDisplay.
     private static final int VIRTUAL_DISPLAY_FLAG_SUPPORTS_TOUCH = 1 << 6;
 
-    private final AppEntry entry;
+    private AppEntry entry;
     private final String paneName;
     private final ShellBridgeClient shellBridgeClient;
     private final Runnable changeAction;
     private final Runnable settingsAction;
+    private final IntConsumer carouselAction;
     private final SurfaceView surfaceView;
     private final FrameLayout controlsOverlay;
+    private final LinearLayout pageIndicator;
+    private final TextView changeView;
     private final Runnable hideControlsRunnable = this::hidePaneControls;
     private VirtualDisplay virtualDisplay;
     private long lastMoveSentAt;
@@ -59,13 +65,15 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
 
     EmbeddedAppPane(Context context, AppEntry entry, String paneName,
                     ShellBridgeClient shellBridgeClient,
-                    Runnable changeAction, Runnable settingsAction) {
+                    Runnable changeAction, Runnable settingsAction,
+                    IntConsumer carouselAction, int pageIndex, int pageCount) {
         super(context);
         this.entry = entry;
         this.paneName = paneName;
         this.shellBridgeClient = shellBridgeClient;
         this.changeAction = changeAction;
         this.settingsAction = settingsAction;
+        this.carouselAction = carouselAction;
 
         setBackground(rounded(Color.BLACK, PANE_CORNER_RADIUS_DP));
         setClipToOutline(true);
@@ -85,6 +93,22 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         addView(surfaceView, new LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
+
+        addCarouselEdge(true);
+        addCarouselEdge(false);
+
+        pageIndicator = new LinearLayout(context);
+        pageIndicator.setOrientation(LinearLayout.HORIZONTAL);
+        pageIndicator.setGravity(Gravity.CENTER);
+        pageIndicator.setPadding(dp(8), dp(5), dp(8), dp(5));
+        pageIndicator.setBackground(rounded(0x8817212B, 12));
+        addSwipeListener(pageIndicator, 0);
+        LayoutParams indicatorParams = new LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(24),
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        indicatorParams.bottomMargin = dp(8);
+        addView(pageIndicator, indicatorParams);
+        updatePageIndicator(pageIndex, pageCount);
 
         View revealEdge = new View(context);
         revealEdge.setContentDescription("Показать управление панелью");
@@ -141,13 +165,13 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         backParams.setMargins(dp(10), dp(10), dp(10), dp(10));
         controlsOverlay.addView(back, backParams);
 
-        TextView change = new TextView(context);
-        change.setText("  " + entry.label + "  ·  Изменить  ");
-        change.setTextColor(Color.WHITE);
-        change.setTextSize(14);
-        change.setGravity(Gravity.CENTER);
-        change.setBackground(rounded(0xCC17212B, 14));
-        change.setOnClickListener(view -> {
+        changeView = new TextView(context);
+        changeView.setText("  " + entry.label + "  ·  Изменить  ");
+        changeView.setTextColor(Color.WHITE);
+        changeView.setTextSize(14);
+        changeView.setGravity(Gravity.CENTER);
+        changeView.setBackground(rounded(0xCC17212B, 14));
+        changeView.setOnClickListener(view -> {
             hidePaneControls();
             changeAction.run();
         });
@@ -155,7 +179,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(44),
                 Gravity.TOP | Gravity.END);
         changeParams.setMargins(dp(10), dp(10), dp(10), dp(10));
-        controlsOverlay.addView(change, changeParams);
+        controlsOverlay.addView(changeView, changeParams);
 
         TextView settings = new TextView(context);
         settings.setText("⚙");
@@ -177,6 +201,94 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         if (isMaxPane()) {
             SteeringAccessibilityService.setMaxChatOpen(false);
         }
+    }
+
+    void switchApp(AppEntry nextEntry, int pageIndex, int pageCount) {
+        boolean wasMax = isMaxPane();
+        voiceGestureGeneration++;
+        voiceState = VoiceState.IDLE;
+        if (wasMax) {
+            SteeringAccessibilityService.setMaxChatOpen(false);
+        }
+        entry = nextEntry;
+        changeView.setText("  " + entry.label + "  ·  Изменить  ");
+        updatePageIndicator(pageIndex, pageCount);
+        if (virtualDisplay == null) {
+            createDisplayAndLaunch();
+            return;
+        }
+        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        shellBridgeClient.launchOnDisplay(
+                entry.component.flattenToString(), displayId,
+                success -> post(() -> {
+                    if (!success) {
+                        showFailure(getResources().getString(
+                                R.string.bridge_unavailable));
+                    }
+                }));
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void addCarouselEdge(boolean start) {
+        View edge = new View(getContext());
+        edge.setContentDescription(start
+                ? "Предыдущее приложение" : "Следующее приложение");
+        addSwipeListener(edge, start ? -1 : 1);
+        LayoutParams params = new LayoutParams(
+                dp(22), ViewGroup.LayoutParams.MATCH_PARENT,
+                (start ? Gravity.START : Gravity.END) | Gravity.CENTER_VERTICAL);
+        params.topMargin = dp(16);
+        params.bottomMargin = dp(36);
+        addView(edge, params);
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void addSwipeListener(View view, int edgeDirection) {
+        final float[] start = new float[2];
+        view.setOnTouchListener((target, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    start[0] = event.getRawX();
+                    start[1] = event.getRawY();
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    float dx = event.getRawX() - start[0];
+                    float dy = event.getRawY() - start[1];
+                    if (Math.abs(dx) >= dp(36)
+                            && Math.abs(dx) > Math.abs(dy) * 1.25f) {
+                        int delta = dx < 0 ? 1 : -1;
+                        if (edgeDirection == 0 || delta == edgeDirection) {
+                            carouselAction.accept(delta);
+                        }
+                    }
+                    target.performClick();
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    return true;
+                default:
+                    return true;
+            }
+        });
+    }
+
+    private void updatePageIndicator(int pageIndex, int pageCount) {
+        pageIndicator.removeAllViews();
+        int safeCount = Math.max(1, pageCount);
+        int safeIndex = Math.max(0, Math.min(pageIndex, safeCount - 1));
+        for (int index = 0; index < safeCount; index++) {
+            View dot = new View(getContext());
+            dot.setBackground(rounded(
+                    index == safeIndex
+                            ? getContext().getColor(R.color.accent)
+                            : 0x99FFFFFF,
+                    4));
+            LinearLayout.LayoutParams params =
+                    new LinearLayout.LayoutParams(dp(7), dp(7));
+            params.setMargins(dp(3), 0, dp(3), 0);
+            pageIndicator.addView(dot, params);
+        }
+        pageIndicator.setContentDescription(
+                "Приложение " + (safeIndex + 1) + " из " + safeCount);
     }
 
     @Override

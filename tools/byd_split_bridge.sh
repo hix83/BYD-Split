@@ -66,11 +66,25 @@ if [ "$protocol" = "BYD_EMBED_V1" ]; then
         exit 1
     fi
 
-    /system/bin/am force-stop "$package_name"
     result=$(/system/bin/am start --display "$display_id" \
         -n "$component" 2>&1)
+    /system/bin/sleep 0.2
+    task_id=$(/system/bin/am stack list |
+        /system/bin/awk -v target="$package_name/" '
+            /^RootTask id=/ {
+                split($2, parts, "=")
+                root_task = parts[2]
+            }
+            index($0, target) > 0 {
+                print root_task
+                exit
+            }
+        ')
+    if [ -n "$task_id" ]; then
+        /system/bin/am display move-stack "$task_id" "$display_id"
+    fi
     case "$result" in
-        *Starting*) echo "OK" ;;
+        *Starting*|*"Activity not started"*) echo "OK" ;;
         *) echo "ERR launch"; exit 1 ;;
     esac
     exit 0

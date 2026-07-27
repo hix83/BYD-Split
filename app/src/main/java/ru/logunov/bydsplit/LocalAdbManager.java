@@ -75,9 +75,16 @@ final class LocalAdbManager {
         try {
             client.connect();
             String output = client.shell(
-                    "am force-stop " + packageName
-                            + " >/dev/null 2>&1; am start --display "
-                            + displayId + " -n " + component);
+                    "am start --display " + displayId
+                            + " -n " + component
+                            + "; sleep 0.2"
+                            + "; task_id=$(am stack list | awk -v target='"
+                            + packageName
+                            + "/' '/^RootTask id=/{split($2,p,\"=\");"
+                            + "root=p[2]} index($0,target)>0{print root;"
+                            + "exit}'); [ -z \"$task_id\" ] || "
+                            + "am display move-stack \"$task_id\" "
+                            + displayId);
             return !output.contains("Error:")
                     && !output.contains("Exception");
         } catch (Exception error) {

@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -18,6 +19,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.lang.ref.WeakReference;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -36,8 +38,15 @@ public final class MainActivity extends Activity {
     private SteeringEventServer steeringEventServer;
     private AppEntry driverApp;
     private AppEntry farApp;
+    private List<AppEntry> driverApps;
+    private List<AppEntry> farApps;
+    private int driverAppIndex;
+    private int farAppIndex;
     private List<AppEntry> availableApps;
     private String pickingKey;
+    private int pickingDirection;
+    private View pickerOverlay;
+    private LinearLayout splitRoot;
     private FrameLayout driverSlot;
     private FrameLayout farSlot;
     private EmbeddedAppPane driverEmbeddedPane;
@@ -54,8 +63,15 @@ public final class MainActivity extends Activity {
         shellBridgeClient = new ShellBridgeClient(this);
         steeringEventServer = new SteeringEventServer();
         steeringEventServer.start();
-        driverApp = readEntry(KEY_DRIVER_APP);
-        farApp = readEntry(KEY_FAR_APP);
+        driverApps = readCarousel(
+                AppPreferences.KEY_DRIVER_APPS, KEY_DRIVER_APP);
+        farApps = readCarousel(
+                AppPreferences.KEY_FAR_APPS, KEY_FAR_APP);
+        driverAppIndex = readIndex(
+                AppPreferences.KEY_DRIVER_APP_INDEX, driverApps);
+        farAppIndex = readIndex(
+                AppPreferences.KEY_FAR_APP_INDEX, farApps);
+        updateCurrentEntries();
         if (!AppPreferences.isDemoModeEnabled(this)) {
             shellBridgeClient.bootstrap(true, success -> {
                 if (!success) {
@@ -142,26 +158,24 @@ public final class MainActivity extends Activity {
     private void render() {
         releasePanes();
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.HORIZONTAL);
-        root.setPadding(dp(10), dp(10), dp(10), dp(10));
-        root.setBackgroundColor(getColor(R.color.background));
+        splitRoot = new LinearLayout(this);
+        splitRoot.setOrientation(LinearLayout.HORIZONTAL);
+        splitRoot.setPadding(dp(10), dp(10), dp(10), dp(10));
+        splitRoot.setBackgroundColor(getColor(R.color.background));
 
         driverSlot = new FrameLayout(this);
         farSlot = new FrameLayout(this);
 
-        boolean driverPaneLarge = AppPreferences.isDriverPaneLarge(this);
+        float ratio = AppPreferences.getPanelRatio(this);
         LinearLayout.LayoutParams driverParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT,
-                driverPaneLarge ? 2f : 1f);
+                0, ViewGroup.LayoutParams.MATCH_PARENT, ratio);
         LinearLayout.LayoutParams farParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT,
-                driverPaneLarge ? 1f : 2f);
-        driverParams.setMarginEnd(dp(5));
-        farParams.setMarginStart(dp(5));
-        root.addView(driverSlot, driverParams);
-        root.addView(farSlot, farParams);
-        setContentView(root);
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f - ratio);
+        splitRoot.addView(driverSlot, driverParams);
+        splitRoot.addView(createDivider(), new LinearLayout.LayoutParams(
+                dp(16), ViewGroup.LayoutParams.MATCH_PARENT));
+        splitRoot.addView(farSlot, farParams);
+        setContentView(splitRoot);
         refreshPane(KEY_DRIVER_APP);
         refreshPane(KEY_FAR_APP);
     }
@@ -170,25 +184,82 @@ public final class MainActivity extends Activity {
         if (driverSlot == null || farSlot == null) {
             return;
         }
-        boolean driverPaneLarge = AppPreferences.isDriverPaneLarge(this);
+        float ratio = AppPreferences.getPanelRatio(this);
         LinearLayout.LayoutParams driverParams =
                 (LinearLayout.LayoutParams) driverSlot.getLayoutParams();
         LinearLayout.LayoutParams farParams =
                 (LinearLayout.LayoutParams) farSlot.getLayoutParams();
-        driverParams.weight = driverPaneLarge ? 2f : 1f;
-        farParams.weight = driverPaneLarge ? 1f : 2f;
+        driverParams.weight = ratio;
+        farParams.weight = 1f - ratio;
         driverSlot.setLayoutParams(driverParams);
         farSlot.setLayoutParams(farParams);
     }
 
+    @SuppressWarnings("ClickableViewAccessibility")
+    private View createDivider() {
+        FrameLayout divider = new FrameLayout(this);
+        divider.setContentDescription("Изменить размер областей");
+        View handle = new View(this);
+        handle.setBackground(roundedBackground(0xCC9EABB8, 4));
+        divider.addView(handle, new FrameLayout.LayoutParams(
+                dp(4), dp(52), Gravity.CENTER));
+        divider.setOnTouchListener((view, event) -> {
+            if (splitRoot == null) {
+                return true;
+            }
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    view.getParent().requestDisallowInterceptTouchEvent(true);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    updateRatioFromTouch(event.getRawX(), false);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    updateRatioFromTouch(event.getRawX(), true);
+                    view.performClick();
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    return true;
+                default:
+                    return true;
+            }
+        });
+        return divider;
+    }
+
+    private void updateRatioFromTouch(float rawX, boolean persist) {
+        int[] location = new int[2];
+        splitRoot.getLocationOnScreen(location);
+        float usableWidth = splitRoot.getWidth()
+                - splitRoot.getPaddingLeft() - splitRoot.getPaddingRight()
+                - dp(16);
+        if (usableWidth <= 0) {
+            return;
+        }
+        float ratio = (rawX - location[0] - splitRoot.getPaddingLeft()
+                - dp(8)) / usableWidth;
+        ratio = Math.max(AppPreferences.MIN_PANEL_RATIO,
+                Math.min(AppPreferences.MAX_PANEL_RATIO, ratio));
+        LinearLayout.LayoutParams driverParams =
+                (LinearLayout.LayoutParams) driverSlot.getLayoutParams();
+        LinearLayout.LayoutParams farParams =
+                (LinearLayout.LayoutParams) farSlot.getLayoutParams();
+        driverParams.weight = ratio;
+        farParams.weight = 1f - ratio;
+        driverSlot.setLayoutParams(driverParams);
+        farSlot.setLayoutParams(farParams);
+        if (persist) {
+            AppPreferences.setPanelRatio(this, ratio);
+        }
+    }
+
     private View createPane(String title, AppEntry entry, String preferenceKey,
                             boolean driverPane) {
-        if (preferenceKey.equals(pickingKey)) {
-            return createInlinePicker(title, entry, preferenceKey, driverPane);
-        }
         if (entry == null) {
             return createInlinePicker(title, null, preferenceKey, driverPane);
         }
+        int index = driverPane ? driverAppIndex : farAppIndex;
+        int count = (driverPane ? driverApps : farApps).size();
 
         EmbeddedAppPane pane = new EmbeddedAppPane(
                 this,
@@ -196,7 +267,10 @@ public final class MainActivity extends Activity {
                 driverPane ? "driver" : "far",
                 shellBridgeClient,
                 () -> chooseApp(preferenceKey),
-                this::openSettings
+                this::openSettings,
+                delta -> moveCarousel(preferenceKey, delta),
+                index,
+                count
         );
         activePanes.add(pane);
         if (driverPane) {
@@ -208,8 +282,35 @@ public final class MainActivity extends Activity {
     }
 
     private void chooseApp(String preferenceKey) {
+        showPicker(preferenceKey, 0);
+    }
+
+    private void showPicker(String preferenceKey, int direction) {
+        hidePicker();
+        boolean driverPane = KEY_DRIVER_APP.equals(preferenceKey);
+        FrameLayout slot = driverPane ? driverSlot : farSlot;
+        if (slot == null) {
+            return;
+        }
         pickingKey = preferenceKey;
-        refreshPane(preferenceKey);
+        pickingDirection = direction;
+        AppEntry current = driverPane ? driverApp : farApp;
+        pickerOverlay = createInlinePicker(
+                getString(driverPane
+                        ? R.string.driver_zone : R.string.passenger_zone),
+                current, preferenceKey, driverPane);
+        slot.addView(pickerOverlay, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private void hidePicker() {
+        if (pickerOverlay != null && pickerOverlay.getParent() instanceof ViewGroup) {
+            ((ViewGroup) pickerOverlay.getParent()).removeView(pickerOverlay);
+        }
+        pickerOverlay = null;
+        pickingKey = null;
+        pickingDirection = 0;
     }
 
     private View createInlinePicker(String title, AppEntry currentEntry,
@@ -247,8 +348,7 @@ public final class MainActivity extends Activity {
             cancel.setTextSize(15);
             cancel.setGravity(Gravity.CENTER);
             cancel.setOnClickListener(view -> {
-                pickingKey = null;
-                refreshPane(preferenceKey);
+                hidePicker();
             });
             header.addView(cancel, new LinearLayout.LayoutParams(dp(82), dp(44)));
         }
@@ -319,16 +419,65 @@ public final class MainActivity extends Activity {
     }
 
     private void selectApp(String preferenceKey, AppEntry selected) {
-        preferences.edit()
-                .putString(preferenceKey, selected.component.flattenToString())
-                .apply();
-        if (KEY_DRIVER_APP.equals(preferenceKey)) {
-            driverApp = selected;
+        boolean driver = KEY_DRIVER_APP.equals(preferenceKey);
+        List<AppEntry> apps = driver ? driverApps : farApps;
+        int currentIndex = driver ? driverAppIndex : farAppIndex;
+        int existingIndex = indexOf(apps, selected.component);
+        int nextIndex;
+        if (existingIndex >= 0) {
+            nextIndex = existingIndex;
+        } else if (apps.isEmpty()) {
+            apps.add(selected);
+            nextIndex = 0;
+        } else if (pickingDirection < 0) {
+            apps.add(0, selected);
+            nextIndex = 0;
+        } else if (pickingDirection > 0) {
+            apps.add(selected);
+            nextIndex = apps.size() - 1;
         } else {
-            farApp = selected;
+            apps.set(Math.max(0, Math.min(currentIndex, apps.size() - 1)),
+                    selected);
+            nextIndex = currentIndex;
         }
-        pickingKey = null;
-        refreshPane(preferenceKey);
+        if (driver) {
+            driverAppIndex = nextIndex;
+        } else {
+            farAppIndex = nextIndex;
+        }
+        updateCurrentEntries();
+        saveCarousel(driver);
+        hidePicker();
+        EmbeddedAppPane pane = driver ? driverEmbeddedPane : farEmbeddedPane;
+        AppEntry current = driver ? driverApp : farApp;
+        if (pane == null) {
+            refreshPane(preferenceKey);
+        } else {
+            pane.switchApp(current, nextIndex, apps.size());
+        }
+    }
+
+    private void moveCarousel(String preferenceKey, int delta) {
+        boolean driver = KEY_DRIVER_APP.equals(preferenceKey);
+        List<AppEntry> apps = driver ? driverApps : farApps;
+        int currentIndex = driver ? driverAppIndex : farAppIndex;
+        int nextIndex = currentIndex + delta;
+        if (nextIndex < 0 || nextIndex >= apps.size()) {
+            showPicker(preferenceKey, delta);
+            return;
+        }
+        if (driver) {
+            driverAppIndex = nextIndex;
+        } else {
+            farAppIndex = nextIndex;
+        }
+        updateCurrentEntries();
+        saveCarousel(driver);
+        EmbeddedAppPane pane = driver ? driverEmbeddedPane : farEmbeddedPane;
+        if (pane != null) {
+            pane.switchApp(
+                    apps.get(nextIndex), nextIndex, apps.size());
+        }
     }
 
     private void refreshPane(String preferenceKey) {
@@ -381,6 +530,79 @@ public final class MainActivity extends Activity {
             preferences.edit().remove(key).apply();
         }
         return entry;
+    }
+
+    private List<AppEntry> readCarousel(String listKey, String legacyKey) {
+        List<AppEntry> result = new ArrayList<>();
+        String serialized = preferences.getString(listKey, null);
+        if (serialized != null) {
+            for (String flattened : serialized.split("\\|")) {
+                ComponentName component =
+                        ComponentName.unflattenFromString(flattened);
+                AppEntry entry = repository.resolve(component);
+                if (entry != null && indexOf(result, entry.component) < 0) {
+                    result.add(entry);
+                }
+            }
+        }
+        if (result.isEmpty()) {
+            AppEntry legacy = readEntry(legacyKey);
+            if (legacy != null) {
+                result.add(legacy);
+            }
+        }
+        return result;
+    }
+
+    private int readIndex(String key, List<AppEntry> apps) {
+        if (apps.isEmpty()) {
+            return 0;
+        }
+        return Math.max(0, Math.min(
+                preferences.getInt(key, 0), apps.size() - 1));
+    }
+
+    private int indexOf(List<AppEntry> apps, ComponentName component) {
+        for (int index = 0; index < apps.size(); index++) {
+            if (apps.get(index).component.equals(component)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private void updateCurrentEntries() {
+        driverApp = driverApps.isEmpty()
+                ? null : driverApps.get(driverAppIndex);
+        farApp = farApps.isEmpty()
+                ? null : farApps.get(farAppIndex);
+    }
+
+    private void saveCarousel(boolean driver) {
+        List<AppEntry> apps = driver ? driverApps : farApps;
+        int index = driver ? driverAppIndex : farAppIndex;
+        StringBuilder serialized = new StringBuilder();
+        for (AppEntry app : apps) {
+            if (serialized.length() > 0) {
+                serialized.append('|');
+            }
+            serialized.append(app.component.flattenToString());
+        }
+        String legacyKey = driver ? KEY_DRIVER_APP : KEY_FAR_APP;
+        String listKey = driver
+                ? AppPreferences.KEY_DRIVER_APPS
+                : AppPreferences.KEY_FAR_APPS;
+        String indexKey = driver
+                ? AppPreferences.KEY_DRIVER_APP_INDEX
+                : AppPreferences.KEY_FAR_APP_INDEX;
+        SharedPreferences.Editor editor = preferences.edit()
+                .putString(listKey, serialized.toString())
+                .putInt(indexKey, index);
+        if (!apps.isEmpty()) {
+            editor.putString(legacyKey,
+                    apps.get(index).component.flattenToString());
+        }
+        editor.apply();
     }
 
     private void releasePanes() {

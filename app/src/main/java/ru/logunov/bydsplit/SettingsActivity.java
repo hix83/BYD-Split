@@ -21,6 +21,7 @@ public final class SettingsActivity extends Activity
     private Button twoOneButton;
     private Button steeringAssignButton;
     private Button steeringResetButton;
+    private TextView layoutHelp;
     private TextView steeringStatus;
     private ShellBridgeClient bridgeClient;
     private int steeringCaptureStage;
@@ -92,7 +93,7 @@ public final class SettingsActivity extends Activity
 
         LinearLayout layoutCard = card();
         layoutCard.addView(sectionTitle("Расположение панелей"));
-        TextView layoutHelp = text(
+        layoutHelp = text(
                 "Выберите, какая панель будет шире. Размер меняется сразу, "
                         + "без перезапуска открытых приложений.",
                 15, getColor(R.color.text_secondary));
@@ -296,9 +297,22 @@ public final class SettingsActivity extends Activity
     }
 
     private void updateLayoutButtons() {
-        boolean driverPaneLarge = AppPreferences.isDriverPaneLarge(this);
-        styleLayoutButton(oneTwoButton, !driverPaneLarge);
-        styleLayoutButton(twoOneButton, driverPaneLarge);
+        float ratio = AppPreferences.getPanelRatio(this);
+        boolean oneTwo = AppPreferences.isPanelRatioPreset(this, 1f / 3f);
+        boolean twoOne = AppPreferences.isPanelRatioPreset(this, 2f / 3f);
+        styleLayoutButton(oneTwoButton, oneTwo);
+        styleLayoutButton(twoOneButton, twoOne);
+        if (!oneTwo && !twoOne) {
+            int driverPercent = Math.round(ratio * 100);
+            layoutHelp.setText("Свой размер: " + driverPercent + " : "
+                    + (100 - driverPercent)
+                    + ". Перетащите разделитель между панелями или выберите "
+                    + "готовую пропорцию ниже.");
+        } else {
+            layoutHelp.setText(
+                    "Выберите, какая панель будет шире. Размер меняется сразу, "
+                            + "без перезапуска открытых приложений.");
+        }
     }
 
     private void styleLayoutButton(Button button, boolean selected) {
