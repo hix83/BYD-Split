@@ -76,7 +76,7 @@ final class LocalAdbManager {
             client.connect();
             String output = client.shell(
                     "am start --display " + displayId
-                            + " --no-animation -n " + component
+                            + " -f 0x00010000 -n " + component
                             + "; sleep 0.2"
                             + "; task_id=$(am stack list | awk -v target='"
                             + packageName
