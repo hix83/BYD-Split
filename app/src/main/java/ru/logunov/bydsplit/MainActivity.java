@@ -271,6 +271,7 @@ public final class MainActivity extends Activity {
                 delta -> moveCarousel(preferenceKey, delta),
                 delta -> getAdjacentApp(preferenceKey, delta),
                 delta -> commitInteractiveCarousel(preferenceKey, delta),
+                () -> deleteCurrentApp(preferenceKey),
                 index,
                 count
         );
@@ -519,6 +520,50 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void deleteCurrentApp(String preferenceKey) {
+        boolean driver = KEY_DRIVER_APP.equals(preferenceKey);
+        List<AppEntry> apps = driver ? driverApps : farApps;
+        int currentIndex = driver ? driverAppIndex : farAppIndex;
+        if (apps.isEmpty() || currentIndex < 0
+                || currentIndex >= apps.size()) {
+            return;
+        }
+        AppEntry removed = apps.remove(currentIndex);
+        int direction;
+        int nextIndex;
+        if (currentIndex > 0) {
+            nextIndex = currentIndex - 1;
+            direction = -1;
+        } else if (!apps.isEmpty()) {
+            nextIndex = 0;
+            direction = 1;
+        } else {
+            nextIndex = 0;
+            direction = 0;
+        }
+        if (driver) {
+            driverAppIndex = nextIndex;
+        } else {
+            farAppIndex = nextIndex;
+        }
+        updateCurrentEntries();
+        saveCarousel(driver);
+        EmbeddedAppPane pane = driver
+                ? driverEmbeddedPane : farEmbeddedPane;
+        AppEntry next = driver ? driverApp : farApp;
+        if (pane == null) {
+            refreshPane(preferenceKey);
+            return;
+        }
+        pane.removeAppAndSwitch(
+                next, nextIndex, apps.size(), direction,
+                removed.component.getPackageName());
+        if (next == null) {
+            getWindow().getDecorView().postDelayed(
+                    () -> refreshPane(preferenceKey), 300);
+        }
+    }
+
     private void refreshPane(String preferenceKey) {
         boolean driverPane = KEY_DRIVER_APP.equals(preferenceKey);
         FrameLayout slot = driverPane ? driverSlot : farSlot;
@@ -640,6 +685,8 @@ public final class MainActivity extends Activity {
         if (!apps.isEmpty()) {
             editor.putString(legacyKey,
                     apps.get(index).component.flattenToString());
+        } else {
+            editor.remove(legacyKey);
         }
         editor.apply();
     }

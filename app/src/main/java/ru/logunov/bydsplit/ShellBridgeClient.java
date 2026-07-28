@@ -137,6 +137,17 @@ final class ShellBridgeClient {
         });
     }
 
+    void removeFromDisplay(String packageName, int displayId,
+                           Consumer<Boolean> callback) {
+        if (!PACKAGE_NAME.matcher(packageName).matches()
+                || displayId < 1 || displayId > 999) {
+            callback.accept(false);
+            return;
+        }
+        executor.execute(() -> callback.accept(
+                localAdb.removeFromDisplay(packageName, displayId)));
+    }
+
     void injectGesture(int displayId, int startX, int startY,
                        int endX, int endY, long durationMs) {
         if (displayId < 1 || displayId > 999) {

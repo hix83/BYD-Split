@@ -24,6 +24,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.HapticFeedbackConstants;
 import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -38,6 +39,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private static final String TAG = "BYD_EMBEDDED";
     private static final int PANE_CORNER_RADIUS_DP = 15;
     private static final long DOUBLE_CLICK_WINDOW_MS = 550;
+    private static final long DELETE_HOLD_MS = 2000;
+    private static final long DELETE_SHRINK_MS = 1500;
     // Hidden in the public SDK, but supported by Android 12's VirtualDisplay.
     private static final int VIRTUAL_DISPLAY_FLAG_SUPPORTS_TOUCH = 1 << 6;
 
@@ -49,6 +52,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private final IntConsumer carouselAction;
     private final Function<Integer, AppEntry> adjacentAppProvider;
     private final IntConsumer interactiveCommitAction;
+    private final Runnable deleteAction;
     private final SurfaceView surfaceView;
     private final FrameLayout controlsOverlay;
     private final LinearLayout pageIndicator;
@@ -70,6 +74,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 }
             };
     private final Runnable hideControlsRunnable = this::hidePaneControls;
+    private final Runnable deleteHoldRunnable = this::beginDeleteMode;
     private VirtualDisplay virtualDisplay;
     private ImageView transitionSnapshot;
     private Bitmap transitionBitmap;
@@ -88,6 +93,16 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private float touchStartX;
     private float touchStartY;
     private float revealStartY;
+    private boolean deleteHoldCandidate;
+    private boolean deleteMode;
+    private boolean deleteCardReady;
+    private float deleteTouchStartX;
+    private float deleteTouchStartY;
+    private View deleteBackdrop;
+    private ImageView deleteCard;
+    private Bitmap deleteBitmap;
+    private int indicatorPageIndex;
+    private int indicatorPageCount;
     private int voiceGestureGeneration;
     private boolean voiceHoldReady;
     private volatile VoiceState voiceState = VoiceState.IDLE;
@@ -109,6 +124,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     IntConsumer carouselAction,
                     Function<Integer, AppEntry> adjacentAppProvider,
                     IntConsumer interactiveCommitAction,
+                    Runnable deleteAction,
                     int pageIndex, int pageCount) {
         super(context);
         this.entry = entry;
@@ -119,6 +135,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         this.carouselAction = carouselAction;
         this.adjacentAppProvider = adjacentAppProvider;
         this.interactiveCommitAction = interactiveCommitAction;
+        this.deleteAction = deleteAction;
 
         setBackground(rounded(Color.BLACK, PANE_CORNER_RADIUS_DP));
         setClipToOutline(true);
@@ -286,6 +303,36 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         entry = nextEntry;
         changeView.setText("  " + entry.label + "  ·  Изменить  ");
         updatePageIndicator(pageIndex, pageCount);
+    }
+
+    void removeAppAndSwitch(
+            AppEntry nextEntry, int pageIndex, int pageCount,
+            int direction, String removedPackage) {
+        if (virtualDisplay == null) {
+            if (nextEntry != null) {
+                switchApp(nextEntry, pageIndex, pageCount, direction);
+            }
+            return;
+        }
+        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        if (nextEntry != null) {
+            switchApp(nextEntry, pageIndex, pageCount, direction);
+            postDelayed(() -> shellBridgeClient.removeFromDisplay(
+                    removedPackage, displayId, success -> {
+                        if (!success) {
+                            Log.w(TAG, "Cannot remove " + removedPackage
+                                    + " from display " + displayId);
+                        }
+                    }), 520);
+            return;
+        }
+        shellBridgeClient.removeFromDisplay(
+                removedPackage, displayId, success -> {
+                    if (!success) {
+                        Log.w(TAG, "Cannot remove " + removedPackage
+                                + " from display " + displayId);
+                    }
+                });
     }
 
     private void captureCurrentFrameAndLaunch(
@@ -728,6 +775,234 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         interactiveTargetComponent = null;
     }
 
+    private void scheduleDeleteHold(MotionEvent event) {
+        deleteHoldCandidate = isDeleteHoldArea(event.getX(), event.getY());
+        deleteTouchStartX = event.getX();
+        deleteTouchStartY = event.getY();
+        if (!deleteHoldCandidate) {
+            return;
+        }
+        postDelayed(deleteHoldRunnable, DELETE_HOLD_MS);
+    }
+
+    private boolean isDeleteHoldArea(float x, float y) {
+        return x >= getWidth() * 0.25f
+                && x <= getWidth() * 0.75f
+                && y >= getHeight() * 0.20f
+                && y <= getHeight() * 0.72f;
+    }
+
+    private void cancelDeleteHold() {
+        deleteHoldCandidate = false;
+        removeCallbacks(deleteHoldRunnable);
+    }
+
+    private void beginDeleteMode() {
+        if (!deleteHoldCandidate || deleteMode || virtualDisplay == null
+                || interactiveGesture
+                || !surfaceView.getHolder().getSurface().isValid()) {
+            return;
+        }
+        deleteHoldCandidate = false;
+        deleteMode = true;
+        deleteCardReady = false;
+        hidePaneControls();
+        voiceGestureGeneration++;
+        voiceState = VoiceState.IDLE;
+        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        showDeleteIndicator();
+        deleteBackdrop = new View(getContext());
+        deleteBackdrop.setBackgroundColor(Color.BLACK);
+        deleteBackdrop.setAlpha(0f);
+        addView(deleteBackdrop, indexOfChild(surfaceView) + 1,
+                new LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+        deleteBackdrop.animate()
+                .alpha(1f)
+                .setDuration(180)
+                .start();
+
+        Bitmap snapshot = Bitmap.createBitmap(
+                Math.max(1, surfaceView.getWidth()),
+                Math.max(1, surfaceView.getHeight()),
+                Bitmap.Config.ARGB_8888);
+        PixelCopy.request(
+                surfaceView,
+                snapshot,
+                result -> {
+                    if (!deleteMode || result != PixelCopy.SUCCESS) {
+                        snapshot.recycle();
+                        if (deleteMode) {
+                            cancelDeleteMode(false);
+                        }
+                        return;
+                    }
+                    deleteBitmap = snapshot;
+                    ImageView card = new ImageView(getContext());
+                    card.setScaleType(ImageView.ScaleType.FIT_XY);
+                    card.setImageBitmap(snapshot);
+                    card.setBackground(rounded(Color.BLACK,
+                            PANE_CORNER_RADIUS_DP));
+                    card.setClipToOutline(true);
+                    card.setOutlineProvider(new ViewOutlineProvider() {
+                        @Override
+                        public void getOutline(View view, Outline outline) {
+                            outline.setRoundRect(
+                                    0, 0, view.getWidth(), view.getHeight(),
+                                    dp(PANE_CORNER_RADIUS_DP));
+                        }
+                    });
+                    deleteCard = card;
+                    addView(card, new LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT));
+                    card.animate()
+                            .scaleX(0.30f)
+                            .scaleY(0.30f)
+                            .alpha(0.96f)
+                            .setDuration(DELETE_SHRINK_MS)
+                            .withEndAction(() -> {
+                                if (deleteMode && card == deleteCard) {
+                                    deleteCardReady = true;
+                                    pageIndicator.animate()
+                                            .scaleX(1.12f)
+                                            .scaleY(1.12f)
+                                            .setDuration(120)
+                                            .withEndAction(() ->
+                                                    pageIndicator.animate()
+                                                            .scaleX(1f)
+                                                            .scaleY(1f)
+                                                            .setDuration(120)
+                                                            .start())
+                                            .start();
+                                }
+                            })
+                            .start();
+                },
+                new Handler(Looper.getMainLooper()));
+    }
+
+    private void updateDeleteCard(float x, float y) {
+        if (!deleteMode || !deleteCardReady || deleteCard == null) {
+            return;
+        }
+        deleteCard.animate().cancel();
+        deleteCard.setTranslationX(x - deleteTouchStartX);
+        deleteCard.setTranslationY(y - deleteTouchStartY);
+        boolean overTrash = isOverDeleteIndicator(x, y);
+        pageIndicator.setScaleX(overTrash ? 1.16f : 1f);
+        pageIndicator.setScaleY(overTrash ? 1.16f : 1f);
+    }
+
+    private boolean isOverDeleteIndicator(float x, float y) {
+        return x >= getWidth() * 0.34f
+                && x <= getWidth() * 0.66f
+                && y >= getHeight() - dp(105);
+    }
+
+    private void finishDeleteDrag(float x, float y) {
+        if (!deleteMode) {
+            return;
+        }
+        if (deleteCardReady && deleteCard != null
+                && isOverDeleteIndicator(x, y)) {
+            ImageView card = deleteCard;
+            deleteCardReady = false;
+            card.animate().cancel();
+            card.animate()
+                    .translationX(0f)
+                    .translationY(getHeight() * 0.48f)
+                    .scaleX(0.05f)
+                    .scaleY(0.05f)
+                    .alpha(0f)
+                    .setDuration(260)
+                    .withEndAction(() -> {
+                        clearDeleteCard();
+                        deleteMode = false;
+                        restorePageIndicator();
+                        deleteAction.run();
+                    })
+                    .start();
+            return;
+        }
+        cancelDeleteMode(true);
+    }
+
+    private void cancelDeleteMode(boolean animateBack) {
+        deleteHoldCandidate = false;
+        removeCallbacks(deleteHoldRunnable);
+        if (deleteCard != null && animateBack) {
+            ImageView card = deleteCard;
+            deleteCardReady = false;
+            card.animate().cancel();
+            card.animate()
+                    .translationX(0f)
+                    .translationY(0f)
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .alpha(1f)
+                    .setDuration(240)
+                    .withEndAction(() -> {
+                        clearDeleteCard();
+                        deleteMode = false;
+                        restorePageIndicator();
+                    })
+                    .start();
+            return;
+        }
+        clearDeleteCard();
+        deleteMode = false;
+        deleteCardReady = false;
+        restorePageIndicator();
+    }
+
+    private void clearDeleteCard() {
+        if (deleteCard != null) {
+            deleteCard.animate().cancel();
+            removeView(deleteCard);
+            deleteCard.setImageDrawable(null);
+            deleteCard = null;
+        }
+        if (deleteBitmap != null && !deleteBitmap.isRecycled()) {
+            deleteBitmap.recycle();
+        }
+        deleteBitmap = null;
+        if (deleteBackdrop != null) {
+            deleteBackdrop.animate().cancel();
+            removeView(deleteBackdrop);
+            deleteBackdrop = null;
+        }
+    }
+
+    private void showDeleteIndicator() {
+        pageIndicator.removeAllViews();
+        TextView trash = new TextView(getContext());
+        trash.setText("🗑");
+        trash.setTextSize(25);
+        trash.setGravity(Gravity.CENTER);
+        trash.setTextColor(Color.WHITE);
+        pageIndicator.setBackground(rounded(0xDDC9364B, 18));
+        pageIndicator.addView(trash,
+                new LinearLayout.LayoutParams(dp(52), dp(42)));
+        ViewGroup.LayoutParams rawParams = pageIndicator.getLayoutParams();
+        rawParams.height = dp(48);
+        pageIndicator.setLayoutParams(rawParams);
+        pageIndicator.setContentDescription(
+                "Перетащите приложение сюда, чтобы закрыть");
+    }
+
+    private void restorePageIndicator() {
+        pageIndicator.animate().cancel();
+        pageIndicator.setScaleX(1f);
+        pageIndicator.setScaleY(1f);
+        pageIndicator.setBackground(rounded(0x8817212B, 12));
+        ViewGroup.LayoutParams rawParams = pageIndicator.getLayoutParams();
+        rawParams.height = dp(24);
+        pageIndicator.setLayoutParams(rawParams);
+        updatePageIndicator(indicatorPageIndex, indicatorPageCount);
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private void addCarouselEdge(boolean start) {
         View edge = new View(getContext());
@@ -830,6 +1105,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     }
 
     private void updatePageIndicator(int pageIndex, int pageCount) {
+        indicatorPageIndex = pageIndex;
+        indicatorPageCount = pageCount;
         pageIndicator.removeAllViews();
         int safeCount = Math.max(1, pageCount);
         int safeIndex = Math.max(0, Math.min(pageIndex, safeCount - 1));
@@ -878,6 +1155,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         appSwitchGeneration++;
         voiceState = VoiceState.IDLE;
         clearTransitionSnapshot();
+        cancelDeleteMode(false);
         resetInteractiveState();
         frameCache.evictAll();
         if (virtualDisplay != null) {
@@ -956,7 +1234,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     }
 
     boolean canHandleSteeringPulse(boolean longPress) {
-        return !interactiveGesture && (longPress
+        return !interactiveGesture && !deleteMode && (longPress
                 ? voiceState == VoiceState.IDLE
                 : voiceState == VoiceState.RECORDING_LOCKED
                 || voiceState == VoiceState.AWAITING_SEND
@@ -1180,19 +1458,52 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 touchStartX = event.getX();
                 touchStartY = event.getY();
                 lastMoveSentAt = event.getEventTime();
-                sendMotion(event);
+                scheduleDeleteHold(event);
+                if (!deleteHoldCandidate) {
+                    sendMotion(event);
+                }
                 return true;
             case MotionEvent.ACTION_POINTER_DOWN:
             case MotionEvent.ACTION_POINTER_UP:
+                if (deleteHoldCandidate) {
+                    sendBufferedDeleteCandidateDown();
+                }
+                cancelDeleteHold();
+                if (deleteMode) {
+                    cancelDeleteMode(true);
+                    return true;
+                }
                 sendMotion(event);
                 return true;
             case MotionEvent.ACTION_MOVE:
+                if (deleteMode) {
+                    updateDeleteCard(event.getX(), event.getY());
+                    return true;
+                }
+                if (deleteHoldCandidate
+                        && Math.hypot(event.getX() - deleteTouchStartX,
+                        event.getY() - deleteTouchStartY) > dp(12)) {
+                    sendBufferedDeleteCandidateDown();
+                    cancelDeleteHold();
+                }
+                if (deleteHoldCandidate) {
+                    return true;
+                }
                 if (event.getEventTime() - lastMoveSentAt >= 16) {
                     lastMoveSentAt = event.getEventTime();
                     sendMotion(event);
                 }
                 return true;
             case MotionEvent.ACTION_UP:
+                if (deleteMode) {
+                    finishDeleteDrag(event.getX(), event.getY());
+                    view.performClick();
+                    return true;
+                }
+                if (deleteHoldCandidate) {
+                    sendBufferedDeleteCandidateDown();
+                }
+                cancelDeleteHold();
                 sendMotion(event);
                 if (isMaxPane() && event.getY() >= getHeight() - dp(90)) {
                     voiceGestureGeneration++;
@@ -1208,11 +1519,31 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 view.performClick();
                 return true;
             case MotionEvent.ACTION_CANCEL:
+                if (deleteMode) {
+                    cancelDeleteMode(true);
+                    return true;
+                }
+                if (deleteHoldCandidate) {
+                    cancelDeleteHold();
+                    return true;
+                }
+                cancelDeleteHold();
                 sendMotion(event);
                 return true;
             default:
                 return true;
         }
+    }
+
+    private void sendBufferedDeleteCandidateDown() {
+        if (virtualDisplay == null) {
+            return;
+        }
+        shellBridgeClient.injectSingleFingerMotion(
+                virtualDisplay.getDisplay().getDisplayId(),
+                MotionEvent.ACTION_DOWN,
+                Math.round(deleteTouchStartX),
+                Math.round(deleteTouchStartY));
     }
 
     private void sendMotion(MotionEvent event) {

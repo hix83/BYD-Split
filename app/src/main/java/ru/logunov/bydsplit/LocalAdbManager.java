@@ -94,6 +94,33 @@ final class LocalAdbManager {
         }
     }
 
+    synchronized boolean removeFromDisplay(
+            String packageName, int displayId) {
+        if (!packageName.matches("[A-Za-z0-9._]+")
+                || displayId < 1 || displayId > 999) {
+            return false;
+        }
+        try {
+            client.connect();
+            String output = client.shell(
+                    "task_id=$(am stack list | awk -v target='"
+                            + packageName
+                            + "/' -v display='displayId="
+                            + displayId
+                            + "' '/^RootTask id=/{split($2,p,\"=\");"
+                            + "root=p[2]; on_display=index($0,display)>0} "
+                            + "on_display && index($0,target)>0{print root;"
+                            + "exit}'); [ -z \"$task_id\" ] || "
+                            + "am stack remove \"$task_id\"");
+            return !output.contains("Error:")
+                    && !output.contains("Exception");
+        } catch (Exception error) {
+            client.close();
+            Log.e(TAG, "Cannot remove task from virtual display", error);
+            return false;
+        }
+    }
+
     synchronized boolean injectBack(int displayId) {
         try {
             client.connect();
