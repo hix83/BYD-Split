@@ -557,11 +557,8 @@ public final class MainActivity extends Activity {
         }
         pane.removeAppAndSwitch(
                 next, nextIndex, apps.size(), direction,
-                removed.component.getPackageName());
-        if (next == null) {
-            getWindow().getDecorView().postDelayed(
-                    () -> refreshPane(preferenceKey), 300);
-        }
+                removed.component.getPackageName(),
+                () -> refreshPane(preferenceKey));
     }
 
     private void refreshPane(String preferenceKey) {

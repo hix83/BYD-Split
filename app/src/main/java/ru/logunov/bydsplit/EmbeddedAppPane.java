@@ -101,6 +101,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private View deleteBackdrop;
     private ImageView deleteCard;
     private Bitmap deleteBitmap;
+    private boolean deletedTaskRemoved;
+    private boolean deleteReplacementReady;
     private int indicatorPageIndex;
     private int indicatorPageCount;
     private int voiceGestureGeneration;
@@ -307,32 +309,41 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
 
     void removeAppAndSwitch(
             AppEntry nextEntry, int pageIndex, int pageCount,
-            int direction, String removedPackage) {
+            int direction, String removedPackage,
+            Runnable emptyPaneAction) {
         if (virtualDisplay == null) {
             if (nextEntry != null) {
                 switchApp(nextEntry, pageIndex, pageCount, direction);
+            } else {
+                emptyPaneAction.run();
             }
             return;
         }
         int displayId = virtualDisplay.getDisplay().getDisplayId();
+        deletedTaskRemoved = false;
+        deleteReplacementReady = false;
         if (nextEntry != null) {
             switchApp(nextEntry, pageIndex, pageCount, direction);
             postDelayed(() -> shellBridgeClient.removeFromDisplay(
-                    removedPackage, displayId, success -> {
+                    removedPackage, displayId, success -> post(() -> {
                         if (!success) {
                             Log.w(TAG, "Cannot remove " + removedPackage
                                     + " from display " + displayId);
                         }
-                    }), 520);
+                        deletedTaskRemoved = true;
+                        maybeRevealDeleteReplacement();
+                    })), 360);
             return;
         }
         shellBridgeClient.removeFromDisplay(
-                removedPackage, displayId, success -> {
+                removedPackage, displayId, success -> post(() -> {
                     if (!success) {
                         Log.w(TAG, "Cannot remove " + removedPackage
                                 + " from display " + displayId);
                     }
-                });
+                    deletedTaskRemoved = true;
+                    emptyPaneAction.run();
+                }));
     }
 
     private void captureCurrentFrameAndLaunch(
@@ -395,6 +406,12 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                         clearTransitionSnapshot();
                         surfaceView.setTranslationX(0f);
                         surfaceView.setAlpha(1f);
+                        if (deleteBackdrop != null) {
+                            postDelayed(() -> {
+                                deleteReplacementReady = true;
+                                maybeRevealDeleteReplacement();
+                            }, 140);
+                        }
                         return;
                     }
                     postDelayed(() -> captureIncomingFrameAndAnimate(
@@ -439,6 +456,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                                     ViewGroup.LayoutParams.MATCH_PARENT));
                     animateCapturedTransition(
                             snapshot, incoming, direction, generation);
+                    deleteReplacementReady = true;
+                    maybeRevealDeleteReplacement();
                 },
                 new Handler(Looper.getMainLooper()));
     }
@@ -918,7 +937,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     .alpha(0f)
                     .setDuration(260)
                     .withEndAction(() -> {
-                        clearDeleteCard();
+                        clearDeleteCard(false);
                         deleteMode = false;
                         restorePageIndicator();
                         deleteAction.run();
@@ -944,20 +963,20 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     .alpha(1f)
                     .setDuration(240)
                     .withEndAction(() -> {
-                        clearDeleteCard();
+                        clearDeleteCard(true);
                         deleteMode = false;
                         restorePageIndicator();
                     })
                     .start();
             return;
         }
-        clearDeleteCard();
+        clearDeleteCard(true);
         deleteMode = false;
         deleteCardReady = false;
         restorePageIndicator();
     }
 
-    private void clearDeleteCard() {
+    private void clearDeleteCard(boolean clearBackdrop) {
         if (deleteCard != null) {
             deleteCard.animate().cancel();
             removeView(deleteCard);
@@ -968,11 +987,32 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             deleteBitmap.recycle();
         }
         deleteBitmap = null;
-        if (deleteBackdrop != null) {
+        if (clearBackdrop && deleteBackdrop != null) {
             deleteBackdrop.animate().cancel();
             removeView(deleteBackdrop);
             deleteBackdrop = null;
         }
+    }
+
+    private void maybeRevealDeleteReplacement() {
+        if (!deletedTaskRemoved || !deleteReplacementReady
+                || deleteBackdrop == null) {
+            return;
+        }
+        View backdrop = deleteBackdrop;
+        backdrop.animate().cancel();
+        backdrop.animate()
+                .alpha(0f)
+                .setDuration(180)
+                .withEndAction(() -> {
+                    if (deleteBackdrop == backdrop) {
+                        removeView(backdrop);
+                        deleteBackdrop = null;
+                    }
+                    deletedTaskRemoved = false;
+                    deleteReplacementReady = false;
+                })
+                .start();
     }
 
     private void showDeleteIndicator() {
