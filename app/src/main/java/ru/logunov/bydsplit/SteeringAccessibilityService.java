@@ -77,6 +77,11 @@ public final class SteeringAccessibilityService extends AccessibilityService {
         }
         int scanCode = event.getScanCode() > 0
                 ? event.getScanCode() : event.getKeyCode();
+        if (MainActivity.isActive()
+                && (scanCode == 269 || scanCode == 271)) {
+            Log.i(TAG, "Long track key suppressed for panel carousel");
+            return true;
+        }
         boolean assignedKey =
                 scanCode == AppPreferences.getSteeringShortScan(this)
                         || scanCode == AppPreferences

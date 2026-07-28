@@ -51,6 +51,7 @@ public final class MainActivity extends Activity {
     private FrameLayout farSlot;
     private EmbeddedAppPane driverEmbeddedPane;
     private EmbeddedAppPane farEmbeddedPane;
+    private volatile boolean resumed;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -94,6 +95,18 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        resumed = true;
+    }
+
+    @Override
+    protected void onPause() {
+        resumed = false;
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
         releasePanes();
         steeringEventServer.close();
@@ -122,6 +135,17 @@ public final class MainActivity extends Activity {
         MainActivity activity = currentActivity.get();
         return activity != null && !activity.isFinishing()
                 && !activity.isDestroyed();
+    }
+
+    static boolean handleSteeringCarousel(boolean leftPane) {
+        MainActivity activity = currentActivity.get();
+        if (activity == null || activity.isFinishing()
+                || activity.isDestroyed() || !activity.resumed) {
+            return false;
+        }
+        activity.runOnUiThread(() ->
+                activity.moveCarouselCyclic(leftPane));
+        return true;
     }
 
     static void applyPanelLayoutFromSettings() {
@@ -482,6 +506,32 @@ public final class MainActivity extends Activity {
         updateCurrentEntries();
         saveCarousel(driver);
         EmbeddedAppPane pane = driver ? driverEmbeddedPane : farEmbeddedPane;
+        if (pane != null) {
+            pane.switchApp(
+                    apps.get(nextIndex), nextIndex, apps.size(), delta);
+        }
+    }
+
+    private void moveCarouselCyclic(boolean driverPane) {
+        String preferenceKey = driverPane
+                ? KEY_DRIVER_APP : KEY_FAR_APP;
+        List<AppEntry> apps = driverPane ? driverApps : farApps;
+        if (apps == null || apps.size() < 2 || pickerOverlay != null) {
+            return;
+        }
+        int currentIndex = driverPane
+                ? driverAppIndex : farAppIndex;
+        int delta = driverPane ? -1 : 1;
+        int nextIndex = (currentIndex + delta + apps.size()) % apps.size();
+        if (driverPane) {
+            driverAppIndex = nextIndex;
+        } else {
+            farAppIndex = nextIndex;
+        }
+        updateCurrentEntries();
+        saveCarousel(driverPane);
+        EmbeddedAppPane pane = driverPane
+                ? driverEmbeddedPane : farEmbeddedPane;
         if (pane != null) {
             pane.switchApp(
                     apps.get(nextIndex), nextIndex, apps.size(), delta);

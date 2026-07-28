@@ -149,8 +149,13 @@ final class LocalAdbManager {
 
     private static String daemonCommand(
             String apk, String className, String logName, String arguments) {
-        return "pkill -f '^app_process /system/bin "
-                + className.replace(".", "\\.") + "( |$)' 2>/dev/null; "
+        return "for pid in $(pidof app_process); do "
+                + "cmd=$(tr '\\0' ' ' </proc/$pid/cmdline); "
+                + "case \"$cmd\" in "
+                + "\"app_process /system/bin " + className + "\"*"
+                + "|\"/system/bin/app_process /system/bin "
+                + className + "\"*) "
+                + "kill \"$pid\" 2>/dev/null;; esac; done; "
                 + "nohup env CLASSPATH=" + apk
                 + " app_process /system/bin " + className
                 + (arguments.isEmpty() ? "" : " " + arguments)

@@ -32,6 +32,8 @@ public final class SteeringInputDaemon {
     private static final int KEY_UP = 0;
     private static final int DEFAULT_SCAN_VOICE_SHORT = 290;
     private static final int DEFAULT_SCAN_VOICE_LONG = 312;
+    private static final int SCAN_TRACK_LEFT_LONG = 269;
+    private static final int SCAN_TRACK_RIGHT_LONG = 271;
     private static final long GESTURE_QUIET_PERIOD_MS = 80;
     private static final long LONG_HOLD_MS = 650;
     private static long lastVoiceSignalAt;
@@ -160,7 +162,19 @@ public final class SteeringInputDaemon {
                     continue;
                 }
                 if (type != EV_KEY
-                        || (code != shortScan && code != longScan)) {
+                        || (code != shortScan && code != longScan
+                        && code != SCAN_TRACK_LEFT_LONG
+                        && code != SCAN_TRACK_RIGHT_LONG)) {
+                    continue;
+                }
+                if ((code == SCAN_TRACK_LEFT_LONG
+                        || code == SCAN_TRACK_RIGHT_LONG)
+                        && value == KEY_DOWN) {
+                    boolean handled = notifyApp(
+                            code == SCAN_TRACK_LEFT_LONG
+                                    ? "PANEL_LEFT" : "PANEL_RIGHT");
+                    System.out.println("Steering scan=" + code
+                            + " panel-carousel handled=" + handled);
                     continue;
                 }
                 if (shortScan == longScan) {

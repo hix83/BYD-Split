@@ -79,6 +79,13 @@ final class SteeringEventServer implements Closeable {
                 && TOKEN.equals(parts[1])
                 && "CAPTURE".equals(parts[2])) {
             handled = handleCapturedKey(parts[3]);
+        } else if (parts.length == 3
+                && "BYD_STEERING_V1".equals(parts[0])
+                && TOKEN.equals(parts[1])
+                && ("PANEL_LEFT".equals(parts[2])
+                || "PANEL_RIGHT".equals(parts[2]))) {
+            handled = MainActivity.handleSteeringCarousel(
+                    "PANEL_LEFT".equals(parts[2]));
         } else {
             handled = parts.length == 3
                 && "BYD_STEERING_V1".equals(parts[0])
