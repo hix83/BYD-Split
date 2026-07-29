@@ -317,5 +317,5 @@ docs/screenshots/            Изображения для README
 
 Идея самостоятельной ADB-аутентификации внутри автомобильного APK была
 проверена после изучения архитектуры
-[BYDMate-DM](https://github.com/hix83/BYDMate-DM). Реализация ADB-протокола в
+[BYDMate]([https://github.com/AndyShaman/BYDMate]). Реализация ADB-протокола в
 BYD Split написана независимо; исходный код BYDMate в проект не копировался.
