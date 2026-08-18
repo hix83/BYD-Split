@@ -107,7 +107,7 @@ final class LocalAdbManager {
         }
     }
 
-    synchronized boolean removeFromDisplay(
+    synchronized boolean closeApp(
             String packageName, int displayId) {
         if (!packageName.matches("[A-Za-z0-9._]+")
                 || displayId < 1 || displayId > 999) {
@@ -124,12 +124,18 @@ final class LocalAdbManager {
                             + "root=p[2]; on_display=index($0,display)>0} "
                             + "on_display && index($0,target)>0{print root;"
                             + "exit}'); [ -z \"$task_id\" ] || "
-                            + "am stack remove \"$task_id\"");
-            return !output.contains("Error:")
-                    && !output.contains("Exception");
+                            + "am stack remove \"$task_id\" "
+                            + ">/dev/null 2>&1; am force-stop "
+                            + packageName + "; sleep 0.25; "
+                            + "alive=$(ps -A | awk -v pkg='"
+                            + packageName
+                            + "' '$NF==pkg || index($NF,pkg \":\")==1"
+                            + "{print 1; exit}'); [ -n \"$alive\" ] || "
+                            + "echo BYD_SPLIT_CLOSE_OK");
+            return output.contains("BYD_SPLIT_CLOSE_OK");
         } catch (Exception error) {
             client.close();
-            Log.e(TAG, "Cannot remove task from virtual display", error);
+            Log.e(TAG, "Cannot fully close embedded app", error);
             return false;
         }
     }

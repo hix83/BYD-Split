@@ -294,7 +294,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         deleteReplacementReady = false;
         if (nextEntry != null) {
             switchApp(nextEntry, pageIndex, pageCount, direction);
-            postDelayed(() -> shellBridgeClient.removeFromDisplay(
+            postDelayed(() -> shellBridgeClient.closeApp(
                     removedPackage, displayId, success -> post(() -> {
                         if (!success) {
                             Log.w(TAG, "Cannot remove " + removedPackage
@@ -305,7 +305,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     })), 360);
             return;
         }
-        shellBridgeClient.removeFromDisplay(
+        shellBridgeClient.closeApp(
                 removedPackage, displayId, success -> post(() -> {
                     if (!success) {
                         Log.w(TAG, "Cannot remove " + removedPackage

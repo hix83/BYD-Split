@@ -89,15 +89,15 @@ final class ShellBridgeClient {
         });
     }
 
-    void removeFromDisplay(String packageName, int displayId,
-                           Consumer<Boolean> callback) {
+    void closeApp(String packageName, int displayId,
+                  Consumer<Boolean> callback) {
         if (!PACKAGE_NAME.matcher(packageName).matches()
                 || displayId < 1 || displayId > 999) {
             callback.accept(false);
             return;
         }
         executor.execute(() -> callback.accept(
-                localAdb.removeFromDisplay(packageName, displayId)));
+                localAdb.closeApp(packageName, displayId)));
     }
 
     void injectBack(int displayId) {
