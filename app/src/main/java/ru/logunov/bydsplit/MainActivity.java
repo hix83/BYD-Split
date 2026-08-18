@@ -345,7 +345,6 @@ public final class MainActivity extends Activity {
                 driverPane ? "driver" : "far",
                 shellBridgeClient,
                 () -> chooseApp(preferenceKey),
-                this::openSettings,
                 delta -> moveCarousel(preferenceKey, delta),
                 delta -> getAdjacentApp(preferenceKey, delta),
                 delta -> commitInteractiveCarousel(preferenceKey, delta),

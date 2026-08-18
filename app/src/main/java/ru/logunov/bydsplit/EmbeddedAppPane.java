@@ -48,15 +48,12 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private final String paneName;
     private final ShellBridgeClient shellBridgeClient;
     private final Runnable changeAction;
-    private final Runnable settingsAction;
     private final IntConsumer carouselAction;
     private final Function<Integer, AppEntry> adjacentAppProvider;
     private final IntConsumer interactiveCommitAction;
     private final Runnable deleteAction;
     private final SurfaceView surfaceView;
-    private final FrameLayout controlsOverlay;
     private final LinearLayout pageIndicator;
-    private final TextView changeView;
     private final LruCache<String, Bitmap> frameCache =
             new LruCache<String, Bitmap>(16 * 1024) {
                 @Override
@@ -73,7 +70,6 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     }
                 }
             };
-    private final Runnable hideControlsRunnable = this::hidePaneControls;
     private final Runnable deleteHoldRunnable = this::beginDeleteMode;
     private VirtualDisplay virtualDisplay;
     private ImageView transitionSnapshot;
@@ -122,7 +118,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
 
     EmbeddedAppPane(Context context, AppEntry entry, String paneName,
                     ShellBridgeClient shellBridgeClient,
-                    Runnable changeAction, Runnable settingsAction,
+                    Runnable changeAction,
                     IntConsumer carouselAction,
                     Function<Integer, AppEntry> adjacentAppProvider,
                     IntConsumer interactiveCommitAction,
@@ -133,7 +129,6 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         this.paneName = paneName;
         this.shellBridgeClient = shellBridgeClient;
         this.changeAction = changeAction;
-        this.settingsAction = settingsAction;
         this.carouselAction = carouselAction;
         this.adjacentAppProvider = adjacentAppProvider;
         this.interactiveCommitAction = interactiveCommitAction;
@@ -197,16 +192,17 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                             Math.min(dp(12), distance * 0.35f)));
                     if (!revealTriggered[0] && distance >= dp(18)) {
                         revealTriggered[0] = true;
-                        showPaneControls();
+                        performHapticFeedback(
+                                HapticFeedbackConstants.CLOCK_TICK);
                     }
                     return true;
                 case MotionEvent.ACTION_UP:
-                    if (!revealTriggered[0] && distance >= dp(18)) {
-                        showPaneControls();
-                    }
                     revealHandle.animate().translationY(0f)
                             .setDuration(120).start();
                     view.performClick();
+                    if (revealTriggered[0] || distance >= dp(18)) {
+                        changeAction.run();
+                    }
                     return true;
                 case MotionEvent.ACTION_CANCEL:
                     revealHandle.animate().translationY(0f)
@@ -225,68 +221,6 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         revealHandle.setOnTouchListener(revealListener);
         addView(revealHandle, new LayoutParams(
                 dp(104), dp(28), Gravity.TOP | Gravity.CENTER_HORIZONTAL));
-
-        controlsOverlay = new FrameLayout(context);
-        controlsOverlay.setAlpha(0f);
-        controlsOverlay.setVisibility(GONE);
-
-        TextView back = new TextView(context);
-        back.setText("‹");
-        back.setTextColor(Color.WHITE);
-        back.setTextSize(36);
-        back.setGravity(Gravity.CENTER);
-        back.setContentDescription("Назад");
-        back.setBackground(rounded(0xCC17212B, 14));
-        back.setOnClickListener(view -> {
-            if (virtualDisplay != null) {
-                if (isMaxPane()) {
-                    SteeringAccessibilityService.setMaxChatOpen(false);
-                    voiceState = VoiceState.IDLE;
-                    voiceGestureGeneration++;
-                }
-                shellBridgeClient.injectBack(
-                        virtualDisplay.getDisplay().getDisplayId());
-                hidePaneControls();
-            }
-        });
-        LayoutParams backParams = new LayoutParams(
-                dp(50), dp(44), Gravity.TOP | Gravity.START);
-        backParams.setMargins(dp(10), dp(10), dp(10), dp(10));
-        controlsOverlay.addView(back, backParams);
-
-        changeView = new TextView(context);
-        changeView.setText("  " + entry.label + "  ·  Изменить  ");
-        changeView.setTextColor(Color.WHITE);
-        changeView.setTextSize(14);
-        changeView.setGravity(Gravity.CENTER);
-        changeView.setBackground(rounded(0xCC17212B, 14));
-        changeView.setOnClickListener(view -> {
-            hidePaneControls();
-            changeAction.run();
-        });
-        LayoutParams changeParams = new LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(44),
-                Gravity.TOP | Gravity.END);
-        changeParams.setMargins(dp(10), dp(10), dp(10), dp(10));
-        controlsOverlay.addView(changeView, changeParams);
-
-        TextView settings = new TextView(context);
-        settings.setText("⚙");
-        settings.setTextColor(Color.WHITE);
-        settings.setTextSize(22);
-        settings.setGravity(Gravity.CENTER);
-        settings.setContentDescription("Настройки BYD Split");
-        settings.setBackground(rounded(0xCC17212B, 14));
-        settings.setOnClickListener(view -> {
-            hidePaneControls();
-            settingsAction.run();
-        });
-        LayoutParams settingsParams = new LayoutParams(
-                dp(50), dp(44), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        settingsParams.setMargins(dp(10), dp(10), dp(10), dp(10));
-        controlsOverlay.addView(settings, settingsParams);
-        addView(controlsOverlay, new LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(64), Gravity.TOP));
         if (isMaxPane()) {
             SteeringAccessibilityService.setMaxChatOpen(false);
         }
@@ -302,7 +236,6 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             SteeringAccessibilityService.setMaxChatOpen(false);
         }
         entry = nextEntry;
-        changeView.setText("  " + entry.label + "  ·  Изменить  ");
         updatePageIndicator(pageIndex, pageCount);
         if (virtualDisplay == null) {
             createDisplayAndLaunch();
@@ -328,7 +261,6 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             SteeringAccessibilityService.setMaxChatOpen(false);
         }
         entry = nextEntry;
-        changeView.setText("  " + entry.label + "  ·  Изменить  ");
         updatePageIndicator(pageIndex, pageCount);
     }
 
@@ -921,7 +853,6 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         deleteHoldCandidate = false;
         deleteMode = true;
         deleteCardReady = false;
-        hidePaneControls();
         voiceGestureGeneration++;
         voiceState = VoiceState.IDLE;
         performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
@@ -1503,27 +1434,6 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         }
     }
 
-    private void showPaneControls() {
-        removeCallbacks(hideControlsRunnable);
-        controlsOverlay.animate().cancel();
-        controlsOverlay.setVisibility(VISIBLE);
-        controlsOverlay.animate().alpha(1f).setDuration(140).start();
-        postDelayed(hideControlsRunnable, 4000);
-    }
-
-    private void hidePaneControls() {
-        removeCallbacks(hideControlsRunnable);
-        controlsOverlay.animate().cancel();
-        if (controlsOverlay.getVisibility() != VISIBLE) {
-            return;
-        }
-        controlsOverlay.animate()
-                .alpha(0f)
-                .setDuration(120)
-                .withEndAction(() -> controlsOverlay.setVisibility(GONE))
-                .start();
-    }
-
     @SuppressLint("WrongConstant")
     private void createDisplayAndLaunch() {
         if (virtualDisplay != null || getWidth() <= 0 || getHeight() <= 0
@@ -1590,7 +1500,6 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         }
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                hidePaneControls();
                 touchStartX = event.getX();
                 touchStartY = event.getY();
                 lastMoveSentAt = event.getEventTime();
