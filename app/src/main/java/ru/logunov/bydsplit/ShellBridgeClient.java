@@ -1,6 +1,7 @@
 package ru.logunov.bydsplit;
 
 import android.content.Context;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.MotionEvent;
 
@@ -21,7 +22,6 @@ import java.util.regex.Pattern;
 
 final class ShellBridgeClient {
     private static final String TAG = "BYD_SPLIT_BRIDGE";
-    private static final int PORT = 37527;
     private static final int FAST_INPUT_PORT = 37528;
     private static final String TOKEN = "d5c7a1429b68460e";
     private static final Pattern PACKAGE_NAME =
@@ -38,55 +38,19 @@ final class ShellBridgeClient {
         localAdb = LocalAdbManager.get(context);
     }
 
-    static final class Health {
-        final boolean bridge;
-        final boolean input;
-        final boolean steering;
-
-        Health(boolean bridge, boolean input, boolean steering) {
-            this.bridge = bridge;
-            this.input = input;
-            this.steering = steering;
-        }
-
-        boolean isReady() {
-            return bridge && input && steering;
-        }
-    }
-
-    void checkHealth(Consumer<Health> callback) {
-        executor.execute(() -> callback.accept(new Health(
-                localAdb.isConnected()
-                        || sendCommand("BYD_PING_V1 " + TOKEN, PORT),
-                sendCommand("BYD_FAST_PING_V1 " + TOKEN, FAST_INPUT_PORT),
-                sendCommand("BYD_STEERING_PING_V1 " + TOKEN, 37530))));
-    }
-
     void bootstrap(boolean includeSteering, Consumer<Boolean> callback) {
         executor.execute(() -> callback.accept(
                 localAdb.startHelpers(includeSteering)));
     }
 
     void restartHelpers(Consumer<Boolean> callback) {
-        executor.execute(() -> {
-            boolean success = localAdb.startHelpers(true);
-            if (!success) {
-                success = sendCommand(
-                        "BYD_CONTROL_V1 " + TOKEN + " RESTART_HELPERS", PORT);
-            }
-            callback.accept(success);
-        });
+        executor.execute(() -> callback.accept(
+                localAdb.startHelpers(true)));
     }
 
     void restartInput(Consumer<Boolean> callback) {
-        executor.execute(() -> {
-            boolean success = localAdb.startHelpers(false);
-            if (!success) {
-                success = sendCommand(
-                        "BYD_CONTROL_V1 " + TOKEN + " RESTART_INPUT", PORT);
-            }
-            callback.accept(success);
-        });
+        executor.execute(() -> callback.accept(
+                localAdb.startHelpers(false)));
     }
 
     void captureNextSteeringKey(Consumer<Boolean> callback) {
@@ -97,19 +61,6 @@ final class ShellBridgeClient {
     void cancelSteeringKeyCapture(Consumer<Boolean> callback) {
         executor.execute(() -> callback.accept(sendCommand(
                 "BYD_STEERING_CAPTURE_CANCEL_V1 " + TOKEN, 37530)));
-    }
-
-    void enterPair(String primaryPackage, String secondaryPackage,
-                   Consumer<Boolean> callback) {
-        if (!PACKAGE_NAME.matcher(primaryPackage).matches()
-                || !PACKAGE_NAME.matcher(secondaryPackage).matches()) {
-            callback.accept(false);
-            return;
-        }
-        executor.execute(() -> {
-            boolean success = send(primaryPackage, secondaryPackage);
-            callback.accept(success);
-        });
     }
 
     void close() {
@@ -130,8 +81,9 @@ final class ShellBridgeClient {
             boolean success = localAdb.launchOnDisplay(
                     componentName, packageName, displayId);
             if (!success) {
-                success = sendCommand("BYD_EMBED_V1 " + TOKEN + " "
-                        + displayId + " " + componentName);
+                SystemClock.sleep(250);
+                success = localAdb.launchOnDisplay(
+                        componentName, packageName, displayId);
             }
             callback.accept(success);
         });
@@ -148,49 +100,11 @@ final class ShellBridgeClient {
                 localAdb.removeFromDisplay(packageName, displayId)));
     }
 
-    void injectGesture(int displayId, int startX, int startY,
-                       int endX, int endY, long durationMs) {
-        if (displayId < 1 || displayId > 999) {
-            return;
-        }
-        int safeDuration = (int) Math.max(1, Math.min(durationMs, 5000));
-        executor.execute(() -> sendCommand(
-                "BYD_INPUT_V1 " + TOKEN + " " + displayId
-                        + " " + Math.max(0, startX)
-                        + " " + Math.max(0, startY)
-                        + " " + Math.max(0, endX)
-                        + " " + Math.max(0, endY)
-                        + " " + safeDuration));
-    }
-
     void injectBack(int displayId) {
         if (displayId < 1 || displayId > 999) {
             return;
         }
-        executor.execute(() -> {
-            if (!localAdb.injectBack(displayId)) {
-                sendCommand("BYD_KEY_V1 " + TOKEN + " "
-                        + displayId + " BACK");
-            }
-        });
-    }
-
-    void injectMotion(int displayId, String action, int x, int y) {
-        if (displayId < 1 || displayId > 999
-                || !("DOWN".equals(action) || "MOVE".equals(action)
-                || "UP".equals(action) || "CANCEL".equals(action))) {
-            return;
-        }
-        String command = "BYD_FAST_MOTION_V1 " + TOKEN + " " + displayId
-                + " " + action + " " + Math.max(0, x) + " " + Math.max(0, y);
-        if (!"MOVE".equals(action)) {
-            executor.execute(() -> sendFastMotion(command));
-            return;
-        }
-        latestMove.set(command);
-        if (moveDrainScheduled.compareAndSet(false, true)) {
-            executor.execute(this::drainLatestMoves);
-        }
+        executor.execute(() -> localAdb.injectBack(displayId));
     }
 
     void injectSingleFingerMotion(int displayId, int action, int x, int y) {
@@ -238,11 +152,7 @@ final class ShellBridgeClient {
         try {
             String command;
             while ((command = latestMove.getAndSet(null)) != null) {
-                if (command.startsWith("BYD_FAST_MULTI_V1 ")) {
-                    sendCommand(command, FAST_INPUT_PORT);
-                } else {
-                    sendFastMotion(command);
-                }
+                sendCommand(command, FAST_INPUT_PORT);
             }
         } finally {
             moveDrainScheduled.set(false);
@@ -251,23 +161,6 @@ final class ShellBridgeClient {
                 executor.execute(this::drainLatestMoves);
             }
         }
-    }
-
-    private boolean sendFastMotion(String command) {
-        if (sendCommand(command, FAST_INPUT_PORT)) {
-            return true;
-        }
-        return sendCommand(command.replace(
-                "BYD_FAST_MOTION_V1", "BYD_MOTION_V1"));
-    }
-
-    private boolean send(String primaryPackage, String secondaryPackage) {
-        return sendCommand("BYD_SPLIT_V1 " + TOKEN + " "
-                + primaryPackage + " " + secondaryPackage);
-    }
-
-    private boolean sendCommand(String command) {
-        return sendCommand(command, PORT);
     }
 
     private boolean sendCommand(String command, int port) {

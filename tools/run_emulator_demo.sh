@@ -34,7 +34,7 @@ fi
 
 ./gradlew assembleDebug
 adb -s "$serial" install -r "$apk"
-"$project_dir/tools/start_adb_bridge.sh" "$serial" emulator
+"$project_dir/tools/start_helpers.sh" "$serial" emulator
 adb -s "$serial" shell am start \
     -n ru.logunov.bydsplit/.MainActivity \
     --ez demo_mode true >/dev/null

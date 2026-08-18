@@ -21,7 +21,6 @@ check_port() {
 }
 
 failed=0
-check_port "основной мост" 37527 "BYD_PING_V1" || failed=1
 check_port "касания и мультитач" 37528 "BYD_FAST_PING_V1" || failed=1
 if [ "$mode" = "dilink" ]; then
     check_port "кнопка руля" 37530 "BYD_STEERING_PING_V1" || failed=1

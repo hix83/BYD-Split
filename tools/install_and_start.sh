@@ -38,7 +38,7 @@ if [ "${BYD_SPLIT_SKIP_BUILD:-0}" != "1" ] || [ ! -f "$apk" ]; then
 fi
 
 adb -s "$serial" install -r "$apk"
-"$project_dir/tools/start_adb_bridge.sh" "$serial"
+"$project_dir/tools/start_helpers.sh" "$serial"
 adb -s "$serial" shell am start \
     -n ru.logunov.bydsplit/.MainActivity >/dev/null
 

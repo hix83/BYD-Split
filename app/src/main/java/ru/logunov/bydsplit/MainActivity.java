@@ -75,10 +75,10 @@ public final class MainActivity extends Activity {
         updateCurrentEntries();
         if (!AppPreferences.isDemoModeEnabled(this)) {
             shellBridgeClient.bootstrap(true, success -> {
-                if (!success) {
-                    android.util.Log.w("BYD_SPLIT",
-                            "Встроенный ADB не авторизован");
-                }
+                    if (!success) {
+                        android.util.Log.w("BYD_SPLIT",
+                            "Не удалось запустить ADB-помощники");
+                    }
             });
         }
         render();

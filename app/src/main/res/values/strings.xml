@@ -9,7 +9,7 @@
     <string name="open_app">Открыть</string>
     <string name="change_app">Изменить</string>
     <string name="launch_failed">Не удалось запустить приложение</string>
-    <string name="bridge_unavailable">ADB ещё не разрешён. Откройте настройки BYD Split и подтвердите штатный запрос ADB.</string>
+    <string name="bridge_unavailable">Не удалось запустить приложение во встроенной области. Перезапустите BYD Split; если ошибка повторяется, проверьте ADB.</string>
     <string name="accessibility_service_label">Кнопка микрофона BYD Split</string>
     <string name="accessibility_service_description">Передаёт кнопку микрофона на руле в открытый чат MAX.</string>
 </resources>

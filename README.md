@@ -137,7 +137,7 @@ adb devices -l
 
 1. собирает debug APK;
 2. устанавливает или обновляет приложение;
-3. при необходимости запускает резервный loopback-мост;
+3. запускает помощники касаний и кнопок руля;
 4. открывает BYD Split.
 
 Если APK уже собран и его не нужно пересобирать:
@@ -147,11 +147,10 @@ BYD_SPLIT_SKIP_BUILD=1 ./tools/install_and_start.sh 10.14.32.18:5555
 ```
 
 В обычной эксплуатации после перезагрузки никакие команды выполнять не нужно.
-Если встроенный ADB не поддерживается конкретной прошивкой, остаётся резервный
-запуск с компьютера:
+Для ручного перезапуска помощников при разработке можно использовать:
 
 ```sh
-./tools/start_adb_bridge.sh 10.14.32.18:5555
+./tools/start_helpers.sh 10.14.32.18:5555
 ```
 
 Проверка всех помощников:
@@ -268,7 +267,6 @@ app/build/outputs/apk/debug/app-debug.apk
 | Компонент | Порт | Назначение |
 | --- | ---: | --- |
 | `LocalAdbClient` | `5555` | Встроенная ADB-аутентификация и разрешённые shell-команды |
-| `byd_split_bridge.sh` | `37527` | Только резервный мост для разработки и восстановления |
 | `ShellInputDaemon` | `37528` | Быстрая передача одно- и многопальцевых MotionEvent |
 | `SteeringEventServer` | `37529` | Приём событий руля внутри APK |
 | `SteeringInputDaemon` | `37530` | Чтение BYD input device и health-check |
@@ -281,8 +279,8 @@ app/build/outputs/apk/debug/app-debug.apk
 ```text
 app/                         Android-приложение
 tools/install_and_start.sh   Полная установка и bootstrap
-tools/start_adb_bridge.sh    Резервный запуск для несовместимой прошивки
-tools/check_status.sh        Проверка трёх локальных компонентов
+tools/start_helpers.sh       Ручной перезапуск помощников через ADB
+tools/check_status.sh        Проверка помощников касаний и руля
 tools/run_emulator_demo.sh   Запуск демонстрации на AVD
 .github/workflows/android.yml CI: сборка, lint и APK-артефакт
 docs/screenshots/            Изображения для README
