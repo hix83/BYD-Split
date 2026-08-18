@@ -83,8 +83,8 @@ public final class SettingsActivity extends Activity
         root.addView(header);
 
         TextView intro = text(
-                "Настройте расположение панелей, кнопку на руле, "
-                        + "автозапуск и режим Android Emulator.",
+                "Настройте расположение панелей, полноэкранный режим, "
+                        + "кнопку на руле, автозапуск и режим Android Emulator.",
                 16, getColor(R.color.text_secondary));
         LinearLayout.LayoutParams introParams = fullWidthWrap();
         introParams.topMargin = dp(12);
@@ -148,6 +148,23 @@ public final class SettingsActivity extends Activity
 
         LinearLayout behaviorCard = card();
         behaviorCard.addView(sectionTitle("Поведение"));
+        Switch fullscreen = settingsSwitch(
+                "Полноэкранный режим",
+                AppPreferences.isFullscreenEnabled(this));
+        fullscreen.setOnCheckedChangeListener((button, checked) -> {
+            AppPreferences.get(this).edit()
+                    .putBoolean(AppPreferences.KEY_FULLSCREEN, checked)
+                    .apply();
+            MainActivity.applyFullscreenModeFromSettings();
+        });
+        addWithTop(behaviorCard, fullscreen, 10);
+        TextView fullscreenHelp = text(
+                "Скрывает верхнюю и нижнюю системные панели DiLink. "
+                        + "В полноэкранном режиме их можно временно показать "
+                        + "свайпом от края экрана.",
+                14, getColor(R.color.text_secondary));
+        addWithTop(behaviorCard, fullscreenHelp, 6);
+
         Switch autoStart = settingsSwitch(
                 "Автозапуск после загрузки DiLink",
                 AppPreferences.isAutoStartEnabled(this));
@@ -155,7 +172,7 @@ public final class SettingsActivity extends Activity
                 AppPreferences.get(this).edit()
                         .putBoolean(AppPreferences.KEY_AUTO_START, checked)
                         .apply());
-        addWithTop(behaviorCard, autoStart, 10);
+        addWithTop(behaviorCard, autoStart, 12);
 
         Switch demoMode = settingsSwitch(
                 "Режим Android Emulator",

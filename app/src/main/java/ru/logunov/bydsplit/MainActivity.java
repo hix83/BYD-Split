@@ -85,7 +85,7 @@ public final class MainActivity extends Activity {
             });
         }
         render();
-        enterImmersiveMode();
+        applySystemBarsMode();
     }
 
     @Override
@@ -102,39 +102,56 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
-        enterImmersiveMode();
+        applySystemBarsMode();
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
-            enterImmersiveMode();
+            applySystemBarsMode();
         }
     }
 
     @SuppressWarnings("deprecation")
-    private void enterImmersiveMode() {
+    private void applySystemBarsMode() {
+        boolean fullscreen = AppPreferences.isFullscreenEnabled(this);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            getWindow().setDecorFitsSystemWindows(false);
+            getWindow().setDecorFitsSystemWindows(!fullscreen);
             WindowInsetsController controller =
                     getWindow().getDecorView().getWindowInsetsController();
             if (controller != null) {
-                controller.hide(WindowInsets.Type.statusBars()
-                        | WindowInsets.Type.navigationBars());
-                controller.setSystemBarsBehavior(
-                        WindowInsetsController
-                                .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                int systemBars = WindowInsets.Type.statusBars()
+                        | WindowInsets.Type.navigationBars();
+                if (fullscreen) {
+                    controller.hide(systemBars);
+                    controller.setSystemBarsBehavior(
+                            WindowInsetsController
+                                    .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                } else {
+                    controller.show(systemBars);
+                }
             }
             return;
         }
         getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+                fullscreen
+                        ? View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        : View.SYSTEM_UI_FLAG_VISIBLE);
+    }
+
+    static void applyFullscreenModeFromSettings() {
+        MainActivity activity = currentActivity.get();
+        if (activity == null || activity.isFinishing()
+                || activity.isDestroyed()) {
+            return;
+        }
+        activity.runOnUiThread(activity::applySystemBarsMode);
     }
 
     @Override

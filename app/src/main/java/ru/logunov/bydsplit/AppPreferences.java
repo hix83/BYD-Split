@@ -13,6 +13,7 @@ final class AppPreferences {
     static final String KEY_DRIVER_APP_INDEX = "driver_app_index";
     static final String KEY_FAR_APP_INDEX = "far_app_index";
     static final String KEY_AUTO_START = "auto_start";
+    static final String KEY_FULLSCREEN = "fullscreen";
     static final String KEY_DEMO_MODE = "demo_mode";
     static final String KEY_PANEL_LAYOUT = "panel_layout";
     static final String KEY_PANEL_RATIO = "panel_ratio";
@@ -35,6 +36,10 @@ final class AppPreferences {
 
     static boolean isAutoStartEnabled(Context context) {
         return get(context).getBoolean(KEY_AUTO_START, true);
+    }
+
+    static boolean isFullscreenEnabled(Context context) {
+        return get(context).getBoolean(KEY_FULLSCREEN, true);
     }
 
     static boolean isDemoModeEnabled(Context context) {
