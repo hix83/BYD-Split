@@ -522,6 +522,7 @@ public final class MainActivity extends Activity {
         int currentIndex = driverPane
                 ? driverAppIndex : farAppIndex;
         int delta = driverPane ? -1 : 1;
+        int animationDirection = driverPane ? 1 : -1;
         int nextIndex = (currentIndex + delta + apps.size()) % apps.size();
         if (driverPane) {
             driverAppIndex = nextIndex;
@@ -534,7 +535,8 @@ public final class MainActivity extends Activity {
                 ? driverEmbeddedPane : farEmbeddedPane;
         if (pane != null) {
             pane.switchApp(
-                    apps.get(nextIndex), nextIndex, apps.size(), delta);
+                    apps.get(nextIndex), nextIndex, apps.size(),
+                    animationDirection);
         }
     }
 

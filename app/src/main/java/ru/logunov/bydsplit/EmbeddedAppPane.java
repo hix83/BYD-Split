@@ -380,11 +380,82 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     } else {
                         snapshot.recycle();
                     }
-                    launchSwitchedApp(
-                            component, displayId, direction,
-                            overlay, generation);
+                    if (overlay == null) {
+                        launchSwitchedApp(
+                                component, displayId, direction,
+                                null, generation);
+                    } else {
+                        animateCachedTransitionAndLaunch(
+                                component, displayId, direction,
+                                overlay, generation);
+                    }
                 },
                 new Handler(Looper.getMainLooper()));
+    }
+
+    private void animateCachedTransitionAndLaunch(
+            String component, int displayId, int direction,
+            ImageView snapshot, int generation) {
+        Bitmap incomingBitmap = cachedFrameOrPlaceholder(entry);
+        ImageView incoming = new ImageView(getContext());
+        incoming.setScaleType(ImageView.ScaleType.FIT_XY);
+        incoming.setImageBitmap(incomingBitmap);
+        transitionIncoming = incoming;
+        transitionIncomingBitmap = incomingBitmap;
+        addView(incoming, indexOfChild(snapshot) + 1,
+                new LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+
+        boolean[] animationFinished = {false};
+        boolean[] launchFinished = {false};
+        Runnable revealLiveApp = () -> {
+            if (!animationFinished[0] || !launchFinished[0]
+                    || generation != appSwitchGeneration) {
+                return;
+            }
+            postDelayed(() -> {
+                if (generation != appSwitchGeneration) {
+                    return;
+                }
+                clearTransitionSnapshot();
+                cacheDisplayedFrame(component);
+                deleteReplacementReady = true;
+                maybeRevealDeleteReplacement();
+            }, 45);
+        };
+
+        float distance = getWidth();
+        float exitX = direction > 0 ? -distance : distance;
+        incoming.setTranslationX(-exitX);
+        incoming.animate()
+                .translationX(0f)
+                .setDuration(230)
+                .start();
+        snapshot.animate()
+                .translationX(exitX)
+                .setDuration(230)
+                .withEndAction(() -> {
+                    animationFinished[0] = true;
+                    revealLiveApp.run();
+                })
+                .start();
+
+        shellBridgeClient.launchOnDisplay(
+                component, displayId,
+                success -> post(() -> {
+                    if (generation != appSwitchGeneration) {
+                        return;
+                    }
+                    if (!success) {
+                        clearTransitionSnapshot();
+                        showFailure(getResources().getString(
+                                R.string.bridge_unavailable));
+                        return;
+                    }
+                    launchFinished[0] = true;
+                    revealLiveApp.run();
+                }));
     }
 
     private void launchSwitchedApp(

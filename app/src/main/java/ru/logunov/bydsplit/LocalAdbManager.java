@@ -80,13 +80,26 @@ final class LocalAdbManager {
                             + "; sleep 0.2"
                             + "; task_id=$(am stack list | awk -v target='"
                             + packageName
+                            + "/' -v display='displayId=" + displayId
+                            + "' '/^RootTask id=/{split($2,p,\"=\");"
+                            + "root=p[2]; on_display=index($0,display)>0} "
+                            + "on_display && index($0,target)>0{print root;"
+                            + "exit}'); if [ -z \"$task_id\" ]; then "
+                            + "task_id=$(am stack list | awk -v target='"
+                            + packageName
                             + "/' '/^RootTask id=/{split($2,p,\"=\");"
                             + "root=p[2]} index($0,target)>0{print root;"
                             + "exit}'); [ -z \"$task_id\" ] || "
                             + "am display move-stack \"$task_id\" "
-                            + displayId);
-            return !output.contains("Error:")
-                    && !output.contains("Exception");
+                            + displayId + " >/dev/null 2>&1; sleep 0.1; fi"
+                            + "; am stack list | awk -v target='"
+                            + packageName
+                            + "/' -v display='displayId=" + displayId
+                            + "' '/^RootTask id=/{on_display="
+                            + "index($0,display)>0} on_display && "
+                            + "index($0,target)>0{print \"BYD_SPLIT_LAUNCH_OK\";"
+                            + "exit}'");
+            return output.contains("BYD_SPLIT_LAUNCH_OK");
         } catch (Exception error) {
             client.close();
             Log.e(TAG, "Cannot launch on virtual display", error);
