@@ -47,7 +47,10 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private AppEntry entry;
     private final String paneName;
     private final ShellBridgeClient shellBridgeClient;
-    private final Runnable changeAction;
+    private final Runnable pickerDragStartAction;
+    private final IntConsumer pickerDragMoveAction;
+    private final IntConsumer pickerDragEndAction;
+    private final Runnable pickerDragCancelAction;
     private final IntConsumer carouselAction;
     private final Function<Integer, AppEntry> adjacentAppProvider;
     private final IntConsumer interactiveCommitAction;
@@ -118,7 +121,10 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
 
     EmbeddedAppPane(Context context, AppEntry entry, String paneName,
                     ShellBridgeClient shellBridgeClient,
-                    Runnable changeAction,
+                    Runnable pickerDragStartAction,
+                    IntConsumer pickerDragMoveAction,
+                    IntConsumer pickerDragEndAction,
+                    Runnable pickerDragCancelAction,
                     IntConsumer carouselAction,
                     Function<Integer, AppEntry> adjacentAppProvider,
                     IntConsumer interactiveCommitAction,
@@ -128,7 +134,10 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         this.entry = entry;
         this.paneName = paneName;
         this.shellBridgeClient = shellBridgeClient;
-        this.changeAction = changeAction;
+        this.pickerDragStartAction = pickerDragStartAction;
+        this.pickerDragMoveAction = pickerDragMoveAction;
+        this.pickerDragEndAction = pickerDragEndAction;
+        this.pickerDragCancelAction = pickerDragCancelAction;
         this.carouselAction = carouselAction;
         this.adjacentAppProvider = adjacentAppProvider;
         this.interactiveCommitAction = interactiveCommitAction;
@@ -186,11 +195,15 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 case MotionEvent.ACTION_DOWN:
                     revealStartY = event.getRawY();
                     revealTriggered[0] = false;
+                    pickerDragStartAction.run();
                     return true;
                 case MotionEvent.ACTION_MOVE:
+                    int dragDistance = Math.max(0, Math.round(distance));
                     revealHandle.setTranslationY(Math.max(0f,
                             Math.min(dp(12), distance * 0.35f)));
-                    if (!revealTriggered[0] && distance >= dp(18)) {
+                    pickerDragMoveAction.accept(dragDistance);
+                    if (!revealTriggered[0]
+                            && dragDistance >= getHeight() / 3) {
                         revealTriggered[0] = true;
                         performHapticFeedback(
                                 HapticFeedbackConstants.CLOCK_TICK);
@@ -200,13 +213,13 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     revealHandle.animate().translationY(0f)
                             .setDuration(120).start();
                     view.performClick();
-                    if (revealTriggered[0] || distance >= dp(18)) {
-                        changeAction.run();
-                    }
+                    pickerDragEndAction.accept(
+                            Math.max(0, Math.round(distance)));
                     return true;
                 case MotionEvent.ACTION_CANCEL:
                     revealHandle.animate().translationY(0f)
                             .setDuration(120).start();
+                    pickerDragCancelAction.run();
                     return true;
                 default:
                     return true;

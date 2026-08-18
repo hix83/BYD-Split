@@ -15,6 +15,7 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.GridLayout;
 import android.widget.ImageView;
@@ -344,7 +345,11 @@ public final class MainActivity extends Activity {
                 entry,
                 driverPane ? "driver" : "far",
                 shellBridgeClient,
-                () -> chooseApp(preferenceKey),
+                () -> beginPickerDrag(preferenceKey),
+                distance -> updatePickerDrag(preferenceKey, distance),
+                distance -> finishPickerDrag(
+                        preferenceKey, distance, false),
+                () -> finishPickerDrag(preferenceKey, 0, true),
                 delta -> moveCarousel(preferenceKey, delta),
                 delta -> getAdjacentApp(preferenceKey, delta),
                 delta -> commitInteractiveCarousel(preferenceKey, delta),
@@ -361,11 +366,16 @@ public final class MainActivity extends Activity {
         return pane;
     }
 
-    private void chooseApp(String preferenceKey) {
-        showPicker(preferenceKey, 0);
+    private void showPicker(String preferenceKey, int direction) {
+        createPicker(preferenceKey, direction, false);
     }
 
-    private void showPicker(String preferenceKey, int direction) {
+    private void beginPickerDrag(String preferenceKey) {
+        createPicker(preferenceKey, 0, true);
+    }
+
+    private void createPicker(
+            String preferenceKey, int direction, boolean hiddenAbove) {
         hidePicker();
         boolean driverPane = KEY_DRIVER_APP.equals(preferenceKey);
         FrameLayout slot = driverPane ? driverSlot : farSlot;
@@ -379,9 +389,59 @@ public final class MainActivity extends Activity {
                 getString(driverPane
                         ? R.string.driver_zone : R.string.passenger_zone),
                 current, preferenceKey, driverPane);
+        if (hiddenAbove) {
+            pickerOverlay.setTranslationY(-Math.max(1, slot.getHeight()));
+        }
         slot.addView(pickerOverlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private void updatePickerDrag(String preferenceKey, int distance) {
+        if (pickerOverlay == null
+                || !preferenceKey.equals(pickingKey)) {
+            return;
+        }
+        ViewGroup parent = (ViewGroup) pickerOverlay.getParent();
+        int height = parent == null ? 0 : parent.getHeight();
+        if (height <= 0) {
+            return;
+        }
+        pickerOverlay.animate().cancel();
+        float visibleDistance = Math.min(height, Math.max(0, distance));
+        pickerOverlay.setTranslationY(-height + visibleDistance);
+    }
+
+    private void finishPickerDrag(
+            String preferenceKey, int distance, boolean cancelled) {
+        if (pickerOverlay == null
+                || !preferenceKey.equals(pickingKey)) {
+            return;
+        }
+        View overlay = pickerOverlay;
+        ViewGroup parent = (ViewGroup) overlay.getParent();
+        int height = parent == null ? 0 : parent.getHeight();
+        if (height <= 0) {
+            if (cancelled) {
+                hidePicker();
+            }
+            return;
+        }
+        boolean open = !cancelled && distance >= height / 3;
+        float targetY = open ? 0f : -height;
+        float remaining = Math.abs(targetY - overlay.getTranslationY());
+        long duration = Math.max(120L,
+                Math.round(260f * remaining / height));
+        overlay.animate()
+                .translationY(targetY)
+                .setDuration(duration)
+                .setInterpolator(new DecelerateInterpolator(1.4f))
+                .withEndAction(() -> {
+                    if (!open && overlay == pickerOverlay) {
+                        hidePicker();
+                    }
+                })
+                .start();
     }
 
     private void hidePicker() {
