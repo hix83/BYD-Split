@@ -174,32 +174,57 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         addView(pageIndicator, indicatorParams);
         updatePageIndicator(pageIndex, pageCount);
 
-        View revealEdge = new View(context);
-        revealEdge.setContentDescription("Показать управление панелью");
-        revealEdge.setOnTouchListener((view, event) -> {
+        FrameLayout revealHandle = new FrameLayout(context);
+        revealHandle.setContentDescription(
+                "Потяните вниз, чтобы показать управление панелью");
+        View revealGrip = new View(context);
+        revealGrip.setBackground(rounded(0xD9B9C2CC, 4));
+        FrameLayout.LayoutParams gripParams = new FrameLayout.LayoutParams(
+                dp(58), dp(5), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        gripParams.topMargin = dp(6);
+        revealHandle.addView(revealGrip, gripParams);
+
+        boolean[] revealTriggered = {false};
+        View.OnTouchListener revealListener = (view, event) -> {
+            float distance = event.getRawY() - revealStartY;
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    revealStartY = event.getY();
+                    revealStartY = event.getRawY();
+                    revealTriggered[0] = false;
                     return true;
                 case MotionEvent.ACTION_MOVE:
-                    if (event.getY() - revealStartY >= dp(18)) {
+                    revealHandle.setTranslationY(Math.max(0f,
+                            Math.min(dp(12), distance * 0.35f)));
+                    if (!revealTriggered[0] && distance >= dp(18)) {
+                        revealTriggered[0] = true;
                         showPaneControls();
                     }
                     return true;
                 case MotionEvent.ACTION_UP:
-                    if (event.getY() - revealStartY >= dp(18)) {
+                    if (!revealTriggered[0] && distance >= dp(18)) {
                         showPaneControls();
                     }
+                    revealHandle.animate().translationY(0f)
+                            .setDuration(120).start();
                     view.performClick();
                     return true;
                 case MotionEvent.ACTION_CANCEL:
+                    revealHandle.animate().translationY(0f)
+                            .setDuration(120).start();
                     return true;
                 default:
                     return true;
             }
-        });
+        };
+
+        View revealEdge = new View(context);
+        revealEdge.setContentDescription("Показать управление панелью");
+        revealEdge.setOnTouchListener(revealListener);
         addView(revealEdge, new LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(14), Gravity.TOP));
+        revealHandle.setOnTouchListener(revealListener);
+        addView(revealHandle, new LayoutParams(
+                dp(104), dp(28), Gravity.TOP | Gravity.CENTER_HORIZONTAL));
 
         controlsOverlay = new FrameLayout(context);
         controlsOverlay.setAlpha(0f);
