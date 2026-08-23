@@ -17,13 +17,13 @@ final class AppPreferences {
     static final String KEY_DEMO_MODE = "demo_mode";
     static final String KEY_PANEL_LAYOUT = "panel_layout";
     static final String KEY_PANEL_RATIO = "panel_ratio";
+    static final String KEY_COMPACT_TARGET = "compact_target";
     static final String KEY_STEERING_SHORT_SCAN = "steering_short_scan";
     static final String KEY_STEERING_LONG_SCAN = "steering_long_scan";
     static final String PANEL_LAYOUT_ONE_TWO = "1_2";
     static final String PANEL_LAYOUT_TWO_ONE = "2_1";
     static final String PANEL_LAYOUT_CUSTOM = "custom";
-    static final float MIN_PANEL_RATIO = 0.25f;
-    static final float MAX_PANEL_RATIO = 0.75f;
+    static final String COMPACT_TARGET_VEHICLE = "vehicle";
     static final int DEFAULT_STEERING_SHORT_SCAN = 290;
     static final int DEFAULT_STEERING_LONG_SCAN = 312;
 
@@ -46,45 +46,33 @@ final class AppPreferences {
         return get(context).getBoolean(KEY_DEMO_MODE, false);
     }
 
-    static boolean isDriverPaneLarge(Context context) {
-        return getPanelRatio(context) > 0.5f;
+    static boolean isCompactPaneOnLeft(Context context) {
+        SharedPreferences preferences = get(context);
+        String layout = preferences.getString(
+                KEY_PANEL_LAYOUT, PANEL_LAYOUT_ONE_TWO);
+        if (PANEL_LAYOUT_CUSTOM.equals(layout)) {
+            return preferences.getFloat(KEY_PANEL_RATIO, 1f / 3f) <= 0.5f;
+        }
+        return !PANEL_LAYOUT_TWO_ONE.equals(layout);
     }
 
-    static void setDriverPaneLarge(Context context, boolean driverPaneLarge) {
+    static void setCompactPaneOnLeft(Context context, boolean onLeft) {
         get(context).edit()
                 .putString(KEY_PANEL_LAYOUT,
-                        driverPaneLarge
-                                ? PANEL_LAYOUT_TWO_ONE
-                                : PANEL_LAYOUT_ONE_TWO)
-                .putFloat(KEY_PANEL_RATIO,
-                        driverPaneLarge ? 2f / 3f : 1f / 3f)
+                        onLeft ? PANEL_LAYOUT_ONE_TWO : PANEL_LAYOUT_TWO_ONE)
+                .remove(KEY_PANEL_RATIO)
                 .apply();
     }
 
-    static float getPanelRatio(Context context) {
-        SharedPreferences preferences = get(context);
-        if (preferences.contains(KEY_PANEL_RATIO)) {
-            return clampPanelRatio(
-                    preferences.getFloat(KEY_PANEL_RATIO, 1f / 3f));
-        }
-        return PANEL_LAYOUT_TWO_ONE.equals(preferences.getString(
-                KEY_PANEL_LAYOUT, PANEL_LAYOUT_ONE_TWO))
-                ? 2f / 3f : 1f / 3f;
+    static String getCompactTarget(Context context) {
+        return get(context).getString(
+                KEY_COMPACT_TARGET, COMPACT_TARGET_VEHICLE);
     }
 
-    static void setPanelRatio(Context context, float ratio) {
+    static void setCompactTarget(Context context, String target) {
         get(context).edit()
-                .putFloat(KEY_PANEL_RATIO, clampPanelRatio(ratio))
-                .putString(KEY_PANEL_LAYOUT, PANEL_LAYOUT_CUSTOM)
+                .putString(KEY_COMPACT_TARGET, target)
                 .apply();
-    }
-
-    static boolean isPanelRatioPreset(Context context, float preset) {
-        return Math.abs(getPanelRatio(context) - preset) < 0.015f;
-    }
-
-    private static float clampPanelRatio(float ratio) {
-        return Math.max(MIN_PANEL_RATIO, Math.min(MAX_PANEL_RATIO, ratio));
     }
 
     static int getSteeringShortScan(Context context) {

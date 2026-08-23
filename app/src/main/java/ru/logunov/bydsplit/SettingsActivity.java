@@ -94,21 +94,22 @@ public final class SettingsActivity extends Activity
         LinearLayout layoutCard = card();
         layoutCard.addView(sectionTitle("Расположение панелей"));
         layoutHelp = text(
-                "Выберите, какая панель будет шире. Размер меняется сразу, "
-                        + "без перезапуска открытых приложений.",
+                "Размеры зафиксированы: служебная область занимает ⅓, "
+                        + "основное приложение — ⅔. Выберите сторону "
+                        + "служебной области.",
                 15, getColor(R.color.text_secondary));
         addWithTop(layoutCard, layoutHelp, 8);
 
         LinearLayout layoutActions = horizontalActions();
         oneTwoButton = actionButton("1 : 2");
         oneTwoButton.setContentDescription(
-                "Маленькая панель у водителя, большая справа");
-        oneTwoButton.setOnClickListener(view -> setDriverPaneLarge(false));
+                "Служебная область слева, основная справа");
+        oneTwoButton.setOnClickListener(view -> setCompactPaneOnLeft(true));
         layoutActions.addView(oneTwoButton, weightedButtonParams());
         twoOneButton = actionButton("2 : 1");
         twoOneButton.setContentDescription(
-                "Большая панель у водителя, маленькая справа");
-        twoOneButton.setOnClickListener(view -> setDriverPaneLarge(true));
+                "Основная область слева, служебная справа");
+        twoOneButton.setOnClickListener(view -> setCompactPaneOnLeft(false));
         LinearLayout.LayoutParams twoOneParams = weightedButtonParams();
         twoOneParams.setMarginStart(dp(10));
         layoutActions.addView(twoOneButton, twoOneParams);
@@ -307,29 +308,20 @@ public final class SettingsActivity extends Activity
         steeringResetButton.setEnabled(enabled);
     }
 
-    private void setDriverPaneLarge(boolean driverPaneLarge) {
-        AppPreferences.setDriverPaneLarge(this, driverPaneLarge);
+    private void setCompactPaneOnLeft(boolean onLeft) {
+        AppPreferences.setCompactPaneOnLeft(this, onLeft);
         updateLayoutButtons();
         MainActivity.applyPanelLayoutFromSettings();
     }
 
     private void updateLayoutButtons() {
-        float ratio = AppPreferences.getPanelRatio(this);
-        boolean oneTwo = AppPreferences.isPanelRatioPreset(this, 1f / 3f);
-        boolean twoOne = AppPreferences.isPanelRatioPreset(this, 2f / 3f);
-        styleLayoutButton(oneTwoButton, oneTwo);
-        styleLayoutButton(twoOneButton, twoOne);
-        if (!oneTwo && !twoOne) {
-            int driverPercent = Math.round(ratio * 100);
-            layoutHelp.setText("Свой размер: " + driverPercent + " : "
-                    + (100 - driverPercent)
-                    + ". Перетащите разделитель между панелями или выберите "
-                    + "готовую пропорцию ниже.");
-        } else {
-            layoutHelp.setText(
-                    "Выберите, какая панель будет шире. Размер меняется сразу, "
-                            + "без перезапуска открытых приложений.");
-        }
+        boolean compactOnLeft = AppPreferences.isCompactPaneOnLeft(this);
+        styleLayoutButton(oneTwoButton, compactOnLeft);
+        styleLayoutButton(twoOneButton, !compactOnLeft);
+        layoutHelp.setText(
+                "Размеры зафиксированы: служебная область занимает ⅓, "
+                        + "основное приложение — ⅔. Переключение меняет "
+                        + "области местами без перезапуска приложений.");
     }
 
     private void styleLayoutButton(Button button, boolean selected) {

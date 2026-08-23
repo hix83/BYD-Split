@@ -5,11 +5,11 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -22,6 +22,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +32,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class MainActivity extends Activity {
     private static final String KEY_DRIVER_APP = AppPreferences.KEY_DRIVER_APP;
     private static final String KEY_FAR_APP = AppPreferences.KEY_FAR_APP;
+    private static final String PACKAGE_MAX = "ru.oneme.app";
+    private static final String PACKAGE_YANDEX_MUSIC = "ru.yandex.music";
+    private static final String PACKAGE_YANDEX_MUSIC_ALT = "com.yandex.music";
 
     private final List<EmbeddedAppPane> activePanes =
             new CopyOnWriteArrayList<>();
@@ -51,10 +55,13 @@ public final class MainActivity extends Activity {
     private int pickingDirection;
     private View pickerOverlay;
     private LinearLayout splitRoot;
+    private LinearLayout compactPaneContainer;
+    private View dividerView;
     private FrameLayout driverSlot;
     private FrameLayout farSlot;
     private EmbeddedAppPane driverEmbeddedPane;
     private EmbeddedAppPane farEmbeddedPane;
+    private boolean showingVehicleDashboard;
     private volatile boolean resumed;
 
     @Override
@@ -70,6 +77,7 @@ public final class MainActivity extends Activity {
         steeringEventServer.start();
         driverApps = readCarousel(
                 AppPreferences.KEY_DRIVER_APPS, KEY_DRIVER_APP);
+        driverApps = filterCompactApps(driverApps);
         farApps = readCarousel(
                 AppPreferences.KEY_FAR_APPS, KEY_FAR_APP);
         driverAppIndex = readIndex(
@@ -239,97 +247,214 @@ public final class MainActivity extends Activity {
 
         splitRoot = new LinearLayout(this);
         splitRoot.setOrientation(LinearLayout.HORIZONTAL);
-        splitRoot.setPadding(dp(10), dp(10), dp(10), dp(10));
+        splitRoot.setPadding(dp(8), dp(8), dp(8), dp(8));
         splitRoot.setBackgroundColor(getColor(R.color.background));
 
         driverSlot = new FrameLayout(this);
         farSlot = new FrameLayout(this);
 
-        float ratio = AppPreferences.getPanelRatio(this);
-        LinearLayout.LayoutParams driverParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT, ratio);
-        LinearLayout.LayoutParams farParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f - ratio);
-        splitRoot.addView(driverSlot, driverParams);
-        splitRoot.addView(createDivider(), new LinearLayout.LayoutParams(
-                dp(16), ViewGroup.LayoutParams.MATCH_PARENT));
-        splitRoot.addView(farSlot, farParams);
+        compactPaneContainer = new LinearLayout(this);
+        compactPaneContainer.setOrientation(LinearLayout.VERTICAL);
+        compactPaneContainer.setPadding(dp(3), dp(3), dp(3), dp(3));
+        compactPaneContainer.setBackground(roundedBackground(
+                Color.rgb(13, 22, 36), 18));
+        compactPaneContainer.addView(driverSlot, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        compactPaneContainer.addView(createCompactDock(),
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(86)));
+
+        dividerView = createDivider();
+        attachPanelOrder();
         setContentView(splitRoot);
-        refreshPane(KEY_DRIVER_APP);
+        restoreCompactContent();
         refreshPane(KEY_FAR_APP);
     }
 
     private void applyPanelLayout() {
-        if (driverSlot == null || farSlot == null) {
+        if (splitRoot == null || compactPaneContainer == null
+                || farSlot == null || dividerView == null) {
             return;
         }
-        float ratio = AppPreferences.getPanelRatio(this);
-        LinearLayout.LayoutParams driverParams =
-                (LinearLayout.LayoutParams) driverSlot.getLayoutParams();
-        LinearLayout.LayoutParams farParams =
-                (LinearLayout.LayoutParams) farSlot.getLayoutParams();
-        driverParams.weight = ratio;
-        farParams.weight = 1f - ratio;
-        driverSlot.setLayoutParams(driverParams);
-        farSlot.setLayoutParams(farParams);
+        attachPanelOrder();
     }
 
-    @SuppressWarnings("ClickableViewAccessibility")
+    private void attachPanelOrder() {
+        splitRoot.removeAllViews();
+        LinearLayout.LayoutParams compactParams =
+                new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        LinearLayout.LayoutParams mainParams =
+                new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.MATCH_PARENT, 2f);
+        LinearLayout.LayoutParams dividerParams =
+                new LinearLayout.LayoutParams(
+                        dp(10), ViewGroup.LayoutParams.MATCH_PARENT);
+        if (AppPreferences.isCompactPaneOnLeft(this)) {
+            splitRoot.addView(compactPaneContainer, compactParams);
+            splitRoot.addView(dividerView, dividerParams);
+            splitRoot.addView(farSlot, mainParams);
+        } else {
+            splitRoot.addView(farSlot, mainParams);
+            splitRoot.addView(dividerView, dividerParams);
+            splitRoot.addView(compactPaneContainer, compactParams);
+        }
+    }
+
     private View createDivider() {
         FrameLayout divider = new FrameLayout(this);
-        divider.setContentDescription("Изменить размер областей");
+        divider.setContentDescription("Фиксированная граница областей");
         View handle = new View(this);
-        handle.setBackground(roundedBackground(0xCC9EABB8, 4));
+        handle.setBackground(roundedBackground(0x994C8DFF, 4));
         divider.addView(handle, new FrameLayout.LayoutParams(
-                dp(4), dp(52), Gravity.CENTER));
-        divider.setOnTouchListener((view, event) -> {
-            if (splitRoot == null) {
-                return true;
-            }
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    view.getParent().requestDisallowInterceptTouchEvent(true);
-                    return true;
-                case MotionEvent.ACTION_MOVE:
-                    updateRatioFromTouch(event.getRawX(), false);
-                    return true;
-                case MotionEvent.ACTION_UP:
-                    updateRatioFromTouch(event.getRawX(), true);
-                    view.performClick();
-                    return true;
-                case MotionEvent.ACTION_CANCEL:
-                    return true;
-                default:
-                    return true;
-            }
-        });
+                dp(2), dp(62), Gravity.CENTER));
         return divider;
     }
 
-    private void updateRatioFromTouch(float rawX, boolean persist) {
-        int[] location = new int[2];
-        splitRoot.getLocationOnScreen(location);
-        float usableWidth = splitRoot.getWidth()
-                - splitRoot.getPaddingLeft() - splitRoot.getPaddingRight()
-                - dp(16);
-        if (usableWidth <= 0) {
+    private View createCompactDock() {
+        LinearLayout dock = new LinearLayout(this);
+        dock.setOrientation(LinearLayout.HORIZONTAL);
+        dock.setGravity(Gravity.CENTER);
+        dock.setPadding(dp(5), dp(7), dp(5), dp(5));
+        dock.setBackground(roundedBackground(Color.rgb(8, 15, 25), 14));
+
+        AppEntry yandex = findFirstInstalled(
+                PACKAGE_YANDEX_MUSIC, PACKAGE_YANDEX_MUSIC_ALT);
+        AppEntry max = findFirstInstalled(PACKAGE_MAX);
+        addCompactButton(dock, "Я.Музыка",
+                yandex == null
+                        ? QuickIconDrawable.yandexMusic()
+                        : yandex.icon,
+                () -> activateCompactApp(
+                        PACKAGE_YANDEX_MUSIC, PACKAGE_YANDEX_MUSIC_ALT));
+        addCompactButton(dock, "MAX",
+                max == null ? QuickIconDrawable.max() : max.icon,
+                () -> activateCompactApp(PACKAGE_MAX));
+        addCompactButton(dock, "Авто", QuickIconDrawable.song(),
+                () -> showVehicleDashboard(true));
+        addCompactButton(dock, "Камеры", QuickIconDrawable.camera(),
+                () -> Toast.makeText(this,
+                        "Окно камер будет добавлено отдельным этапом",
+                        Toast.LENGTH_SHORT).show());
+        return dock;
+    }
+
+    private void addCompactButton(LinearLayout dock, String label,
+                                  Drawable icon, Runnable action) {
+        LinearLayout button = new LinearLayout(this);
+        button.setOrientation(LinearLayout.VERTICAL);
+        button.setGravity(Gravity.CENTER);
+        button.setPadding(dp(3), dp(5), dp(3), dp(3));
+        button.setBackground(roundedBackground(Color.rgb(23, 34, 53), 12));
+        button.setContentDescription(label);
+        button.setOnClickListener(view -> action.run());
+
+        ImageView image = new ImageView(this);
+        image.setImageDrawable(icon);
+        image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        button.addView(image, new LinearLayout.LayoutParams(dp(40), dp(40)));
+
+        TextView text = new TextView(this);
+        text.setText(label);
+        text.setTextColor(Color.WHITE);
+        text.setTextSize(10);
+        text.setGravity(Gravity.CENTER);
+        text.setMaxLines(1);
+        button.addView(text, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(22)));
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        params.setMarginStart(dp(3));
+        params.setMarginEnd(dp(3));
+        dock.addView(button, params);
+    }
+
+    private void restoreCompactContent() {
+        String target = AppPreferences.getCompactTarget(this);
+        if (!AppPreferences.COMPACT_TARGET_VEHICLE.equals(target)
+                && activateCompactAppInternal(false, false, target)) {
             return;
         }
-        float ratio = (rawX - location[0] - splitRoot.getPaddingLeft()
-                - dp(8)) / usableWidth;
-        ratio = Math.max(AppPreferences.MIN_PANEL_RATIO,
-                Math.min(AppPreferences.MAX_PANEL_RATIO, ratio));
-        LinearLayout.LayoutParams driverParams =
-                (LinearLayout.LayoutParams) driverSlot.getLayoutParams();
-        LinearLayout.LayoutParams farParams =
-                (LinearLayout.LayoutParams) farSlot.getLayoutParams();
-        driverParams.weight = ratio;
-        farParams.weight = 1f - ratio;
-        driverSlot.setLayoutParams(driverParams);
-        farSlot.setLayoutParams(farParams);
+        showVehicleDashboard(false);
+    }
+
+    private void showVehicleDashboard(boolean persist) {
+        hidePicker();
+        releasePane(true);
+        driverSlot.removeAllViews();
+        driverSlot.addView(new VehicleDashboardView(this),
+                new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+        showingVehicleDashboard = true;
         if (persist) {
-            AppPreferences.setPanelRatio(this, ratio);
+            AppPreferences.setCompactTarget(
+                    this, AppPreferences.COMPACT_TARGET_VEHICLE);
         }
+    }
+
+    private void activateCompactApp(String... packageNames) {
+        if (!activateCompactAppInternal(true, true, packageNames)) {
+            Toast.makeText(this,
+                    "Приложение не установлено",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private boolean activateCompactAppInternal(
+            boolean persist, boolean refreshDock, String... packageNames) {
+        AppEntry selected = findFirstInstalled(packageNames);
+        if (selected == null) {
+            return false;
+        }
+        int existingIndex = indexOf(driverApps, selected.component);
+        if (existingIndex < 0) {
+            driverApps.add(selected);
+            existingIndex = driverApps.size() - 1;
+        }
+        driverAppIndex = existingIndex;
+        updateCurrentEntries();
+        saveCarousel(true);
+        showingVehicleDashboard = false;
+        refreshPane(KEY_DRIVER_APP);
+        if (persist) {
+            AppPreferences.setCompactTarget(
+                    this, selected.component.getPackageName());
+        }
+        if (refreshDock) {
+            driverSlot.announceForAccessibility(
+                    "Открыто " + selected.label);
+        }
+        return true;
+    }
+
+    private AppEntry findFirstInstalled(String... packageNames) {
+        for (String packageName : packageNames) {
+            for (AppEntry app : getAvailableApps()) {
+                if (packageName.equals(app.component.getPackageName())) {
+                    return app;
+                }
+            }
+        }
+        return null;
+    }
+
+    private List<AppEntry> filterCompactApps(List<AppEntry> source) {
+        List<AppEntry> result = new ArrayList<>();
+        for (AppEntry app : source) {
+            String packageName = app.component.getPackageName();
+            if (PACKAGE_MAX.equals(packageName)
+                    || PACKAGE_YANDEX_MUSIC.equals(packageName)
+                    || PACKAGE_YANDEX_MUSIC_ALT.equals(packageName)) {
+                result.add(app);
+            }
+        }
+        return result;
+    }
+
+    private List<AppEntry> getCompactAvailableApps() {
+        return filterCompactApps(getAvailableApps());
     }
 
     private View createPane(String title, AppEntry entry, String preferenceKey,
@@ -494,7 +619,8 @@ public final class MainActivity extends Activity {
         }
         content.addView(header);
 
-        List<AppEntry> apps = getAvailableApps();
+        List<AppEntry> apps = driverPane
+                ? getCompactAvailableApps() : getAvailableApps();
         if (apps.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText(R.string.no_apps);
@@ -583,6 +709,9 @@ public final class MainActivity extends Activity {
         }
         if (driver) {
             driverAppIndex = nextIndex;
+            showingVehicleDashboard = false;
+            AppPreferences.setCompactTarget(
+                    this, selected.component.getPackageName());
         } else {
             farAppIndex = nextIndex;
         }
@@ -867,17 +996,25 @@ public final class MainActivity extends Activity {
     }
 
     private boolean applyDebugLaunchOptions(Intent intent) {
-        if (!AppPreferences.isDebuggable(this)
-                || intent == null
-                || !intent.hasExtra("demo_mode")) {
+        if (!AppPreferences.isDebuggable(this) || intent == null) {
             return false;
         }
-        boolean enabled = intent.getBooleanExtra("demo_mode", false);
-        AppPreferences.get(this).edit()
-                .putBoolean(AppPreferences.KEY_DEMO_MODE, enabled)
-                .apply();
-        intent.removeExtra("demo_mode");
-        return true;
+        boolean changed = false;
+        if (intent.hasExtra("demo_mode")) {
+            boolean enabled = intent.getBooleanExtra("demo_mode", false);
+            AppPreferences.get(this).edit()
+                    .putBoolean(AppPreferences.KEY_DEMO_MODE, enabled)
+                    .apply();
+            intent.removeExtra("demo_mode");
+            changed = true;
+        }
+        if (intent.hasExtra("compact_on_left")) {
+            AppPreferences.setCompactPaneOnLeft(this,
+                    intent.getBooleanExtra("compact_on_left", true));
+            intent.removeExtra("compact_on_left");
+            changed = true;
+        }
+        return changed;
     }
 
     private GradientDrawable roundedBackground(int color, int radiusDp) {

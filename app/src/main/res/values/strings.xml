@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">BYD Split</string>
-    <string name="driver_zone">Зона водителя · ⅓</string>
-    <string name="passenger_zone">Дальняя зона · ⅔</string>
+    <string name="driver_zone">Служебная область · ⅓</string>
+    <string name="passenger_zone">Основная область · ⅔</string>
     <string name="choose_app">Выберите приложение</string>
     <string name="search_apps">Поиск приложений</string>
     <string name="no_apps">Подходящие приложения не найдены</string>
