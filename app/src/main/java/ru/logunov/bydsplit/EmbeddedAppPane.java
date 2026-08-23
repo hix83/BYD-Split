@@ -55,6 +55,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private final Function<Integer, AppEntry> adjacentAppProvider;
     private final IntConsumer interactiveCommitAction;
     private final Runnable deleteAction;
+    private final boolean panelNavigationEnabled;
     private final SurfaceView surfaceView;
     private final LinearLayout pageIndicator;
     private final LruCache<String, Bitmap> frameCache =
@@ -129,6 +130,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                     Function<Integer, AppEntry> adjacentAppProvider,
                     IntConsumer interactiveCommitAction,
                     Runnable deleteAction,
+                    boolean panelNavigationEnabled,
                     int pageIndex, int pageCount) {
         super(context);
         this.entry = entry;
@@ -142,6 +144,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         this.adjacentAppProvider = adjacentAppProvider;
         this.interactiveCommitAction = interactiveCommitAction;
         this.deleteAction = deleteAction;
+        this.panelNavigationEnabled = panelNavigationEnabled;
 
         setBackground(rounded(Color.BLACK, PANE_CORNER_RADIUS_DP));
         setClipToOutline(true);
@@ -162,22 +165,35 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
-        addCarouselEdge(true);
-        addCarouselEdge(false);
+        if (panelNavigationEnabled) {
+            addCarouselEdge(true);
+            addCarouselEdge(false);
+        }
 
         pageIndicator = new LinearLayout(context);
         pageIndicator.setOrientation(LinearLayout.HORIZONTAL);
         pageIndicator.setGravity(Gravity.CENTER);
         pageIndicator.setPadding(dp(8), dp(5), dp(8), dp(5));
         pageIndicator.setBackground(rounded(0x8817212B, 12));
-        addSwipeListener(pageIndicator, 0);
-        LayoutParams indicatorParams = new LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(24),
-                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        indicatorParams.bottomMargin = dp(8);
-        addView(pageIndicator, indicatorParams);
+        if (panelNavigationEnabled) {
+            addSwipeListener(pageIndicator, 0);
+            LayoutParams indicatorParams = new LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(24),
+                    Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            indicatorParams.bottomMargin = dp(8);
+            addView(pageIndicator, indicatorParams);
+        }
         updatePageIndicator(pageIndex, pageCount);
 
+        if (panelNavigationEnabled) {
+            addPickerRevealControls(context);
+        }
+        if (isMaxPane()) {
+            SteeringAccessibilityService.setMaxChatOpen(false);
+        }
+    }
+
+    private void addPickerRevealControls(Context context) {
         FrameLayout revealHandle = new FrameLayout(context);
         revealHandle.setContentDescription(
                 "Потяните вниз, чтобы показать управление панелью");
@@ -234,9 +250,6 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         revealHandle.setOnTouchListener(revealListener);
         addView(revealHandle, new LayoutParams(
                 dp(104), dp(28), Gravity.TOP | Gravity.CENTER_HORIZONTAL));
-        if (isMaxPane()) {
-            SteeringAccessibilityService.setMaxChatOpen(false);
-        }
     }
 
     void switchApp(AppEntry nextEntry, int pageIndex, int pageCount,
@@ -1516,7 +1529,9 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 touchStartX = event.getX();
                 touchStartY = event.getY();
                 lastMoveSentAt = event.getEventTime();
-                scheduleDeleteHold(event);
+                if (panelNavigationEnabled) {
+                    scheduleDeleteHold(event);
+                }
                 if (!deleteHoldCandidate) {
                     sendMotion(event);
                 }

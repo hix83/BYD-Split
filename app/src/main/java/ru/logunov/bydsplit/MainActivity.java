@@ -217,7 +217,7 @@ public final class MainActivity extends Activity {
 
     static boolean handleSteeringCarousel(boolean leftPane) {
         MainActivity activity = currentActivity.get();
-        if (activity == null || activity.isFinishing()
+        if (leftPane || activity == null || activity.isFinishing()
                 || activity.isDestroyed() || !activity.resumed) {
             return false;
         }
@@ -427,7 +427,7 @@ public final class MainActivity extends Activity {
         updateCurrentEntries();
         saveCarousel(true);
         showingVehicleDashboard = false;
-        refreshPane(KEY_DRIVER_APP);
+        showCompactEmbeddedApp(selected, existingIndex);
         if (persist) {
             AppPreferences.setCompactTarget(this,
                     selected.component.getPackageName());
@@ -457,7 +457,6 @@ public final class MainActivity extends Activity {
 
     private void showVehicleDashboard(boolean persist) {
         hidePicker();
-        releasePane(true);
         driverSlot.removeAllViews();
         driverSlot.addView(new VehicleDashboardView(this),
                 new FrameLayout.LayoutParams(
@@ -493,7 +492,7 @@ public final class MainActivity extends Activity {
         updateCurrentEntries();
         saveCarousel(true);
         showingVehicleDashboard = false;
-        refreshPane(KEY_DRIVER_APP);
+        showCompactEmbeddedApp(selected, existingIndex);
         if (persist) {
             AppPreferences.setCompactTarget(
                     this, selected.component.getPackageName());
@@ -544,6 +543,25 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void showCompactEmbeddedApp(AppEntry selected, int pageIndex) {
+        if (driverEmbeddedPane == null) {
+            refreshPane(KEY_DRIVER_APP);
+            return;
+        }
+        if (driverEmbeddedPane.getParent() != driverSlot) {
+            driverSlot.removeAllViews();
+            if (driverEmbeddedPane.getParent() instanceof ViewGroup) {
+                ((ViewGroup) driverEmbeddedPane.getParent())
+                        .removeView(driverEmbeddedPane);
+            }
+            driverSlot.addView(driverEmbeddedPane, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        driverEmbeddedPane.switchApp(
+                selected, pageIndex, driverApps.size(), 0);
+    }
+
     private List<AppEntry> getCompactAvailableApps() {
         return filterCompactApps(getAvailableApps());
     }
@@ -570,6 +588,7 @@ public final class MainActivity extends Activity {
                 delta -> getAdjacentApp(preferenceKey, delta),
                 delta -> commitInteractiveCarousel(preferenceKey, delta),
                 () -> deleteCurrentApp(preferenceKey),
+                !driverPane,
                 index,
                 count
         );
