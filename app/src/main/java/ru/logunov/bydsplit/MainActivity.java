@@ -66,6 +66,8 @@ public final class MainActivity extends Activity {
     private EmbeddedAppPane farEmbeddedPane;
     private boolean showingVehicleDashboard;
     private boolean settingsVisible;
+    private VehicleDashboardView vehicleDashboardView;
+    private VehicleTelemetryController vehicleTelemetryController;
     private AppEntry quickMusicApp;
     private AppEntry quickMaxApp;
     private View compactAutoButton;
@@ -88,6 +90,13 @@ public final class MainActivity extends Activity {
         steeringEventServer = new SteeringEventServer();
         steeringEventServer.start();
         cameraAutomation = new ParkingCameraAutomation(this);
+        vehicleTelemetryController = new VehicleTelemetryController(
+                this, snapshot -> {
+                    if (showingVehicleDashboard
+                            && vehicleDashboardView != null) {
+                        vehicleDashboardView.setTelemetry(snapshot);
+                    }
+                });
         driverApps = readCarousel(
                 AppPreferences.KEY_DRIVER_APPS, KEY_DRIVER_APP);
         driverApps = filterCompactApps(driverApps);
@@ -127,13 +136,22 @@ public final class MainActivity extends Activity {
         settingsVisible = false;
         applySystemBarsMode();
         updateCompactDockSelection();
-        if (AppPreferences.isParkingCameraAutoEnabled(this)
-                && checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        if (showingVehicleDashboard) {
+            vehicleTelemetryController.start(
+                    AppPreferences.isDemoModeEnabled(this));
+        }
+        boolean locationNeeded = showingVehicleDashboard
+                || AppPreferences.isParkingCameraAutoEnabled(this);
+        if (locationNeeded && checkSelfPermission(
+                android.Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION,
                     android.Manifest.permission.ACCESS_COARSE_LOCATION}, 341);
         } else {
-            cameraAutomation.start();
+            if (AppPreferences.isParkingCameraAutoEnabled(this)) {
+                cameraAutomation.start();
+            }
+            vehicleTelemetryController.startLocationIfPermitted();
         }
     }
 
@@ -199,6 +217,7 @@ public final class MainActivity extends Activity {
         releasePanes();
         steeringEventServer.close();
         shellBridgeClient.close();
+        vehicleTelemetryController.close();
         if (currentActivity.get() == this) {
             currentActivity.clear();
         }
@@ -480,6 +499,8 @@ public final class MainActivity extends Activity {
         updateCurrentEntries();
         saveCarousel(true);
         showingVehicleDashboard = false;
+        vehicleDashboardView = null;
+        vehicleTelemetryController.stop();
         showCompactEmbeddedApp(selected, existingIndex);
         updateCompactDockSelection();
         if (persist) {
@@ -512,11 +533,20 @@ public final class MainActivity extends Activity {
     private void showVehicleDashboard(boolean persist) {
         hidePicker();
         driverSlot.removeAllViews();
-        driverSlot.addView(new VehicleDashboardView(this),
+        vehicleDashboardView = new VehicleDashboardView(
+                this, this::handleVehicleAction);
+        driverSlot.addView(vehicleDashboardView,
                 new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT));
         showingVehicleDashboard = true;
+        vehicleTelemetryController.start(
+                AppPreferences.isDemoModeEnabled(this));
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION}, 341);
+        }
         updateCompactDockSelection();
         if (persist) {
             AppPreferences.setCompactTarget(
@@ -528,6 +558,32 @@ public final class MainActivity extends Activity {
         if (!activateCompactAppInternal(true, true, packageNames)) {
             Toast.makeText(this,
                     "Приложение не установлено",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void handleVehicleAction(int action) {
+        Intent intent;
+        if (action == VehicleDashboardView.ACTION_AUTO) {
+            intent = Intent.makeMainActivity(new ComponentName(
+                    "com.byd.mycar", "com.byd.mycar.StartActivity"));
+        } else if (action == VehicleDashboardView.ACTION_CLIMATE) {
+            intent = new Intent("OPEN_AIR_CONDITIONING");
+            intent.setComponent(new ComponentName(
+                    "com.byd.airconditioning",
+                    "com.byd.airconditioning.mainactivity.FullScreenMainActivity"));
+        } else if (action == VehicleDashboardView.ACTION_CAR_SETTINGS) {
+            intent = Intent.makeMainActivity(new ComponentName(
+                    "com.byd.carsettings", "com.byd.carsettings.MainActivity"));
+        } else {
+            intent = new Intent(Intent.ACTION_MAIN);
+            intent.addCategory(Intent.CATEGORY_HOME);
+        }
+        try {
+            startActivity(intent);
+        } catch (RuntimeException error) {
+            android.util.Log.w("BYD_SPLIT", "Vehicle shortcut failed", error);
+            Toast.makeText(this, "Системный экран недоступен",
                     Toast.LENGTH_SHORT).show();
         }
     }
@@ -547,6 +603,8 @@ public final class MainActivity extends Activity {
         updateCurrentEntries();
         saveCarousel(true);
         showingVehicleDashboard = false;
+        vehicleDashboardView = null;
+        vehicleTelemetryController.stop();
         showCompactEmbeddedApp(selected, existingIndex);
         updateCompactDockSelection();
         if (persist) {
@@ -595,7 +653,10 @@ public final class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == 341 && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            cameraAutomation.start();
+            if (AppPreferences.isParkingCameraAutoEnabled(this)) {
+                cameraAutomation.start();
+            }
+            vehicleTelemetryController.startLocationIfPermitted();
         }
     }
 
@@ -876,6 +937,8 @@ public final class MainActivity extends Activity {
         if (driver) {
             driverAppIndex = nextIndex;
             showingVehicleDashboard = false;
+            vehicleDashboardView = null;
+            vehicleTelemetryController.stop();
             AppPreferences.setCompactTarget(
                     this, selected.component.getPackageName());
         } else {
@@ -970,6 +1033,8 @@ public final class MainActivity extends Activity {
         updateCurrentEntries();
         saveCarousel(true);
         showingVehicleDashboard = false;
+        vehicleDashboardView = null;
+        vehicleTelemetryController.stop();
         AppEntry selected = apps.get(nextIndex);
         AppPreferences.setCompactTarget(
                 this, selected.component.getPackageName());

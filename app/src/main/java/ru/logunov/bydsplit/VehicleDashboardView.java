@@ -1,6 +1,8 @@
 package ru.logunov.bydsplit;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
@@ -8,9 +10,20 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.view.MotionEvent;
 import android.view.View;
 
+import java.util.Locale;
+
 final class VehicleDashboardView extends View {
+    static final int ACTION_AUTO = 0;
+    static final int ACTION_CLIMATE = 1;
+    static final int ACTION_CAR_SETTINGS = 2;
+    static final int ACTION_HOME = 3;
+
+    interface ActionListener {
+        void onVehicleAction(int action);
+    }
     private static final int TEXT_PRIMARY = 0xFFEEF3FA;
     private static final int TEXT_SECONDARY = 0xFF8E9AAF;
     private static final int BLUE = 0xFF4C8DFF;
@@ -20,11 +33,24 @@ final class VehicleDashboardView extends View {
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
+    private final Bitmap vehicleBitmap;
+    private final ActionListener actionListener;
+    private final RectF[] actionBounds = {
+            new RectF(), new RectF(), new RectF(), new RectF()};
+    private VehicleTelemetrySnapshot telemetry = VehicleTelemetrySnapshot.EMPTY;
 
-    VehicleDashboardView(Context context) {
+    VehicleDashboardView(Context context, ActionListener actionListener) {
         super(context);
+        this.actionListener = actionListener;
+        vehicleBitmap = BitmapFactory.decodeResource(
+                getResources(), R.drawable.song_l_dmi_top);
         setContentDescription(
-                "Состояние BYD Song L DM-i: скорость, шины и гибридная система");
+                "Состояние BYD Song L DM-i: скорость, направление, режим и шины");
+    }
+
+    void setTelemetry(VehicleTelemetrySnapshot value) {
+        telemetry = value == null ? VehicleTelemetrySnapshot.EMPTY : value;
+        invalidate();
     }
 
     @Override
@@ -40,7 +66,7 @@ final class VehicleDashboardView extends View {
         drawHeader(canvas, width, height);
         drawVehicle(canvas, width, height);
         drawPowerFlow(canvas, width, height);
-        drawModes(canvas, width, height);
+        drawQuickActions(canvas, width, height);
     }
 
     private void drawBackground(Canvas canvas, float width, float height) {
@@ -61,36 +87,84 @@ final class VehicleDashboardView extends View {
     }
 
     private void drawHeader(Canvas canvas, float width, float height) {
-        drawText(canvas, "72", width * 0.075f, height * 0.13f,
+        String speed = telemetry.speedKmh == null
+                ? "—" : String.valueOf(telemetry.speedKmh);
+        drawText(canvas, speed, width * 0.075f, height * 0.13f,
                 width * 0.13f, TEXT_PRIMARY, Paint.Align.LEFT);
         drawText(canvas, "км/ч", width * 0.08f, height * 0.18f,
                 width * 0.032f, TEXT_SECONDARY, Paint.Align.LEFT);
 
-        float compassX = width * 0.82f;
-        float compassY = height * 0.12f;
-        float compassRadius = width * 0.095f;
+        drawModeStatus(canvas, width, height);
+        drawCompass(canvas, width, height);
+    }
+
+    private void drawModeStatus(Canvas canvas, float width, float height) {
+        float centerX = width * 0.5f;
+        String workMode = workModeLabel(telemetry.workMode);
+        String driveMode = driveModeLabel(telemetry.driveMode);
+        drawText(canvas, workMode, centerX, height * 0.095f,
+                width * 0.038f, TEXT_PRIMARY, Paint.Align.CENTER);
+        drawText(canvas, driveMode, centerX, height * 0.143f,
+                width * 0.023f, BLUE, Paint.Align.CENTER);
+        paint.setColor(0x804C8DFF);
+        canvas.drawRoundRect(new RectF(
+                        centerX - width * 0.04f, height * 0.158f,
+                        centerX + width * 0.04f, height * 0.162f),
+                width * 0.005f, width * 0.005f, paint);
+    }
+
+    private void drawCompass(Canvas canvas, float width, float height) {
+        float centerX = width * 0.82f;
+        float centerY = height * 0.108f;
+        float radius = width * 0.092f;
+        Float bearing = telemetry.bearingDegrees;
+        float heading = bearing == null ? 0f : bearing;
+
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(width * 0.002f);
-        paint.setColor(0x506D7E99);
-        canvas.drawCircle(compassX, compassY, compassRadius, paint);
+        paint.setColor(0x706D7E99);
+        canvas.drawCircle(centerX, centerY, radius, paint);
+
+        for (int angle = 0; angle < 360; angle += 15) {
+            float relative = angle - heading;
+            double radians = Math.toRadians(relative - 90f);
+            float outerX = centerX + (float) Math.cos(radians) * radius * 0.91f;
+            float outerY = centerY + (float) Math.sin(radians) * radius * 0.91f;
+            float tickLength = angle % 45 == 0 ? radius * 0.13f : radius * 0.07f;
+            float innerX = centerX + (float) Math.cos(radians)
+                    * (radius * 0.91f - tickLength);
+            float innerY = centerY + (float) Math.sin(radians)
+                    * (radius * 0.91f - tickLength);
+            paint.setStrokeWidth(angle % 45 == 0
+                    ? width * 0.003f : width * 0.0014f);
+            paint.setColor(angle == 0 ? BLUE : 0x708E9AAF);
+            canvas.drawLine(innerX, innerY, outerX, outerY, paint);
+        }
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(0xFFDCE8FA);
+
+        String[] points = {"С", "В", "Ю", "З"};
+        for (int index = 0; index < points.length; index++) {
+            float relative = index * 90f - heading;
+            double radians = Math.toRadians(relative - 90f);
+            float x = centerX + (float) Math.cos(radians) * radius * 0.61f;
+            float y = centerY + (float) Math.sin(radians) * radius * 0.61f
+                    + width * 0.008f;
+            drawText(canvas, points[index], x, y, width * 0.020f,
+                    index == 0 ? BLUE : TEXT_SECONDARY, Paint.Align.CENTER);
+        }
+
+        paint.setColor(TEXT_PRIMARY);
         path.reset();
-        path.moveTo(compassX + compassRadius * 0.53f,
-                compassY - compassRadius * 0.58f);
-        path.lineTo(compassX + compassRadius * 0.06f,
-                compassY + compassRadius * 0.07f);
-        path.lineTo(compassX + compassRadius * 0.26f,
-                compassY + compassRadius * 0.18f);
+        path.moveTo(centerX, centerY - radius * 1.08f);
+        path.lineTo(centerX - radius * 0.11f, centerY - radius * 0.84f);
+        path.lineTo(centerX + radius * 0.11f, centerY - radius * 0.84f);
         path.close();
         canvas.drawPath(path, paint);
-        drawText(canvas, "СВ", compassX + compassRadius * 0.55f,
-                compassY + compassRadius * 0.72f,
-                width * 0.023f, TEXT_SECONDARY, Paint.Align.CENTER);
 
-        drawText(canvas, "HYBRID  ·  NORMAL", width * 0.5f,
-                height * 0.052f, width * 0.025f,
-                BLUE, Paint.Align.CENTER);
+        String degrees = bearing == null
+                ? "—°" : Math.round(heading) + "° · " + directionLabel(heading);
+        drawText(canvas, degrees, centerX, centerY + radius * 1.32f,
+                width * 0.020f, TEXT_SECONDARY, Paint.Align.CENTER);
     }
 
     private void drawVehicle(Canvas canvas, float width, float height) {
@@ -108,51 +182,48 @@ final class VehicleDashboardView extends View {
                 width * 0.025f, width * 0.025f, paint);
         paint.setStyle(Paint.Style.FILL);
 
-        float carWidth = width * 0.20f;
-        float carHeight = height * 0.29f;
-        float carLeft = width * 0.5f - carWidth / 2f;
-        float carTop = height * 0.255f;
-        RectF car = new RectF(carLeft, carTop,
-                carLeft + carWidth, carTop + carHeight);
-        paint.setShader(new LinearGradient(
-                car.left, car.top, car.right, car.bottom,
-                new int[]{0xFFB7C9CE, 0xFF789399, 0xFFB4C5C8},
-                null, Shader.TileMode.CLAMP));
-        canvas.drawRoundRect(car, carWidth * 0.34f, carWidth * 0.26f, paint);
-        paint.setShader(null);
+        float carHeight = height * 0.30f;
+        float carWidth = carHeight * vehicleBitmap.getWidth()
+                / vehicleBitmap.getHeight();
+        RectF car = new RectF(
+                width * 0.5f - carWidth / 2f,
+                height * 0.245f,
+                width * 0.5f + carWidth / 2f,
+                height * 0.245f + carHeight);
+        paint.setAlpha(255);
+        canvas.drawBitmap(vehicleBitmap, null, car, paint);
 
-        RectF roof = new RectF(
-                car.left + carWidth * 0.16f,
-                car.top + carHeight * 0.17f,
-                car.right - carWidth * 0.16f,
-                car.bottom - carHeight * 0.25f);
-        paint.setColor(0xFF0A1523);
-        canvas.drawRoundRect(roof, carWidth * 0.16f, carWidth * 0.12f, paint);
-        paint.setColor(0xFF5B9FFF);
-        canvas.drawRoundRect(new RectF(
-                car.left + carWidth * 0.15f,
-                car.bottom - carHeight * 0.09f,
-                car.right - carWidth * 0.15f,
-                car.bottom - carHeight * 0.065f),
-                carWidth * 0.03f, carWidth * 0.03f, paint);
-
-        float labelSize = width * 0.029f;
-        drawTireStatus(canvas, "2.4 bar", width * 0.28f,
+        float labelSize = width * 0.027f;
+        drawTireStatus(canvas, telemetry.tirePressFlKpa, telemetry.tireTempFlC,
+                width * 0.31f,
                 height * 0.32f, car.left, labelSize, true);
-        drawTireStatus(canvas, "2.4 bar", width * 0.72f,
+        drawTireStatus(canvas, telemetry.tirePressFrKpa, telemetry.tireTempFrC,
+                width * 0.69f,
                 height * 0.32f, car.right, labelSize, false);
-        drawTireStatus(canvas, "2.3 bar", width * 0.28f,
+        drawTireStatus(canvas, telemetry.tirePressRlKpa, telemetry.tireTempRlC,
+                width * 0.31f,
                 height * 0.48f, car.left, labelSize, true);
-        drawTireStatus(canvas, "2.3 bar", width * 0.72f,
+        drawTireStatus(canvas, telemetry.tirePressRrKpa, telemetry.tireTempRrC,
+                width * 0.69f,
                 height * 0.48f, car.right, labelSize, false);
     }
 
-    private void drawTireStatus(Canvas canvas, String value, float labelX,
-                                float y, float carEdge, float size,
-                                boolean left) {
+    private void drawTireStatus(Canvas canvas, Integer pressureKpa,
+                                Integer temperatureC,
+                                float labelX, float y, float carEdge,
+                                float size, boolean left) {
         Paint.Align align = left ? Paint.Align.RIGHT : Paint.Align.LEFT;
-        drawText(canvas, value, labelX, y, size, TEXT_PRIMARY, align);
-        paint.setColor(0xA04C8DFF);
+        String value = pressureKpa == null ? "— bar"
+                : String.format(Locale.US, "%.1f bar", pressureKpa / 100f);
+        int statusColor = pressureKpa == null ? TEXT_SECONDARY
+                : pressureKpa >= 220 && pressureKpa <= 260 ? HEALTHY : AMBER;
+        drawText(canvas, value, labelX, y, size, statusColor, align);
+        String temperature = temperatureC == null
+                ? "—°C" : temperatureC + "°C";
+        drawText(canvas, temperature, labelX, y + size * 1.18f,
+                size, temperatureC == null ? TEXT_SECONDARY : TEXT_PRIMARY,
+                align);
+        paint.setColor((statusColor & 0x00FFFFFF) | 0xA0000000);
         paint.setStrokeWidth(Math.max(1f, size * 0.09f));
         float start = left ? labelX + size * 0.35f : carEdge;
         float end = left ? carEdge : labelX - size * 0.35f;
@@ -162,7 +233,7 @@ final class VehicleDashboardView extends View {
 
     private void drawPowerFlow(Canvas canvas, float width, float height) {
         float titleY = height * 0.625f;
-        drawText(canvas, "СЕРИЙНЫЙ HEV  ·  ЗАРЯД", width * 0.5f,
+        drawText(canvas, powerFlowTitle(telemetry.workMode), width * 0.5f,
                 titleY, width * 0.030f, TEXT_PRIMARY, Paint.Align.CENTER);
 
         float nodeY = height * 0.72f;
@@ -175,10 +246,14 @@ final class VehicleDashboardView extends View {
         drawNode(canvas, generatorX, nodeY, nodeSize, "G");
         drawNode(canvas, motorX, nodeY, nodeSize, "M");
         drawNode(canvas, wheelX, nodeY, nodeSize, "◉");
+        boolean electricOnly = telemetry.workMode != null
+                && (telemetry.workMode == 1 || telemetry.workMode == 2);
         drawArrow(canvas, engineX + nodeSize * 0.55f, nodeY,
-                generatorX - nodeSize * 0.55f, nodeY, AMBER);
+                generatorX - nodeSize * 0.55f, nodeY,
+                electricOnly ? 0x405E6A7C : AMBER);
         drawArrow(canvas, generatorX + nodeSize * 0.55f, nodeY,
-                motorX - nodeSize * 0.55f, nodeY, ENERGY_BLUE);
+                motorX - nodeSize * 0.55f, nodeY,
+                electricOnly ? 0x405E6A7C : ENERGY_BLUE);
         drawArrow(canvas, motorX + nodeSize * 0.55f, nodeY,
                 wheelX - nodeSize * 0.55f, nodeY, ENERGY_BLUE);
 
@@ -196,11 +271,13 @@ final class VehicleDashboardView extends View {
         paint.setColor(ENERGY_BLUE);
         canvas.drawRoundRect(battery, width * 0.016f, width * 0.016f, paint);
         paint.setStyle(Paint.Style.FILL);
-        drawText(canvas, "Батарея  68%", width * 0.5f,
+        drawText(canvas, "Батарея", width * 0.5f,
                 batteryY + width * 0.011f, width * 0.026f,
                 TEXT_PRIMARY, Paint.Align.CENTER);
-        drawArrow(canvas, generatorX, nodeY + nodeSize * 0.54f,
-                width * 0.46f, battery.top, ENERGY_BLUE);
+        if (!electricOnly) {
+            drawArrow(canvas, generatorX, nodeY + nodeSize * 0.54f,
+                    width * 0.46f, battery.top, ENERGY_BLUE);
+        }
         drawArrow(canvas, width * 0.54f, battery.top,
                 motorX, nodeY + nodeSize * 0.54f, ENERGY_BLUE);
 
@@ -216,27 +293,146 @@ final class VehicleDashboardView extends View {
         paint.setStyle(Paint.Style.FILL);
     }
 
-    private void drawModes(Canvas canvas, float width, float height) {
-        String[] labels = {"EV", "СЕРИЯ", "ПАРАЛЛЕЛЬ", "РЕКУП."};
+    private void drawQuickActions(Canvas canvas, float width, float height) {
+        String[] labels = {"АВТО", "КЛИМАТ", "НАСТР.", "ДОМОЙ"};
         float gap = width * 0.014f;
         float left = width * 0.055f;
         float totalWidth = width * 0.89f;
         float chipWidth = (totalWidth - gap * 3f) / 4f;
-        float top = height * 0.91f;
+        float top = height * 0.895f;
         float bottom = height * 0.972f;
         for (int index = 0; index < labels.length; index++) {
             float chipLeft = left + index * (chipWidth + gap);
-            RectF chip = new RectF(chipLeft, top,
-                    chipLeft + chipWidth, bottom);
-            paint.setColor(index == 1 ? 0xFF254A78 : 0x66172234);
+            RectF chip = actionBounds[index];
+            chip.set(chipLeft, top, chipLeft + chipWidth, bottom);
+            paint.setColor(0xA6172234);
             canvas.drawRoundRect(chip, width * 0.018f,
                     width * 0.018f, paint);
+            drawActionIcon(canvas, index, chip.centerX(),
+                    chip.top + chip.height() * 0.35f, width * 0.027f);
             drawText(canvas, labels[index], chip.centerX(),
-                    chip.centerY() + width * 0.010f,
-                    width * 0.021f,
-                    index == 1 ? TEXT_PRIMARY : TEXT_SECONDARY,
-                    Paint.Align.CENTER);
+                    chip.bottom - width * 0.010f, width * 0.017f,
+                    TEXT_SECONDARY, Paint.Align.CENTER);
         }
+    }
+
+    private void drawActionIcon(Canvas canvas, int action,
+                                float centerX, float centerY, float size) {
+        paint.setColor(TEXT_PRIMARY);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(Math.max(2f, size * 0.11f));
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        path.reset();
+        if (action == ACTION_AUTO) {
+            RectF body = new RectF(centerX - size * 0.75f,
+                    centerY - size * 0.24f, centerX + size * 0.75f,
+                    centerY + size * 0.42f);
+            canvas.drawRoundRect(body, size * 0.22f, size * 0.22f, paint);
+            path.moveTo(centerX - size * 0.48f, body.top);
+            path.lineTo(centerX - size * 0.28f, centerY - size * 0.62f);
+            path.lineTo(centerX + size * 0.28f, centerY - size * 0.62f);
+            path.lineTo(centerX + size * 0.48f, body.top);
+            canvas.drawPath(path, paint);
+            canvas.drawCircle(centerX - size * 0.45f,
+                    body.bottom, size * 0.14f, paint);
+            canvas.drawCircle(centerX + size * 0.45f,
+                    body.bottom, size * 0.14f, paint);
+        } else if (action == ACTION_CLIMATE) {
+            for (int blade = 0; blade < 4; blade++) {
+                canvas.save();
+                canvas.rotate(blade * 90f, centerX, centerY);
+                canvas.drawArc(new RectF(centerX - size * 0.12f,
+                                centerY - size * 0.68f,
+                                centerX + size * 0.48f,
+                                centerY + size * 0.02f),
+                        190f, 130f, false, paint);
+                canvas.restore();
+            }
+            canvas.drawCircle(centerX, centerY, size * 0.13f, paint);
+        } else if (action == ACTION_CAR_SETTINGS) {
+            canvas.drawCircle(centerX, centerY, size * 0.54f, paint);
+            canvas.drawCircle(centerX, centerY, size * 0.20f, paint);
+            for (int tooth = 0; tooth < 8; tooth++) {
+                double angle = Math.toRadians(tooth * 45f);
+                canvas.drawLine(
+                        centerX + (float) Math.cos(angle) * size * 0.60f,
+                        centerY + (float) Math.sin(angle) * size * 0.60f,
+                        centerX + (float) Math.cos(angle) * size * 0.78f,
+                        centerY + (float) Math.sin(angle) * size * 0.78f,
+                        paint);
+            }
+        } else {
+            path.moveTo(centerX - size * 0.72f, centerY - size * 0.02f);
+            path.lineTo(centerX, centerY - size * 0.67f);
+            path.lineTo(centerX + size * 0.72f, centerY - size * 0.02f);
+            path.moveTo(centerX - size * 0.52f, centerY - size * 0.12f);
+            path.lineTo(centerX - size * 0.52f, centerY + size * 0.62f);
+            path.lineTo(centerX + size * 0.52f, centerY + size * 0.62f);
+            path.lineTo(centerX + size * 0.52f, centerY - size * 0.12f);
+            canvas.drawPath(path, paint);
+        }
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+            for (int index = 0; index < actionBounds.length; index++) {
+                if (actionBounds[index].contains(event.getX(), event.getY())) {
+                    performClick();
+                    if (actionListener != null) {
+                        actionListener.onVehicleAction(index);
+                    }
+                    return true;
+                }
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public boolean performClick() {
+        super.performClick();
+        return true;
+    }
+
+    private static String workModeLabel(Integer mode) {
+        if (mode == null) return "—";
+        switch (mode) {
+            case 0: return "STOP";
+            case 1: return "EV";
+            case 2: return "EV MAX";
+            case 3: return "HEV";
+            case 4: return "ДВС";
+            case 5: return "KEEP";
+            default: return "MODE " + mode;
+        }
+    }
+
+    private static String driveModeLabel(Integer mode) {
+        if (mode == null) return "РЕЖИМ —";
+        switch (mode) {
+            case 1: return "ECO";
+            case 2: return "SPORT";
+            case 4: return "SNOW";
+            case 0:
+            case 3: return "NORMAL";
+            default: return "РЕЖИМ " + mode;
+        }
+    }
+
+    private static String powerFlowTitle(Integer workMode) {
+        if (workMode == null) return "СИСТЕМА DM-i";
+        if (workMode == 1 || workMode == 2) return "ЭЛЕКТРИЧЕСКОЕ ДВИЖЕНИЕ";
+        if (workMode == 3) return "ГИБРИДНЫЙ РЕЖИМ";
+        if (workMode == 4) return "ДВИЖЕНИЕ ОТ ДВС";
+        return "СИСТЕМА DM-i";
+    }
+
+    private static String directionLabel(float bearing) {
+        String[] labels = {"С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"};
+        return labels[Math.round(bearing / 45f) % labels.length];
     }
 
     private void drawNode(Canvas canvas, float centerX, float centerY,

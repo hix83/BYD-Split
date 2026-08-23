@@ -4,11 +4,14 @@ import android.content.Context;
 import android.util.Log;
 
 import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 final class LocalAdbManager {
     private static final String TAG = "BYD_LOCAL_ADB";
     private static final Pattern SAFE_APK_PATH =
             Pattern.compile("[A-Za-z0-9_./=+~-]+");
+    private static final Pattern PARCEL_VALUE = Pattern.compile(
+            "Parcel\\(00000000\\s+([0-9a-fA-F]{8})");
     private static LocalAdbManager instance;
 
     private final Context context;
@@ -164,6 +167,72 @@ final class LocalAdbManager {
             Log.e(TAG, "Cannot foreground BYD Split", error);
             return false;
         }
+    }
+
+    synchronized VehicleTelemetrySnapshot readVehicleTelemetry() {
+        try {
+            client.connect();
+            String output = client.shell(
+                    "service call autoservice 7 i32 1013 i32 -1807745016; "
+                            + "service call autoservice 5 i32 1016 i32 -1728052956; "
+                            + "service call autoservice 5 i32 1016 i32 -1728052952; "
+                            + "service call autoservice 5 i32 1016 i32 -1728052948; "
+                            + "service call autoservice 5 i32 1016 i32 -1728052944; "
+                            + "service call autoservice 5 i32 1007 i32 1246797848; "
+                            + "service call autoservice 5 i32 1007 i32 1246797860; "
+                            + "service call autoservice 5 i32 1007 i32 1246797872; "
+                            + "service call autoservice 5 i32 1007 i32 1246797884; "
+                            + "service call autoservice 5 i32 1006 i32 555745294; "
+                            + "service call autoservice 5 i32 1006 i32 874512420");
+            int[] raw = new int[11];
+            Matcher matcher = PARCEL_VALUE.matcher(output);
+            int count = 0;
+            while (matcher.find() && count < raw.length) {
+                raw[count++] = (int) Long.parseLong(matcher.group(1), 16);
+            }
+            if (count != raw.length) {
+                return null;
+            }
+            Float speed = decodeFloat(raw[0]);
+            Integer speedKmh = speed != null && speed >= 0f && speed <= 300f
+                    ? Math.round(speed) : null;
+            return new VehicleTelemetrySnapshot(
+                    speedKmh,
+                    decodePressure(raw[1]), decodePressure(raw[2]),
+                    decodePressure(raw[3]), decodePressure(raw[4]),
+                    decodeTemperature(raw[5]), decodeTemperature(raw[6]),
+                    decodeTemperature(raw[7]), decodeTemperature(raw[8]),
+                    decodeEnum(raw[9]), decodeEnum(raw[10]), null);
+        } catch (Exception error) {
+            client.close();
+            Log.w(TAG, "Cannot read vehicle telemetry", error);
+            return null;
+        }
+    }
+
+    private static Float decodeFloat(int raw) {
+        if (isSentinel(raw)) {
+            return null;
+        }
+        float value = Float.intBitsToFloat(raw);
+        return Float.isFinite(value) && value != -1f ? value : null;
+    }
+
+    private static Integer decodePressure(int raw) {
+        return !isSentinel(raw) && raw >= 100 && raw <= 500 ? raw : null;
+    }
+
+    private static Integer decodeTemperature(int raw) {
+        return !isSentinel(raw) && raw >= -50 && raw <= 120 ? raw : null;
+    }
+
+    private static Integer decodeEnum(int raw) {
+        return !isSentinel(raw) && raw >= 0 && raw <= 255 ? raw : null;
+    }
+
+    private static boolean isSentinel(int raw) {
+        return raw == 0x0000FFFF || raw == 0x000FFFFF
+                || raw == -10013 || raw == -10011;
     }
 
     private static String daemonCommand(
