@@ -65,6 +65,14 @@ public final class MainActivity extends Activity {
     private EmbeddedAppPane driverEmbeddedPane;
     private EmbeddedAppPane farEmbeddedPane;
     private boolean showingVehicleDashboard;
+    private boolean settingsVisible;
+    private AppEntry quickMusicApp;
+    private AppEntry quickMaxApp;
+    private View compactAutoButton;
+    private View compactCameraButton;
+    private View compactMusicButton;
+    private View compactMaxButton;
+    private View compactSettingsButton;
     private volatile boolean resumed;
     private ParkingCameraAutomation cameraAutomation;
 
@@ -116,7 +124,9 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        settingsVisible = false;
         applySystemBarsMode();
+        updateCompactDockSelection();
         if (AppPreferences.isParkingCameraAutoEnabled(this)
                 && checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -217,13 +227,21 @@ public final class MainActivity extends Activity {
 
     static boolean handleSteeringCarousel(boolean leftPane) {
         MainActivity activity = currentActivity.get();
-        if (leftPane || activity == null || activity.isFinishing()
+        if (activity == null || activity.isFinishing()
                 || activity.isDestroyed() || !activity.resumed) {
             return false;
         }
         activity.runOnUiThread(() ->
                 activity.moveCarouselCyclic(leftPane));
         return true;
+    }
+
+    static void onParkingCameraVisibilityChanged(boolean visible) {
+        MainActivity activity = currentActivity.get();
+        if (activity != null && !activity.isFinishing()
+                && !activity.isDestroyed()) {
+            activity.runOnUiThread(activity::updateCompactDockSelection);
+        }
     }
 
     static void applyPanelLayoutFromSettings() {
@@ -332,27 +350,28 @@ public final class MainActivity extends Activity {
         dock.setPadding(0, dp(7), 0, dp(5));
         dock.setBackgroundColor(Color.TRANSPARENT);
 
-        AppEntry music = resolveQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP,
+        quickMusicApp = resolveQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP,
                 PACKAGE_YANDEX_MUSIC, PACKAGE_YANDEX_MUSIC_ALT);
-        AppEntry max = resolveQuickApp(AppPreferences.KEY_QUICK_MAX_APP, PACKAGE_MAX);
-        addCompactButton(dock, "Авто", QuickIconDrawable.song(),
+        quickMaxApp = resolveQuickApp(AppPreferences.KEY_QUICK_MAX_APP, PACKAGE_MAX);
+        compactAutoButton = addCompactButton(dock, "Авто", QuickIconDrawable.song(),
                 () -> showVehicleDashboard(true), null);
-        addCompactButton(dock, "Камеры", QuickIconDrawable.camera(),
+        compactCameraButton = addCompactButton(dock, "Камеры", QuickIconDrawable.camera(),
                 this::showParkingCamera, null);
-        addCompactButton(dock, "Музыка",
-                music == null ? QuickIconDrawable.yandexMusic() : music.icon,
-                () -> activateQuickApp(music),
+        compactMusicButton = addCompactButton(dock, "Музыка",
+                QuickIconDrawable.yandexMusic(),
+                () -> activateQuickApp(quickMusicApp),
                 () -> chooseQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP));
-        addCompactButton(dock, "MAX",
-                max == null ? QuickIconDrawable.max() : max.icon,
-                () -> activateQuickApp(max),
+        compactMaxButton = addCompactButton(dock, "MAX",
+                QuickIconDrawable.max(),
+                () -> activateQuickApp(quickMaxApp),
                 () -> chooseQuickApp(AppPreferences.KEY_QUICK_MAX_APP));
-        addCompactButton(dock, "Настройки", QuickIconDrawable.settings(),
+        compactSettingsButton = addCompactButton(dock, "Настройки", QuickIconDrawable.settings(),
                 this::openSettings, null);
+        updateCompactDockSelection();
         return dock;
     }
 
-    private void addCompactButton(LinearLayout dock, String label,
+    private View addCompactButton(LinearLayout dock, String label,
                                   Drawable icon, Runnable action,
                                   Runnable longAction) {
         LinearLayout button = new LinearLayout(this);
@@ -372,16 +391,14 @@ public final class MainActivity extends Activity {
         ImageView image = new ImageView(this);
         image.setImageDrawable(icon);
         image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        button.addView(image, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        button.addView(image, new LinearLayout.LayoutParams(dp(50), dp(50)));
 
-        TextView text = new TextView(this);
-        text.setText(label);
-        text.setTextColor(Color.WHITE);
-        text.setTextSize(10);
-        text.setGravity(Gravity.CENTER);
-        text.setMaxLines(1);
-        button.addView(text, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(22)));
+        View indicator = new View(this);
+        LinearLayout.LayoutParams indicatorParams = new LinearLayout.LayoutParams(
+                dp(34), dp(4));
+        indicatorParams.topMargin = dp(5);
+        button.addView(indicator, indicatorParams);
+        button.setTag(indicator);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
@@ -389,6 +406,42 @@ public final class MainActivity extends Activity {
             params.setMarginStart(dp(6));
         }
         dock.addView(button, params);
+        return button;
+    }
+
+    private void updateCompactDockSelection() {
+        boolean cameraVisible = ParkingCameraOverlay.isShowing();
+        boolean contentVisible = !cameraVisible && !settingsVisible;
+        styleCompactButton(compactAutoButton,
+                contentVisible && showingVehicleDashboard);
+        styleCompactButton(compactCameraButton, cameraVisible);
+        styleCompactButton(compactMusicButton,
+                contentVisible && !showingVehicleDashboard
+                        && sameComponent(driverApp, quickMusicApp));
+        styleCompactButton(compactMaxButton,
+                contentVisible && !showingVehicleDashboard
+                        && sameComponent(driverApp, quickMaxApp));
+        styleCompactButton(compactSettingsButton, settingsVisible);
+    }
+
+    private void styleCompactButton(View button, boolean active) {
+        if (button != null) {
+            button.setBackground(roundedBackground(Color.rgb(23, 34, 53), 12));
+            Object tag = button.getTag();
+            if (tag instanceof View) {
+                View indicator = (View) tag;
+                indicator.setBackground(roundedBackground(
+                        active ? Color.rgb(76, 141, 255)
+                                : Color.rgb(53, 68, 91), 2));
+                indicator.setAlpha(active ? 1f : 0.28f);
+                indicator.setElevation(active ? dp(5) : 0);
+            }
+        }
+    }
+
+    private boolean sameComponent(AppEntry first, AppEntry second) {
+        return first != null && second != null
+                && first.component.equals(second.component);
     }
 
     private AppEntry resolveQuickApp(String key, String... defaultPackages) {
@@ -428,6 +481,7 @@ public final class MainActivity extends Activity {
         saveCarousel(true);
         showingVehicleDashboard = false;
         showCompactEmbeddedApp(selected, existingIndex);
+        updateCompactDockSelection();
         if (persist) {
             AppPreferences.setCompactTarget(this,
                     selected.component.getPackageName());
@@ -463,6 +517,7 @@ public final class MainActivity extends Activity {
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT));
         showingVehicleDashboard = true;
+        updateCompactDockSelection();
         if (persist) {
             AppPreferences.setCompactTarget(
                     this, AppPreferences.COMPACT_TARGET_VEHICLE);
@@ -493,6 +548,7 @@ public final class MainActivity extends Activity {
         saveCarousel(true);
         showingVehicleDashboard = false;
         showCompactEmbeddedApp(selected, existingIndex);
+        updateCompactDockSelection();
         if (persist) {
             AppPreferences.setCompactTarget(
                     this, selected.component.getPackageName());
@@ -865,10 +921,15 @@ public final class MainActivity extends Activity {
     }
 
     private void moveCarouselCyclic(boolean driverPane) {
-        String preferenceKey = driverPane
-                ? KEY_DRIVER_APP : KEY_FAR_APP;
         List<AppEntry> apps = driverPane ? driverApps : farApps;
-        if (apps == null || apps.size() < 2 || pickerOverlay != null) {
+        if (apps == null || pickerOverlay != null) {
+            return;
+        }
+        if (driverPane) {
+            moveCompactCarouselWithVehicle(apps);
+            return;
+        }
+        if (apps.size() < 2) {
             return;
         }
         int currentIndex = driverPane
@@ -890,6 +951,30 @@ public final class MainActivity extends Activity {
                     apps.get(nextIndex), nextIndex, apps.size(),
                     animationDirection);
         }
+    }
+
+    private void moveCompactCarouselWithVehicle(List<AppEntry> apps) {
+        int itemCount = apps.size() + 1;
+        if (itemCount < 2) {
+            return;
+        }
+        int currentPosition = showingVehicleDashboard
+                ? 0 : Math.max(0, Math.min(driverAppIndex, apps.size() - 1)) + 1;
+        int nextPosition = (currentPosition - 1 + itemCount) % itemCount;
+        if (nextPosition == 0) {
+            showVehicleDashboard(true);
+            return;
+        }
+        int nextIndex = nextPosition - 1;
+        driverAppIndex = nextIndex;
+        updateCurrentEntries();
+        saveCarousel(true);
+        showingVehicleDashboard = false;
+        AppEntry selected = apps.get(nextIndex);
+        AppPreferences.setCompactTarget(
+                this, selected.component.getPackageName());
+        showCompactEmbeddedApp(selected, nextIndex);
+        updateCompactDockSelection();
     }
 
     private AppEntry getAdjacentApp(String preferenceKey, int delta) {
@@ -1102,6 +1187,8 @@ public final class MainActivity extends Activity {
     }
 
     private void openSettings() {
+        settingsVisible = true;
+        updateCompactDockSelection();
         startActivity(new Intent(this, SettingsActivity.class));
     }
 

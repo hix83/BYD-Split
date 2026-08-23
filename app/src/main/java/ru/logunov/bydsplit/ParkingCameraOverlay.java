@@ -30,6 +30,10 @@ final class ParkingCameraOverlay {
         return Settings.canDrawOverlays(context);
     }
 
+    static boolean isShowing() {
+        return currentView != null;
+    }
+
     static boolean show(Context context) {
         if (!canShow(context)) {
             return false;
@@ -127,14 +131,16 @@ final class ParkingCameraOverlay {
                         | WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.CENTER;
-        params.y = Math.round(context.getResources().getDisplayMetrics().heightPixels * 0.05f);
+        params.y = 0;
         manager.addView(root, params);
         currentView = root;
+        MainActivity.onParkingCameraVisibilityChanged(true);
         root.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220)
                 .setInterpolator(new DecelerateInterpolator()).start();
     }
 
     private static void dismiss(Context context) {
+        boolean wasShowing = currentView != null;
         if (currentView != null) {
             try {
                 ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE))
@@ -149,6 +155,9 @@ final class ParkingCameraOverlay {
         }
         currentView = null;
         currentWebView = null;
+        if (wasShowing) {
+            MainActivity.onParkingCameraVisibilityChanged(false);
+        }
     }
 
     private static TextView action(Context context, String label, boolean destructive) {

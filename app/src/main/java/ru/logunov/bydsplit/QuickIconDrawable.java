@@ -3,16 +3,14 @@ package ru.logunov.bydsplit;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
-import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.RectF;
-import android.graphics.Shader;
-import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 
 final class QuickIconDrawable extends Drawable {
+    private static final int ICON_COLOR = 0xFFD9E2EE;
     private enum Kind { YANDEX_MUSIC, MAX, SONG, CAMERA, SETTINGS }
 
     private final Kind kind;
@@ -46,45 +44,20 @@ final class QuickIconDrawable extends Drawable {
     @Override
     public void draw(Canvas canvas) {
         RectF bounds = new RectF(getBounds());
-        float radius = Math.min(bounds.width(), bounds.height()) * 0.23f;
         switch (kind) {
             case YANDEX_MUSIC:
-                paint.setShader(null);
-                paint.setColor(Color.rgb(5, 5, 5));
-                canvas.drawRoundRect(bounds, radius, radius, paint);
                 drawYandexStar(canvas, bounds);
                 break;
             case MAX:
-                paint.setShader(new LinearGradient(
-                        bounds.left, bounds.top, bounds.right, bounds.bottom,
-                        new int[]{0xFF7442F5, 0xFF426AF0, 0xFF2FA5F1},
-                        null, Shader.TileMode.CLAMP));
-                canvas.drawRoundRect(bounds, radius, radius, paint);
-                paint.setShader(null);
                 drawMaxBubble(canvas, bounds);
                 break;
             case SONG:
-                paint.setShader(new LinearGradient(
-                        bounds.left, bounds.top, bounds.right, bounds.bottom,
-                        0xFF355A91, 0xFF14243C, Shader.TileMode.CLAMP));
-                canvas.drawRoundRect(bounds, radius, radius, paint);
-                paint.setShader(null);
                 drawSong(canvas, bounds);
                 break;
             case CAMERA:
-                paint.setShader(new LinearGradient(
-                        bounds.left, bounds.top, bounds.right, bounds.bottom,
-                        0xFF526782, 0xFF202D40, Shader.TileMode.CLAMP));
-                canvas.drawRoundRect(bounds, radius, radius, paint);
-                paint.setShader(null);
                 drawCamera(canvas, bounds);
                 break;
             case SETTINGS:
-                paint.setShader(new LinearGradient(
-                        bounds.left, bounds.top, bounds.right, bounds.bottom,
-                        0xFF526782, 0xFF202D40, Shader.TileMode.CLAMP));
-                canvas.drawRoundRect(bounds, radius, radius, paint);
-                paint.setShader(null);
                 drawSettings(canvas, bounds);
                 break;
         }
@@ -93,8 +66,8 @@ final class QuickIconDrawable extends Drawable {
     private void drawYandexStar(Canvas canvas, RectF bounds) {
         float cx = bounds.centerX();
         float cy = bounds.centerY();
-        float outer = bounds.width() * 0.34f;
-        float inner = outer * 0.28f;
+        float outer = bounds.width() * 0.39f;
+        float inner = outer * 0.24f;
         path.reset();
         for (int index = 0; index < 16; index++) {
             double angle = -Math.PI / 2 + index * Math.PI / 8;
@@ -108,41 +81,58 @@ final class QuickIconDrawable extends Drawable {
             }
         }
         path.close();
-        paint.setColor(0xFFFFD926);
+        paint.setColor(ICON_COLOR);
         paint.setStyle(Paint.Style.FILL);
         canvas.drawPath(path, paint);
     }
 
     private void drawMaxBubble(Canvas canvas, RectF bounds) {
         float width = bounds.width();
-        RectF bubble = new RectF(
-                bounds.left + width * 0.21f,
-                bounds.top + width * 0.25f,
-                bounds.right - width * 0.21f,
-                bounds.bottom - width * 0.28f);
-        paint.setColor(Color.WHITE);
-        paint.setStyle(Paint.Style.FILL);
-        canvas.drawRoundRect(bubble, width * 0.19f, width * 0.19f, paint);
+        RectF bubble = new RectF(bounds.left + width * 0.16f,
+                bounds.top + width * 0.20f, bounds.right - width * 0.16f,
+                bounds.bottom - width * 0.24f);
+        prepareStroke(width * 0.070f);
+        canvas.drawRoundRect(bubble, width * 0.20f, width * 0.20f, paint);
         path.reset();
-        path.moveTo(bounds.left + width * 0.25f,
-                bounds.bottom - width * 0.37f);
-        path.lineTo(bounds.left + width * 0.19f,
-                bounds.bottom - width * 0.18f);
-        path.lineTo(bounds.left + width * 0.42f,
-                bounds.bottom - width * 0.31f);
-        path.close();
+        path.moveTo(bounds.left + width * 0.25f, bounds.bottom - width * 0.30f);
+        path.lineTo(bounds.left + width * 0.18f, bounds.bottom - width * 0.09f);
+        path.lineTo(bounds.left + width * 0.43f, bounds.bottom - width * 0.25f);
         canvas.drawPath(path, paint);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawSong(Canvas canvas, RectF bounds) {
-        paint.setColor(0xFFE8EFFA);
-        paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTypeface(Typeface.create("serif", Typeface.NORMAL));
-        paint.setTextSize(bounds.width() * 0.55f);
-        Paint.FontMetrics metrics = paint.getFontMetrics();
-        float baseline = bounds.centerY()
-                - (metrics.ascent + metrics.descent) / 2f;
-        canvas.drawText("宋", bounds.centerX(), baseline, paint);
+        float w = bounds.width();
+        float l = bounds.left;
+        float t = bounds.top;
+        prepareStroke(w * 0.070f);
+
+        // BYD Dynasty-style seal-script 宋: roof (宀) and a flowing 木.
+        path.reset();
+        path.moveTo(l + w * 0.50f, t + w * 0.10f);
+        path.lineTo(l + w * 0.50f, t + w * 0.19f);
+        path.moveTo(l + w * 0.24f, t + w * 0.30f);
+        path.quadTo(l + w * 0.50f, t + w * 0.20f,
+                l + w * 0.76f, t + w * 0.30f);
+        path.lineTo(l + w * 0.72f, t + w * 0.40f);
+        path.moveTo(l + w * 0.28f, t + w * 0.31f);
+        path.lineTo(l + w * 0.28f, t + w * 0.41f);
+        path.moveTo(l + w * 0.32f, t + w * 0.43f);
+        path.lineTo(l + w * 0.68f, t + w * 0.43f);
+        path.moveTo(l + w * 0.50f, t + w * 0.40f);
+        path.lineTo(l + w * 0.50f, t + w * 0.84f);
+        path.moveTo(l + w * 0.28f, t + w * 0.57f);
+        path.lineTo(l + w * 0.72f, t + w * 0.57f);
+        path.moveTo(l + w * 0.49f, t + w * 0.58f);
+        path.cubicTo(l + w * 0.44f, t + w * 0.68f,
+                l + w * 0.35f, t + w * 0.77f,
+                l + w * 0.23f, t + w * 0.83f);
+        path.moveTo(l + w * 0.51f, t + w * 0.58f);
+        path.cubicTo(l + w * 0.56f, t + w * 0.68f,
+                l + w * 0.65f, t + w * 0.77f,
+                l + w * 0.77f, t + w * 0.83f);
+        canvas.drawPath(path, paint);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawCamera(Canvas canvas, RectF bounds) {
@@ -152,10 +142,7 @@ final class QuickIconDrawable extends Drawable {
                 bounds.top + width * 0.30f,
                 bounds.right - width * 0.18f,
                 bounds.bottom - width * 0.22f);
-        paint.setColor(Color.WHITE);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(width * 0.055f);
-        paint.setStrokeCap(Paint.Cap.ROUND);
+        prepareStroke(width * 0.065f);
         canvas.drawRoundRect(body, width * 0.10f, width * 0.10f, paint);
         canvas.drawCircle(bounds.centerX(), bounds.centerY() + width * 0.05f,
                 width * 0.13f, paint);
@@ -178,9 +165,7 @@ final class QuickIconDrawable extends Drawable {
         float r = bounds.width() * 0.27f;
         float cx = bounds.centerX();
         float cy = bounds.centerY();
-        paint.setColor(Color.WHITE);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(bounds.width() * 0.075f);
+        prepareStroke(bounds.width() * 0.065f);
         canvas.drawCircle(cx, cy, r, paint);
         canvas.drawCircle(cx, cy, r * 0.34f, paint);
         for (int index = 0; index < 8; index++) {
@@ -191,6 +176,14 @@ final class QuickIconDrawable extends Drawable {
                     cy + (float) Math.sin(angle) * r * 1.32f, paint);
         }
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void prepareStroke(float width) {
+        paint.setColor(ICON_COLOR);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(width);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
     }
 
     @Override
