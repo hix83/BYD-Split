@@ -13,7 +13,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 
 final class QuickIconDrawable extends Drawable {
-    private enum Kind { YANDEX_MUSIC, MAX, SONG, CAMERA }
+    private enum Kind { YANDEX_MUSIC, MAX, SONG, CAMERA, SETTINGS }
 
     private final Kind kind;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -37,6 +37,10 @@ final class QuickIconDrawable extends Drawable {
 
     static Drawable camera() {
         return new QuickIconDrawable(Kind.CAMERA);
+    }
+
+    static Drawable settings() {
+        return new QuickIconDrawable(Kind.SETTINGS);
     }
 
     @Override
@@ -74,6 +78,14 @@ final class QuickIconDrawable extends Drawable {
                 canvas.drawRoundRect(bounds, radius, radius, paint);
                 paint.setShader(null);
                 drawCamera(canvas, bounds);
+                break;
+            case SETTINGS:
+                paint.setShader(new LinearGradient(
+                        bounds.left, bounds.top, bounds.right, bounds.bottom,
+                        0xFF526782, 0xFF202D40, Shader.TileMode.CLAMP));
+                canvas.drawRoundRect(bounds, radius, radius, paint);
+                paint.setShader(null);
+                drawSettings(canvas, bounds);
                 break;
         }
     }
@@ -159,6 +171,25 @@ final class QuickIconDrawable extends Drawable {
                 bounds.top + width * 0.22f,
                 bounds.left + width * 0.66f,
                 bounds.top + width * 0.30f, paint);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawSettings(Canvas canvas, RectF bounds) {
+        float r = bounds.width() * 0.27f;
+        float cx = bounds.centerX();
+        float cy = bounds.centerY();
+        paint.setColor(Color.WHITE);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(bounds.width() * 0.075f);
+        canvas.drawCircle(cx, cy, r, paint);
+        canvas.drawCircle(cx, cy, r * 0.34f, paint);
+        for (int index = 0; index < 8; index++) {
+            double angle = index * Math.PI / 4;
+            canvas.drawLine(cx + (float) Math.cos(angle) * r,
+                    cy + (float) Math.sin(angle) * r,
+                    cx + (float) Math.cos(angle) * r * 1.32f,
+                    cy + (float) Math.sin(angle) * r * 1.32f, paint);
+        }
         paint.setStyle(Paint.Style.FILL);
     }
 

@@ -4,11 +4,14 @@ import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -63,6 +66,7 @@ public final class MainActivity extends Activity {
     private EmbeddedAppPane farEmbeddedPane;
     private boolean showingVehicleDashboard;
     private volatile boolean resumed;
+    private ParkingCameraAutomation cameraAutomation;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -75,6 +79,7 @@ public final class MainActivity extends Activity {
         shellBridgeClient = new ShellBridgeClient(this);
         steeringEventServer = new SteeringEventServer();
         steeringEventServer.start();
+        cameraAutomation = new ParkingCameraAutomation(this);
         driverApps = readCarousel(
                 AppPreferences.KEY_DRIVER_APPS, KEY_DRIVER_APP);
         driverApps = filterCompactApps(driverApps);
@@ -112,6 +117,14 @@ public final class MainActivity extends Activity {
         super.onResume();
         resumed = true;
         applySystemBarsMode();
+        if (AppPreferences.isParkingCameraAutoEnabled(this)
+                && checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION}, 341);
+        } else {
+            cameraAutomation.start();
+        }
     }
 
     @Override
@@ -171,6 +184,8 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        cameraAutomation.stop();
+        ParkingCameraOverlay.close(this);
         releasePanes();
         steeringEventServer.close();
         shellBridgeClient.close();
@@ -255,9 +270,8 @@ public final class MainActivity extends Activity {
 
         compactPaneContainer = new LinearLayout(this);
         compactPaneContainer.setOrientation(LinearLayout.VERTICAL);
-        compactPaneContainer.setPadding(dp(3), dp(3), dp(3), dp(3));
-        compactPaneContainer.setBackground(roundedBackground(
-                Color.rgb(13, 22, 36), 18));
+        compactPaneContainer.setPadding(0, 0, 0, 0);
+        compactPaneContainer.setBackgroundColor(Color.TRANSPARENT);
         compactPaneContainer.addView(driverSlot, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         compactPaneContainer.addView(createCompactDock(),
@@ -315,32 +329,32 @@ public final class MainActivity extends Activity {
         LinearLayout dock = new LinearLayout(this);
         dock.setOrientation(LinearLayout.HORIZONTAL);
         dock.setGravity(Gravity.CENTER);
-        dock.setPadding(dp(5), dp(7), dp(5), dp(5));
-        dock.setBackground(roundedBackground(Color.rgb(8, 15, 25), 14));
+        dock.setPadding(0, dp(7), 0, dp(5));
+        dock.setBackgroundColor(Color.TRANSPARENT);
 
-        AppEntry yandex = findFirstInstalled(
+        AppEntry music = resolveQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP,
                 PACKAGE_YANDEX_MUSIC, PACKAGE_YANDEX_MUSIC_ALT);
-        AppEntry max = findFirstInstalled(PACKAGE_MAX);
-        addCompactButton(dock, "Я.Музыка",
-                yandex == null
-                        ? QuickIconDrawable.yandexMusic()
-                        : yandex.icon,
-                () -> activateCompactApp(
-                        PACKAGE_YANDEX_MUSIC, PACKAGE_YANDEX_MUSIC_ALT));
+        AppEntry max = resolveQuickApp(AppPreferences.KEY_QUICK_MAX_APP, PACKAGE_MAX);
+        addCompactButton(dock, "Авто", QuickIconDrawable.song(),
+                () -> showVehicleDashboard(true), null);
+        addCompactButton(dock, "Камеры", QuickIconDrawable.camera(),
+                this::showParkingCamera, null);
+        addCompactButton(dock, "Музыка",
+                music == null ? QuickIconDrawable.yandexMusic() : music.icon,
+                () -> activateQuickApp(music),
+                () -> chooseQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP));
         addCompactButton(dock, "MAX",
                 max == null ? QuickIconDrawable.max() : max.icon,
-                () -> activateCompactApp(PACKAGE_MAX));
-        addCompactButton(dock, "Авто", QuickIconDrawable.song(),
-                () -> showVehicleDashboard(true));
-        addCompactButton(dock, "Камеры", QuickIconDrawable.camera(),
-                () -> Toast.makeText(this,
-                        "Окно камер будет добавлено отдельным этапом",
-                        Toast.LENGTH_SHORT).show());
+                () -> activateQuickApp(max),
+                () -> chooseQuickApp(AppPreferences.KEY_QUICK_MAX_APP));
+        addCompactButton(dock, "Настройки", QuickIconDrawable.settings(),
+                this::openSettings, null);
         return dock;
     }
 
     private void addCompactButton(LinearLayout dock, String label,
-                                  Drawable icon, Runnable action) {
+                                  Drawable icon, Runnable action,
+                                  Runnable longAction) {
         LinearLayout button = new LinearLayout(this);
         button.setOrientation(LinearLayout.VERTICAL);
         button.setGravity(Gravity.CENTER);
@@ -348,11 +362,17 @@ public final class MainActivity extends Activity {
         button.setBackground(roundedBackground(Color.rgb(23, 34, 53), 12));
         button.setContentDescription(label);
         button.setOnClickListener(view -> action.run());
+        if (longAction != null) {
+            button.setOnLongClickListener(view -> {
+                longAction.run();
+                return true;
+            });
+        }
 
         ImageView image = new ImageView(this);
         image.setImageDrawable(icon);
         image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        button.addView(image, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        button.addView(image, new LinearLayout.LayoutParams(dp(36), dp(36)));
 
         TextView text = new TextView(this);
         text.setText(label);
@@ -365,9 +385,65 @@ public final class MainActivity extends Activity {
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-        params.setMarginStart(dp(3));
-        params.setMarginEnd(dp(3));
+        if (dock.getChildCount() > 0) {
+            params.setMarginStart(dp(6));
+        }
         dock.addView(button, params);
+    }
+
+    private AppEntry resolveQuickApp(String key, String... defaultPackages) {
+        String flattened = preferences.getString(key, null);
+        AppEntry selected = repository.resolve(flattened == null
+                ? null : ComponentName.unflattenFromString(flattened));
+        return selected == null ? findFirstInstalled(defaultPackages) : selected;
+    }
+
+    private void chooseQuickApp(String preferenceKey) {
+        AppPickerDialog.show(this, getAvailableApps(), selected -> {
+            preferences.edit().putString(preferenceKey,
+                    selected.component.flattenToString()).apply();
+            render();
+            Toast.makeText(this, "Назначено: " + selected.label,
+                    Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    private void activateQuickApp(AppEntry entry) {
+        if (entry == null) {
+            Toast.makeText(this, "Приложение не установлено",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        activateCompactEntry(entry, true);
+    }
+
+    private void activateCompactEntry(AppEntry selected, boolean persist) {
+        int existingIndex = indexOf(driverApps, selected.component);
+        if (existingIndex < 0) {
+            driverApps.add(selected);
+            existingIndex = driverApps.size() - 1;
+        }
+        driverAppIndex = existingIndex;
+        updateCurrentEntries();
+        saveCarousel(true);
+        showingVehicleDashboard = false;
+        refreshPane(KEY_DRIVER_APP);
+        if (persist) {
+            AppPreferences.setCompactTarget(this,
+                    selected.component.getPackageName());
+        }
+    }
+
+    private void showParkingCamera() {
+        if (ParkingCameraOverlay.show(this)) {
+            return;
+        }
+        Toast.makeText(this,
+                "Разрешите BYD Split показывать окно камеры поверх приложений",
+                Toast.LENGTH_LONG).show();
+        Intent permission = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:" + getPackageName()));
+        startActivity(permission);
     }
 
     private void restoreCompactContent() {
@@ -444,13 +520,28 @@ public final class MainActivity extends Activity {
         List<AppEntry> result = new ArrayList<>();
         for (AppEntry app : source) {
             String packageName = app.component.getPackageName();
-            if (PACKAGE_MAX.equals(packageName)
+            String component = app.component.flattenToString();
+            if (component.equals(preferences.getString(
+                    AppPreferences.KEY_QUICK_MUSIC_APP, ""))
+                    || component.equals(preferences.getString(
+                    AppPreferences.KEY_QUICK_MAX_APP, ""))
+                    || PACKAGE_MAX.equals(packageName)
                     || PACKAGE_YANDEX_MUSIC.equals(packageName)
                     || PACKAGE_YANDEX_MUSIC_ALT.equals(packageName)) {
                 result.add(app);
             }
         }
         return result;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 341 && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            cameraAutomation.start();
+        }
     }
 
     private List<AppEntry> getCompactAvailableApps() {
