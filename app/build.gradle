@@ -10,8 +10,8 @@ android {
         applicationId 'ru.logunov.bydsplit'
         minSdk 27
         targetSdk 35
-        versionCode 27
-        versionName '0.7.6-ui7style'
+        versionCode 28
+        versionName '0.7.7-ui7style'
     }
 
     buildTypes {

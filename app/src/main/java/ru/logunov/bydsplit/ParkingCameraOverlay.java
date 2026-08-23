@@ -71,6 +71,12 @@ final class ParkingCameraOverlay {
         root.setAlpha(0f);
         root.setScaleX(0.96f);
         root.setScaleY(0.96f);
+        root.setClickable(true);
+
+        FrameLayout touchLayer = new FrameLayout(context);
+        touchLayer.setBackgroundColor(Color.TRANSPARENT);
+        touchLayer.setClickable(true);
+        touchLayer.setOnClickListener(view -> dismiss(context));
 
         LinearLayout header = new LinearLayout(context);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -120,20 +126,24 @@ final class ParkingCameraOverlay {
         root.addView(webFrame, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
+        FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
+                width, height, Gravity.CENTER);
+        touchLayer.addView(root, cardParams);
+
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                width, height,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         : WindowManager.LayoutParams.TYPE_PHONE,
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                         | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.CENTER;
         params.y = 0;
-        manager.addView(root, params);
-        currentView = root;
+        manager.addView(touchLayer, params);
+        currentView = touchLayer;
         MainActivity.onParkingCameraVisibilityChanged(true);
         root.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220)
                 .setInterpolator(new DecelerateInterpolator()).start();
