@@ -3,7 +3,8 @@ package ru.logunov.bydsplit;
 final class VehicleTelemetrySnapshot {
     static final VehicleTelemetrySnapshot EMPTY = new VehicleTelemetrySnapshot(
             null, null, null, null, null,
-            null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null,
+            null, null, null, null, null);
 
     final Integer speedKmh;
     final Integer tirePressFlKpa;
@@ -17,6 +18,11 @@ final class VehicleTelemetrySnapshot {
     final Integer driveMode;
     final Integer workMode;
     final Float bearingDegrees;
+    final Float batterySocPercent;
+    final Integer batteryPowerKw;
+    final Integer engineRpm;
+    final Integer generatorPowerKw;
+    final Integer motorPowerKw;
 
     VehicleTelemetrySnapshot(
             Integer speedKmh,
@@ -30,7 +36,12 @@ final class VehicleTelemetrySnapshot {
             Integer tireTempRrC,
             Integer driveMode,
             Integer workMode,
-            Float bearingDegrees) {
+            Float bearingDegrees,
+            Float batterySocPercent,
+            Integer batteryPowerKw,
+            Integer engineRpm,
+            Integer generatorPowerKw,
+            Integer motorPowerKw) {
         this.speedKmh = speedKmh;
         this.tirePressFlKpa = tirePressFlKpa;
         this.tirePressFrKpa = tirePressFrKpa;
@@ -43,6 +54,11 @@ final class VehicleTelemetrySnapshot {
         this.driveMode = driveMode;
         this.workMode = workMode;
         this.bearingDegrees = bearingDegrees;
+        this.batterySocPercent = batterySocPercent;
+        this.batteryPowerKw = batteryPowerKw;
+        this.engineRpm = engineRpm;
+        this.generatorPowerKw = generatorPowerKw;
+        this.motorPowerKw = motorPowerKw;
     }
 
     VehicleTelemetrySnapshot withBearing(Float bearing) {
@@ -50,7 +66,9 @@ final class VehicleTelemetrySnapshot {
                 speedKmh, tirePressFlKpa, tirePressFrKpa,
                 tirePressRlKpa, tirePressRrKpa,
                 tireTempFlC, tireTempFrC, tireTempRlC, tireTempRrC,
-                driveMode, workMode, bearing);
+                driveMode, workMode, bearing,
+                batterySocPercent, batteryPowerKw,
+                engineRpm, generatorPowerKw, motorPowerKw);
     }
 
     VehicleTelemetrySnapshot withVehicleData(VehicleTelemetrySnapshot value) {
@@ -59,12 +77,16 @@ final class VehicleTelemetrySnapshot {
                 value.tirePressRlKpa, value.tirePressRrKpa,
                 value.tireTempFlC, value.tireTempFrC,
                 value.tireTempRlC, value.tireTempRrC,
-                value.driveMode, value.workMode, bearingDegrees);
+                value.driveMode, value.workMode, bearingDegrees,
+                value.batterySocPercent, value.batteryPowerKw,
+                value.engineRpm, value.generatorPowerKw,
+                value.motorPowerKw);
     }
 
     static VehicleTelemetrySnapshot demo() {
         return new VehicleTelemetrySnapshot(
                 72, 240, 240, 230, 230,
-                31, 32, 29, 30, 3, 3, 308f);
+                31, 32, 29, 30, 3, 3, 308f,
+                68f, 26, 1820, 18, 24);
     }
 }

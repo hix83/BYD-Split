@@ -183,8 +183,10 @@ final class LocalAdbManager {
                             + "service call autoservice 5 i32 1007 i32 1246797872; "
                             + "service call autoservice 5 i32 1007 i32 1246797884; "
                             + "service call autoservice 5 i32 1006 i32 555745294; "
-                            + "service call autoservice 5 i32 1006 i32 874512420");
-            int[] raw = new int[11];
+                            + "service call autoservice 5 i32 1006 i32 874512420; "
+                            + "service call autoservice 7 i32 1014 i32 1246777400; "
+                            + "service call autoservice 5 i32 1012 i32 339738656");
+            int[] raw = new int[13];
             Matcher matcher = PARCEL_VALUE.matcher(output);
             int count = 0;
             while (matcher.find() && count < raw.length) {
@@ -202,7 +204,9 @@ final class LocalAdbManager {
                     decodePressure(raw[3]), decodePressure(raw[4]),
                     decodeTemperature(raw[5]), decodeTemperature(raw[6]),
                     decodeTemperature(raw[7]), decodeTemperature(raw[8]),
-                    decodeEnum(raw[9]), decodeEnum(raw[10]), null);
+                    decodeEnum(raw[9]), decodeEnum(raw[10]), null,
+                    decodePercent(raw[11]), decodePower(raw[12]),
+                    null, null, null);
         } catch (Exception error) {
             client.close();
             Log.w(TAG, "Cannot read vehicle telemetry", error);
@@ -228,6 +232,15 @@ final class LocalAdbManager {
 
     private static Integer decodeEnum(int raw) {
         return !isSentinel(raw) && raw >= 0 && raw <= 255 ? raw : null;
+    }
+
+    private static Float decodePercent(int raw) {
+        Float value = decodeFloat(raw);
+        return value != null && value >= 0f && value <= 100f ? value : null;
+    }
+
+    private static Integer decodePower(int raw) {
+        return !isSentinel(raw) && raw >= -300 && raw <= 500 ? raw : null;
     }
 
     private static boolean isSentinel(int raw) {

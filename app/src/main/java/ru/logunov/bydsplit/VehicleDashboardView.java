@@ -8,8 +8,10 @@ import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PathMeasure;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -34,6 +36,12 @@ final class VehicleDashboardView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private final Bitmap vehicleBitmap;
+    private final Bitmap engineBitmap;
+    private final Bitmap generatorBitmap;
+    private final Bitmap controllerBitmap;
+    private final Bitmap motorBitmap;
+    private final Bitmap wheelBitmap;
+    private final Bitmap batteryShellBitmap;
     private final ActionListener actionListener;
     private final RectF[] actionBounds = {
             new RectF(), new RectF(), new RectF(), new RectF()};
@@ -44,8 +52,18 @@ final class VehicleDashboardView extends View {
         this.actionListener = actionListener;
         vehicleBitmap = BitmapFactory.decodeResource(
                 getResources(), R.drawable.song_l_dmi_top);
+        engineBitmap = loadBitmap(R.drawable.dmi_engine_reference);
+        generatorBitmap = loadBitmap(R.drawable.dmi_generator_reference);
+        controllerBitmap = loadBitmap(R.drawable.dmi_controller_reference);
+        motorBitmap = loadBitmap(R.drawable.dmi_motor_reference);
+        wheelBitmap = loadBitmap(R.drawable.dmi_wheel_reference);
+        batteryShellBitmap = loadBitmap(R.drawable.dmi_battery_shell_reference);
         setContentDescription(
                 "Состояние BYD Song L DM-i: скорость, направление, режим и шины");
+    }
+
+    private Bitmap loadBitmap(int resource) {
+        return BitmapFactory.decodeResource(getResources(), resource);
     }
 
     void setTelemetry(VehicleTelemetrySnapshot value) {
@@ -232,65 +250,105 @@ final class VehicleDashboardView extends View {
     }
 
     private void drawPowerFlow(Canvas canvas, float width, float height) {
-        float titleY = height * 0.625f;
+        float cardTop = height * 0.585f;
+        float cardBottom = height * 0.885f;
+        paint.setColor(0x52101D30);
+        canvas.drawRoundRect(new RectF(
+                        width * 0.035f, cardTop,
+                        width * 0.965f, cardBottom),
+                width * 0.025f, width * 0.025f, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(Math.max(1f, width * 0.0015f));
+        paint.setColor(0x55315F9E);
+        canvas.drawRoundRect(new RectF(
+                        width * 0.035f, cardTop,
+                        width * 0.965f, cardBottom),
+                width * 0.025f, width * 0.025f, paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        float titleY = height * 0.617f;
         drawText(canvas, powerFlowTitle(telemetry.workMode), width * 0.5f,
-                titleY, width * 0.030f, TEXT_PRIMARY, Paint.Align.CENTER);
+                titleY, width * 0.025f, TEXT_PRIMARY, Paint.Align.CENTER);
 
-        float nodeY = height * 0.72f;
-        float nodeSize = width * 0.12f;
-        float engineX = width * 0.16f;
-        float generatorX = width * 0.39f;
-        float motorX = width * 0.64f;
-        float wheelX = width * 0.86f;
-        drawNode(canvas, engineX, nodeY, nodeSize, "ДВС");
-        drawNode(canvas, generatorX, nodeY, nodeSize, "G");
-        drawNode(canvas, motorX, nodeY, nodeSize, "M");
-        drawNode(canvas, wheelX, nodeY, nodeSize, "◉");
-        boolean electricOnly = telemetry.workMode != null
+        float nodeY = height * 0.695f;
+        float imageWidth = width * 0.135f;
+        float imageHeight = height * 0.083f;
+        float engineX = width * 0.115f;
+        float generatorX = width * 0.305f;
+        float controllerX = width * 0.50f;
+        float motorX = width * 0.695f;
+        float wheelX = width * 0.885f;
+
+        boolean engineActive = telemetry.workMode != null
+                && telemetry.workMode >= 3 && telemetry.workMode <= 5;
+        boolean tractionActive = telemetry.workMode != null
+                && telemetry.workMode >= 1 && telemetry.workMode <= 5;
+        boolean batteryDischarging = telemetry.batteryPowerKw != null
+                ? telemetry.batteryPowerKw > 1
+                : telemetry.workMode != null
                 && (telemetry.workMode == 1 || telemetry.workMode == 2);
-        drawArrow(canvas, engineX + nodeSize * 0.55f, nodeY,
-                generatorX - nodeSize * 0.55f, nodeY,
-                electricOnly ? 0x405E6A7C : AMBER);
-        drawArrow(canvas, generatorX + nodeSize * 0.55f, nodeY,
-                motorX - nodeSize * 0.55f, nodeY,
-                electricOnly ? 0x405E6A7C : ENERGY_BLUE);
-        drawArrow(canvas, motorX + nodeSize * 0.55f, nodeY,
-                wheelX - nodeSize * 0.55f, nodeY, ENERGY_BLUE);
+        boolean batteryCharging = telemetry.batteryPowerKw != null
+                && telemetry.batteryPowerKw < -1;
+        boolean wheelsMoving = telemetry.speedKmh != null
+                && telemetry.speedKmh > 0;
 
-        float batteryY = height * 0.82f;
-        float batteryWidth = width * 0.24f;
+        drawFlowLine(canvas, engineX + imageWidth * 0.42f, nodeY,
+                generatorX - imageWidth * 0.42f, nodeY,
+                AMBER, engineActive);
+        drawFlowLine(canvas, generatorX + imageWidth * 0.42f, nodeY,
+                controllerX - imageWidth * 0.42f, nodeY,
+                ENERGY_BLUE, engineActive);
+        drawFlowLine(canvas, controllerX + imageWidth * 0.42f, nodeY,
+                motorX - imageWidth * 0.42f, nodeY,
+                ENERGY_BLUE, tractionActive);
+        drawFlowLine(canvas, motorX + imageWidth * 0.42f, nodeY,
+                wheelX - imageWidth * 0.42f, nodeY,
+                ENERGY_BLUE, tractionActive && wheelsMoving);
+
+        float batteryY = height * 0.825f;
+        float batteryWidth = width * 0.30f;
+        float batteryHeight = batteryWidth
+                * batteryShellBitmap.getHeight() / batteryShellBitmap.getWidth();
         RectF battery = new RectF(
-                width * 0.5f - batteryWidth / 2f,
-                batteryY - nodeSize * 0.34f,
-                width * 0.5f + batteryWidth / 2f,
-                batteryY + nodeSize * 0.34f);
-        paint.setColor(0xFF162A43);
-        canvas.drawRoundRect(battery, width * 0.016f, width * 0.016f, paint);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(width * 0.003f);
-        paint.setColor(ENERGY_BLUE);
-        canvas.drawRoundRect(battery, width * 0.016f, width * 0.016f, paint);
-        paint.setStyle(Paint.Style.FILL);
-        drawText(canvas, "Батарея", width * 0.5f,
-                batteryY + width * 0.011f, width * 0.026f,
-                TEXT_PRIMARY, Paint.Align.CENTER);
-        if (!electricOnly) {
-            drawArrow(canvas, generatorX, nodeY + nodeSize * 0.54f,
-                    width * 0.46f, battery.top, ENERGY_BLUE);
+                controllerX - batteryWidth / 2f,
+                batteryY - batteryHeight / 2f,
+                controllerX + batteryWidth / 2f,
+                batteryY + batteryHeight / 2f);
+        Path batteryToController = new Path();
+        if (batteryCharging) {
+            batteryToController.moveTo(controllerX, nodeY + imageHeight * 0.45f);
+            batteryToController.lineTo(controllerX, battery.top + battery.height() * 0.2f);
+        } else {
+            batteryToController.moveTo(controllerX, battery.top + battery.height() * 0.2f);
+            batteryToController.lineTo(controllerX, nodeY + imageHeight * 0.45f);
         }
-        drawArrow(canvas, width * 0.54f, battery.top,
-                motorX, nodeY + nodeSize * 0.54f, ENERGY_BLUE);
+        drawAnimatedFlow(canvas, batteryToController,
+                batteryCharging ? AMBER : ENERGY_BLUE,
+                batteryCharging || batteryDischarging);
 
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(width * 0.002f);
-        paint.setColor(0x506D7E99);
-        path.reset();
-        path.moveTo(engineX, nodeY + nodeSize * 0.65f);
-        path.lineTo(engineX, height * 0.865f);
-        path.lineTo(wheelX, height * 0.865f);
-        path.lineTo(wheelX, nodeY + nodeSize * 0.65f);
-        canvas.drawPath(path, paint);
-        paint.setStyle(Paint.Style.FILL);
+        drawPowerNode(canvas, engineBitmap, engineX, nodeY,
+                imageWidth, imageHeight, "ДВС",
+                formatRpm(telemetry.engineRpm));
+        drawPowerNode(canvas, generatorBitmap, generatorX, nodeY,
+                imageWidth, imageHeight, "Генератор",
+                formatPower(telemetry.generatorPowerKw));
+        drawPowerNode(canvas, controllerBitmap, controllerX, nodeY,
+                imageWidth, imageHeight, "Электроника",
+                formatPower(telemetry.batteryPowerKw));
+        drawPowerNode(canvas, motorBitmap, motorX, nodeY,
+                imageWidth, imageHeight, "Эл. мотор",
+                formatPower(telemetry.motorPowerKw));
+        drawPowerNode(canvas, wheelBitmap, wheelX, nodeY,
+                imageWidth, imageHeight, "Колёса",
+                telemetry.speedKmh == null ? "— км/ч"
+                        : telemetry.speedKmh + " км/ч");
+
+        drawBattery(canvas, battery, telemetry.batterySocPercent,
+                telemetry.batteryPowerKw);
+        if (engineActive || tractionActive
+                || batteryCharging || batteryDischarging) {
+            postInvalidateOnAnimation();
+        }
     }
 
     private void drawQuickActions(Canvas canvas, float width, float height) {
@@ -435,38 +493,160 @@ final class VehicleDashboardView extends View {
         return labels[Math.round(bearing / 45f) % labels.length];
     }
 
-    private void drawNode(Canvas canvas, float centerX, float centerY,
-                          float size, String label) {
-        RectF node = new RectF(
-                centerX - size / 2f, centerY - size / 2f,
-                centerX + size / 2f, centerY + size / 2f);
-        paint.setColor(0xFF152238);
-        canvas.drawRoundRect(node, size * 0.22f, size * 0.22f, paint);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(size * 0.025f);
-        paint.setColor(0x884C8DFF);
-        canvas.drawRoundRect(node, size * 0.22f, size * 0.22f, paint);
-        paint.setStyle(Paint.Style.FILL);
-        drawText(canvas, label, centerX, centerY + size * 0.12f,
-                size * 0.28f, TEXT_PRIMARY, Paint.Align.CENTER);
+    private void drawPowerNode(Canvas canvas, Bitmap bitmap,
+                               float centerX, float centerY,
+                               float maxWidth, float maxHeight,
+                               String label, String value) {
+        float scale = Math.min(maxWidth / bitmap.getWidth(),
+                maxHeight / bitmap.getHeight());
+        float drawWidth = bitmap.getWidth() * scale;
+        float drawHeight = bitmap.getHeight() * scale;
+        RectF target = new RectF(
+                centerX - drawWidth / 2f, centerY - drawHeight / 2f,
+                centerX + drawWidth / 2f, centerY + drawHeight / 2f);
+        paint.setAlpha(255);
+        canvas.drawBitmap(bitmap, null, target, paint);
+        drawText(canvas, label, centerX,
+                centerY + maxHeight * 0.67f,
+                getWidth() * 0.018f, TEXT_PRIMARY, Paint.Align.CENTER);
+        drawText(canvas, value, centerX,
+                centerY + maxHeight * 0.90f,
+                getWidth() * 0.016f, BLUE, Paint.Align.CENTER);
     }
 
-    private void drawArrow(Canvas canvas, float startX, float startY,
-                           float endX, float endY, int color) {
-        paint.setColor(color);
-        paint.setStrokeWidth(Math.max(2f, getWidth() * 0.006f));
+    private void drawBattery(Canvas canvas, RectF target,
+                             Float socPercent, Integer batteryPowerKw) {
+        float soc = socPercent == null ? 0f
+                : Math.max(0f, Math.min(100f, socPercent));
+        float left = target.left + target.width() * 0.145f;
+        float right = target.left + target.width() * 0.855f;
+        float top = target.top + target.height() * 0.29f;
+        float bottom = target.top + target.height() * 0.69f;
+        RectF liveFrame = new RectF(
+                left - target.width() * 0.035f,
+                top - target.height() * 0.09f,
+                right + target.width() * 0.035f,
+                bottom + target.height() * 0.09f);
+        paint.setColor(0xFF071629);
+        canvas.drawRoundRect(liveFrame, target.height() * 0.12f,
+                target.height() * 0.12f, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(Math.max(1.5f, target.height() * 0.025f));
+        paint.setColor(0xC52F9DFF);
+        canvas.drawRoundRect(liveFrame, target.height() * 0.12f,
+                target.height() * 0.12f, paint);
+        paint.setStyle(Paint.Style.FILL);
+        float gap = target.width() * 0.010f;
+        float cellWidth = (right - left - gap * 9f) / 10f;
+        for (int index = 0; index < 10; index++) {
+            float cellLeft = left + index * (cellWidth + gap);
+            RectF cell = new RectF(cellLeft, top,
+                    cellLeft + cellWidth, bottom);
+            paint.setColor(0xFF102039);
+            canvas.drawRoundRect(cell, cellWidth * 0.24f,
+                    cellWidth * 0.24f, paint);
+            float fill = Math.max(0f, Math.min(1f,
+                    (soc - index * 10f) / 10f));
+            if (fill > 0f) {
+                int save = canvas.save();
+                canvas.clipRect(cell.left, cell.top,
+                        cell.left + cell.width() * fill, cell.bottom);
+                paint.setShader(new LinearGradient(
+                        cell.left, cell.top, cell.right, cell.bottom,
+                        index < 6 ? 0xFF168BFF : 0xFF25E884,
+                        index < 8 ? 0xFF22D8FF : 0xFFB4F52B,
+                        Shader.TileMode.CLAMP));
+                canvas.drawRoundRect(cell, cellWidth * 0.24f,
+                        cellWidth * 0.24f, paint);
+                paint.setShader(null);
+                canvas.restoreToCount(save);
+            }
+        }
+        paint.setAlpha(255);
+        canvas.drawBitmap(batteryShellBitmap, null, target, paint);
+
+        String socLabel = socPercent == null
+                ? "SOC —%" : "SOC " + Math.round(soc) + "%";
+        float pillWidth = target.width() * 0.42f;
+        float pillHeight = target.height() * 0.26f;
+        RectF pill = new RectF(
+                target.centerX() - pillWidth / 2f,
+                target.centerY() - pillHeight / 2f,
+                target.centerX() + pillWidth / 2f,
+                target.centerY() + pillHeight / 2f);
+        paint.setColor(0xB0071224);
+        canvas.drawRoundRect(pill, pillHeight / 2f, pillHeight / 2f, paint);
+        drawText(canvas, socLabel, target.centerX(),
+                target.centerY() + getWidth() * 0.009f,
+                getWidth() * 0.021f, TEXT_PRIMARY, Paint.Align.CENTER);
+        drawText(canvas, "АКБ " + formatPower(batteryPowerKw),
+                target.centerX(), target.bottom + getWidth() * 0.016f,
+                getWidth() * 0.016f,
+                batteryPowerKw != null && batteryPowerKw < -1
+                        ? AMBER : ENERGY_BLUE,
+                Paint.Align.CENTER);
+    }
+
+    private void drawFlowLine(Canvas canvas,
+                              float startX, float startY,
+                              float endX, float endY,
+                              int color, boolean active) {
+        Path flow = new Path();
+        flow.moveTo(startX, startY);
+        flow.lineTo(endX, endY);
+        drawAnimatedFlow(canvas, flow, color, active);
+    }
+
+    private void drawAnimatedFlow(Canvas canvas, Path flow,
+                                  int color, boolean active) {
+        paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
-        canvas.drawLine(startX, startY, endX, endY, paint);
-        float angle = (float) Math.atan2(endY - startY, endX - startX);
-        float arrow = getWidth() * 0.018f;
-        path.reset();
-        path.moveTo(endX, endY);
-        path.lineTo(endX - arrow * (float) Math.cos(angle - 0.6f),
-                endY - arrow * (float) Math.sin(angle - 0.6f));
-        path.lineTo(endX - arrow * (float) Math.cos(angle + 0.6f),
-                endY - arrow * (float) Math.sin(angle + 0.6f));
-        path.close();
-        canvas.drawPath(path, paint);
+        paint.setStrokeWidth(Math.max(1f, getWidth() * 0.003f));
+        paint.setColor(active ? withAlpha(color, 150) : 0x303F5068);
+        canvas.drawPath(flow, paint);
+        paint.setStyle(Paint.Style.FILL);
+        if (!active) {
+            return;
+        }
+        PathMeasure measure = new PathMeasure(flow, false);
+        float length = measure.getLength();
+        float spacing = getWidth() * 0.035f;
+        float phase = (SystemClock.uptimeMillis() % 900L) / 900f;
+        float[] position = new float[2];
+        float[] tangent = new float[2];
+        for (float distance = phase * spacing;
+             distance < length; distance += spacing) {
+            if (!measure.getPosTan(distance, position, tangent)) {
+                continue;
+            }
+            float angle = (float) Math.atan2(tangent[1], tangent[0]);
+            float size = getWidth() * 0.010f;
+            path.reset();
+            path.moveTo(position[0] + (float) Math.cos(angle) * size,
+                    position[1] + (float) Math.sin(angle) * size);
+            path.lineTo(position[0] + (float) Math.cos(angle + 2.45f) * size,
+                    position[1] + (float) Math.sin(angle + 2.45f) * size);
+            path.lineTo(position[0] + (float) Math.cos(angle - 2.45f) * size,
+                    position[1] + (float) Math.sin(angle - 2.45f) * size);
+            path.close();
+            paint.setColor(color);
+            canvas.drawPath(path, paint);
+        }
+    }
+
+    private static int withAlpha(int color, int alpha) {
+        return (color & 0x00FFFFFF) | (alpha << 24);
+    }
+
+    private static String formatRpm(Integer rpm) {
+        return rpm == null ? "— об/мин" : rpm + " об/мин";
+    }
+
+    private static String formatPower(Integer powerKw) {
+        if (powerKw == null) {
+            return "— кВт";
+        }
+        return (powerKw > 0 ? "+" : "") + powerKw + " кВт";
     }
 
     private void drawText(Canvas canvas, String value, float x, float y,
