@@ -366,25 +366,28 @@ public final class MainActivity extends Activity {
         LinearLayout dock = new LinearLayout(this);
         dock.setOrientation(LinearLayout.HORIZONTAL);
         dock.setGravity(Gravity.CENTER);
-        dock.setPadding(0, dp(7), 0, dp(5));
+        dock.setPadding(0, dp(5), 0, dp(4));
         dock.setBackgroundColor(Color.TRANSPARENT);
 
         quickMusicApp = resolveQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP,
                 PACKAGE_YANDEX_MUSIC, PACKAGE_YANDEX_MUSIC_ALT);
         quickMaxApp = resolveQuickApp(AppPreferences.KEY_QUICK_MAX_APP, PACKAGE_MAX);
-        compactAutoButton = addCompactButton(dock, "Авто", QuickIconDrawable.song(),
+        compactAutoButton = addCompactButton(dock, "Авто",
+                getDrawable(R.drawable.dock_song_reference),
                 () -> showVehicleDashboard(true), null);
-        compactCameraButton = addCompactButton(dock, "Камеры", QuickIconDrawable.camera(),
+        compactCameraButton = addCompactButton(dock, "Камеры",
+                getDrawable(R.drawable.dock_camera_reference),
                 this::showParkingCamera, null);
         compactMusicButton = addCompactButton(dock, "Музыка",
-                QuickIconDrawable.yandexMusic(),
+                getDrawable(R.drawable.dock_music_reference),
                 () -> activateQuickApp(quickMusicApp),
                 () -> chooseQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP));
         compactMaxButton = addCompactButton(dock, "MAX",
-                QuickIconDrawable.max(),
+                getDrawable(R.drawable.dock_max_reference),
                 () -> activateQuickApp(quickMaxApp),
                 () -> chooseQuickApp(AppPreferences.KEY_QUICK_MAX_APP));
-        compactSettingsButton = addCompactButton(dock, "Настройки", QuickIconDrawable.settings(),
+        compactSettingsButton = addCompactButton(dock, "Настройки",
+                getDrawable(R.drawable.dock_settings_reference),
                 this::openSettings, null);
         updateCompactDockSelection();
         return dock;
@@ -396,8 +399,8 @@ public final class MainActivity extends Activity {
         LinearLayout button = new LinearLayout(this);
         button.setOrientation(LinearLayout.VERTICAL);
         button.setGravity(Gravity.CENTER);
-        button.setPadding(dp(3), dp(5), dp(3), dp(3));
-        button.setBackground(roundedBackground(Color.rgb(23, 34, 53), 12));
+        button.setPadding(0, 0, 0, 0);
+        button.setBackgroundColor(Color.TRANSPARENT);
         button.setContentDescription(label);
         button.setOnClickListener(view -> action.run());
         if (longAction != null) {
@@ -410,14 +413,10 @@ public final class MainActivity extends Activity {
         ImageView image = new ImageView(this);
         image.setImageDrawable(icon);
         image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        button.addView(image, new LinearLayout.LayoutParams(dp(50), dp(50)));
-
-        View indicator = new View(this);
-        LinearLayout.LayoutParams indicatorParams = new LinearLayout.LayoutParams(
-                dp(34), dp(4));
-        indicatorParams.topMargin = dp(5);
-        button.addView(indicator, indicatorParams);
-        button.setTag(indicator);
+        button.addView(image, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        button.setTag(image);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
@@ -445,15 +444,11 @@ public final class MainActivity extends Activity {
 
     private void styleCompactButton(View button, boolean active) {
         if (button != null) {
-            button.setBackground(roundedBackground(Color.rgb(23, 34, 53), 12));
             Object tag = button.getTag();
-            if (tag instanceof View) {
-                View indicator = (View) tag;
-                indicator.setBackground(roundedBackground(
-                        active ? Color.rgb(76, 141, 255)
-                                : Color.rgb(53, 68, 91), 2));
-                indicator.setAlpha(active ? 1f : 0.28f);
-                indicator.setElevation(active ? dp(5) : 0);
+            if (tag instanceof ImageView) {
+                ImageView tile = (ImageView) tag;
+                tile.animate().cancel();
+                tile.setAlpha(active ? 1f : 0.78f);
             }
         }
     }
