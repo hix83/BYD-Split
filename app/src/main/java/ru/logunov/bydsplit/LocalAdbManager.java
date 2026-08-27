@@ -185,8 +185,10 @@ final class LocalAdbManager {
                             + "service call autoservice 5 i32 1006 i32 555745294; "
                             + "service call autoservice 5 i32 1006 i32 874512420; "
                             + "service call autoservice 7 i32 1014 i32 1246777400; "
-                            + "service call autoservice 5 i32 1012 i32 339738656");
-            int[] raw = new int[13];
+                            + "service call autoservice 5 i32 1012 i32 339738656; "
+                            + "service call autoservice 5 i32 1009 i32 876609586; "
+                            + "service call autoservice 5 i32 1009 i32 876609592");
+            int[] raw = new int[15];
             Matcher matcher = PARCEL_VALUE.matcher(output);
             int count = 0;
             while (matcher.find() && count < raw.length) {
@@ -206,7 +208,8 @@ final class LocalAdbManager {
                     decodeTemperature(raw[7]), decodeTemperature(raw[8]),
                     decodeEnum(raw[9]), decodeEnum(raw[10]), null,
                     decodePercent(raw[11]), decodePower(raw[12]),
-                    null, null, null);
+                    null, null, null,
+                    decodeEnum(raw[13]), decodeEnum(raw[14]));
         } catch (Exception error) {
             client.close();
             Log.w(TAG, "Cannot read vehicle telemetry", error);

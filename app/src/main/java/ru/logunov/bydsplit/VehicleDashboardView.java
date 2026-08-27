@@ -271,13 +271,15 @@ final class VehicleDashboardView extends View {
                 titleY, width * 0.025f, TEXT_PRIMARY, Paint.Align.CENTER);
 
         float nodeY = height * 0.695f;
-        float imageWidth = width * 0.135f;
+        float imageWidth = width * 0.145f;
         float imageHeight = height * 0.083f;
-        float engineX = width * 0.115f;
-        float generatorX = width * 0.305f;
-        float controllerX = width * 0.50f;
-        float motorX = width * 0.695f;
-        float wheelX = width * 0.885f;
+        float engineX = width * 0.105f;
+        float generatorX = width * 0.325f;
+        float motorX = width * 0.685f;
+        float wheelX = width * 0.895f;
+        float chargerX = width * 0.225f;
+        float chargerY = height * 0.815f;
+        float batteryX = width * 0.55f;
 
         boolean engineActive = telemetry.workMode != null
                 && telemetry.workMode >= 3 && telemetry.workMode <= 5;
@@ -291,40 +293,87 @@ final class VehicleDashboardView extends View {
                 && telemetry.batteryPowerKw < -1;
         boolean wheelsMoving = telemetry.speedKmh != null
                 && telemetry.speedKmh > 0;
+        boolean externalCharging = isExternalCharging(
+                telemetry.chargeGunState, telemetry.chargingType);
+        boolean directEngineDrive = telemetry.workMode != null
+                && (telemetry.workMode == 4 || telemetry.workMode == 5);
+        boolean generatorFeedsMotor = engineActive && tractionActive;
+        boolean generatorChargesBattery = engineActive
+                && batteryCharging && !externalCharging;
+        boolean regenerativeBraking = batteryCharging
+                && wheelsMoving && !externalCharging
+                && !generatorChargesBattery;
 
         drawFlowLine(canvas, engineX + imageWidth * 0.42f, nodeY,
                 generatorX - imageWidth * 0.42f, nodeY,
                 AMBER, engineActive);
         drawFlowLine(canvas, generatorX + imageWidth * 0.42f, nodeY,
-                controllerX - imageWidth * 0.42f, nodeY,
-                ENERGY_BLUE, engineActive);
-        drawFlowLine(canvas, controllerX + imageWidth * 0.42f, nodeY,
                 motorX - imageWidth * 0.42f, nodeY,
-                ENERGY_BLUE, tractionActive);
+                ENERGY_BLUE, generatorFeedsMotor);
         drawFlowLine(canvas, motorX + imageWidth * 0.42f, nodeY,
                 wheelX - imageWidth * 0.42f, nodeY,
                 ENERGY_BLUE, tractionActive && wheelsMoving);
 
+        Path directDrive = new Path();
+        float mechanicalY = height * 0.642f;
+        directDrive.moveTo(engineX, nodeY - imageHeight * 0.45f);
+        directDrive.lineTo(engineX, mechanicalY);
+        directDrive.lineTo(wheelX, mechanicalY);
+        directDrive.lineTo(wheelX, nodeY - imageHeight * 0.45f);
+        drawAnimatedFlow(canvas, directDrive, AMBER, directEngineDrive);
+
         float batteryY = height * 0.825f;
-        float batteryWidth = width * 0.30f;
+        float batteryWidth = width * 0.27f;
         float batteryHeight = batteryWidth
                 * batteryShellBitmap.getHeight() / batteryShellBitmap.getWidth();
         RectF battery = new RectF(
-                controllerX - batteryWidth / 2f,
+                batteryX - batteryWidth / 2f,
                 batteryY - batteryHeight / 2f,
-                controllerX + batteryWidth / 2f,
+                batteryX + batteryWidth / 2f,
                 batteryY + batteryHeight / 2f);
-        Path batteryToController = new Path();
-        if (batteryCharging) {
-            batteryToController.moveTo(controllerX, nodeY + imageHeight * 0.45f);
-            batteryToController.lineTo(controllerX, battery.top + battery.height() * 0.2f);
+
+        Path generatorBattery = new Path();
+        generatorBattery.moveTo(generatorX,
+                nodeY + imageHeight * 0.45f);
+        generatorBattery.lineTo(generatorX, battery.top - height * 0.012f);
+        generatorBattery.lineTo(batteryX - batteryWidth * 0.28f,
+                battery.top - height * 0.012f);
+        generatorBattery.lineTo(batteryX - batteryWidth * 0.28f,
+                battery.top + battery.height() * 0.18f);
+        drawAnimatedFlow(canvas, generatorBattery,
+                ENERGY_BLUE, generatorChargesBattery);
+
+        Path batteryMotor = new Path();
+        if (regenerativeBraking) {
+            batteryMotor.moveTo(motorX,
+                    nodeY + imageHeight * 0.45f);
+            batteryMotor.lineTo(motorX, battery.top - height * 0.012f);
+            batteryMotor.lineTo(batteryX + batteryWidth * 0.28f,
+                    battery.top - height * 0.012f);
+            batteryMotor.lineTo(batteryX + batteryWidth * 0.28f,
+                    battery.top + battery.height() * 0.18f);
         } else {
-            batteryToController.moveTo(controllerX, battery.top + battery.height() * 0.2f);
-            batteryToController.lineTo(controllerX, nodeY + imageHeight * 0.45f);
+            batteryMotor.moveTo(batteryX + batteryWidth * 0.28f,
+                    battery.top + battery.height() * 0.18f);
+            batteryMotor.lineTo(batteryX + batteryWidth * 0.28f,
+                    battery.top - height * 0.012f);
+            batteryMotor.lineTo(motorX, battery.top - height * 0.012f);
+            batteryMotor.lineTo(motorX,
+                    nodeY + imageHeight * 0.45f);
         }
-        drawAnimatedFlow(canvas, batteryToController,
-                batteryCharging ? AMBER : ENERGY_BLUE,
-                batteryCharging || batteryDischarging);
+        drawAnimatedFlow(canvas, batteryMotor,
+                regenerativeBraking ? AMBER : ENERGY_BLUE,
+                regenerativeBraking || batteryDischarging);
+
+        Path chargerBattery = new Path();
+        chargerBattery.moveTo(chargerX + width * 0.065f, chargerY);
+        chargerBattery.lineTo(battery.left - width * 0.012f, chargerY);
+        chargerBattery.lineTo(battery.left - width * 0.012f,
+                battery.centerY());
+        chargerBattery.lineTo(battery.left + battery.width() * 0.04f,
+                battery.centerY());
+        drawAnimatedFlow(canvas, chargerBattery,
+                ENERGY_BLUE, externalCharging);
 
         drawPowerNode(canvas, engineBitmap, engineX, nodeY,
                 imageWidth, imageHeight, "ДВС",
@@ -332,9 +381,6 @@ final class VehicleDashboardView extends View {
         drawPowerNode(canvas, generatorBitmap, generatorX, nodeY,
                 imageWidth, imageHeight, "Генератор",
                 formatPower(telemetry.generatorPowerKw));
-        drawPowerNode(canvas, controllerBitmap, controllerX, nodeY,
-                imageWidth, imageHeight, "Электроника",
-                formatPower(telemetry.batteryPowerKw));
         drawPowerNode(canvas, motorBitmap, motorX, nodeY,
                 imageWidth, imageHeight, "Эл. мотор",
                 formatPower(telemetry.motorPowerKw));
@@ -342,11 +388,16 @@ final class VehicleDashboardView extends View {
                 imageWidth, imageHeight, "Колёса",
                 telemetry.speedKmh == null ? "— км/ч"
                         : telemetry.speedKmh + " км/ч");
+        drawPowerNode(canvas, controllerBitmap, chargerX, chargerY,
+                width * 0.115f, height * 0.055f, "Зарядный блок",
+                chargerTypeLabel(telemetry.chargeGunState,
+                        telemetry.chargingType));
 
         drawBattery(canvas, battery, telemetry.batterySocPercent,
                 telemetry.batteryPowerKw);
         if (engineActive || tractionActive
-                || batteryCharging || batteryDischarging) {
+                || batteryCharging || batteryDischarging
+                || externalCharging || directEngineDrive) {
             postInvalidateOnAnimation();
         }
     }
@@ -647,6 +698,29 @@ final class VehicleDashboardView extends View {
             return "— кВт";
         }
         return (powerKw > 0 ? "+" : "") + powerKw + " кВт";
+    }
+
+    private static boolean isExternalCharging(Integer gunState,
+                                               Integer chargingType) {
+        if (gunState != null) {
+            return gunState >= 2 && gunState <= 4;
+        }
+        return chargingType != null && chargingType >= 2
+                && chargingType <= 5;
+    }
+
+    private static String chargerTypeLabel(Integer gunState,
+                                           Integer chargingType) {
+        if (gunState != null) {
+            if (gunState == 2) return "GB/T AC";
+            if (gunState == 3) return "GB/T DC";
+            if (gunState == 4) return "GB/T AC/DC";
+        }
+        if (chargingType != null) {
+            if (chargingType == 2) return "GB/T AC";
+            if (chargingType == 4 || chargingType == 5) return "GB/T DC";
+        }
+        return "GB/T AC/DC";
     }
 
     private void drawText(Canvas canvas, String value, float x, float y,
