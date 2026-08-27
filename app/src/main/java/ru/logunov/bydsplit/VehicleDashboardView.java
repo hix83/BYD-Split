@@ -323,7 +323,7 @@ final class VehicleDashboardView extends View {
         drawAnimatedFlow(canvas, directDrive, AMBER, directEngineDrive);
 
         float batteryY = height * 0.825f;
-        float batteryWidth = width * 0.27f;
+        float batteryWidth = width * 0.32f;
         float batteryHeight = batteryWidth
                 * batteryShellBitmap.getHeight() / batteryShellBitmap.getWidth();
         RectF battery = new RectF(
@@ -569,10 +569,10 @@ final class VehicleDashboardView extends View {
                              Float socPercent, Integer batteryPowerKw) {
         float soc = socPercent == null ? 0f
                 : Math.max(0f, Math.min(100f, socPercent));
-        float left = target.left + target.width() * 0.145f;
-        float right = target.left + target.width() * 0.855f;
-        float top = target.top + target.height() * 0.29f;
-        float bottom = target.top + target.height() * 0.69f;
+        float left = target.left + target.width() * 0.050f;
+        float right = target.left + target.width() * 0.930f;
+        float top = target.top + target.height() * 0.230f;
+        float bottom = target.top + target.height() * 0.860f;
         RectF liveFrame = new RectF(
                 left - target.width() * 0.035f,
                 top - target.height() * 0.09f,
@@ -587,9 +587,9 @@ final class VehicleDashboardView extends View {
         canvas.drawRoundRect(liveFrame, target.height() * 0.12f,
                 target.height() * 0.12f, paint);
         paint.setStyle(Paint.Style.FILL);
-        float gap = target.width() * 0.010f;
-        float cellWidth = (right - left - gap * 9f) / 10f;
-        for (int index = 0; index < 10; index++) {
+        float gap = target.width() * 0.007f;
+        float cellWidth = (right - left - gap * 11f) / 12f;
+        for (int index = 0; index < 12; index++) {
             float cellLeft = left + index * (cellWidth + gap);
             RectF cell = new RectF(cellLeft, top,
                     cellLeft + cellWidth, bottom);
@@ -597,15 +597,15 @@ final class VehicleDashboardView extends View {
             canvas.drawRoundRect(cell, cellWidth * 0.24f,
                     cellWidth * 0.24f, paint);
             float fill = Math.max(0f, Math.min(1f,
-                    (soc - index * 10f) / 10f));
+                    (soc - index * (100f / 12f)) / (100f / 12f)));
             if (fill > 0f) {
                 int save = canvas.save();
                 canvas.clipRect(cell.left, cell.top,
                         cell.left + cell.width() * fill, cell.bottom);
                 paint.setShader(new LinearGradient(
                         cell.left, cell.top, cell.right, cell.bottom,
-                        index < 6 ? 0xFF168BFF : 0xFF25E884,
-                        index < 8 ? 0xFF22D8FF : 0xFFB4F52B,
+                        index < 7 ? 0xFF168BFF : 0xFF25E884,
+                        index < 9 ? 0xFF22D8FF : 0xFFB4F52B,
                         Shader.TileMode.CLAMP));
                 canvas.drawRoundRect(cell, cellWidth * 0.24f,
                         cellWidth * 0.24f, paint);
