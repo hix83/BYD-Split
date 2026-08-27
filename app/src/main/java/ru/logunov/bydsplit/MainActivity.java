@@ -33,6 +33,16 @@ import java.lang.ref.WeakReference;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class MainActivity extends Activity {
+    private static final class CompactButtonVisual {
+        final ImageView tile;
+        final View indicator;
+
+        CompactButtonVisual(ImageView tile, View indicator) {
+            this.tile = tile;
+            this.indicator = indicator;
+        }
+    }
+
     private static final String KEY_DRIVER_APP = AppPreferences.KEY_DRIVER_APP;
     private static final String KEY_FAR_APP = AppPreferences.KEY_FAR_APP;
     private static final String PACKAGE_MAX = "ru.oneme.app";
@@ -396,10 +406,7 @@ public final class MainActivity extends Activity {
     private View addCompactButton(LinearLayout dock, String label,
                                   Drawable icon, Runnable action,
                                   Runnable longAction) {
-        LinearLayout button = new LinearLayout(this);
-        button.setOrientation(LinearLayout.VERTICAL);
-        button.setGravity(Gravity.CENTER);
-        button.setPadding(0, 0, 0, 0);
+        FrameLayout button = new FrameLayout(this);
         button.setBackgroundColor(Color.TRANSPARENT);
         button.setContentDescription(label);
         button.setOnClickListener(view -> action.run());
@@ -413,10 +420,16 @@ public final class MainActivity extends Activity {
         ImageView image = new ImageView(this);
         image.setImageDrawable(icon);
         image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        button.addView(image, new LinearLayout.LayoutParams(
+        button.addView(image, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
-        button.setTag(image);
+
+        View indicator = new View(this);
+        FrameLayout.LayoutParams indicatorParams = new FrameLayout.LayoutParams(
+                dp(46), dp(4), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        indicatorParams.bottomMargin = dp(7);
+        button.addView(indicator, indicatorParams);
+        button.setTag(new CompactButtonVisual(image, indicator));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
@@ -445,10 +458,14 @@ public final class MainActivity extends Activity {
     private void styleCompactButton(View button, boolean active) {
         if (button != null) {
             Object tag = button.getTag();
-            if (tag instanceof ImageView) {
-                ImageView tile = (ImageView) tag;
-                tile.animate().cancel();
-                tile.setAlpha(active ? 1f : 0.78f);
+            if (tag instanceof CompactButtonVisual) {
+                CompactButtonVisual visual = (CompactButtonVisual) tag;
+                visual.tile.setAlpha(1f);
+                visual.indicator.animate().cancel();
+                visual.indicator.setBackground(roundedBackground(
+                        active ? 0xFF25A9FF : 0xFF35516A, 3));
+                visual.indicator.setAlpha(active ? 1f : 0.22f);
+                visual.indicator.setElevation(active ? dp(8) : 0f);
             }
         }
     }
