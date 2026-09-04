@@ -107,6 +107,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private int indicatorPageCount;
     private int voiceGestureGeneration;
     private boolean voiceHoldReady;
+    private boolean released;
     private volatile VoiceState voiceState = VoiceState.IDLE;
 
     private enum VoiceState {
@@ -1069,6 +1070,9 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     }
 
     private void showDeleteIndicator() {
+        if (!panelNavigationEnabled || released) {
+            return;
+        }
         pageIndicator.removeAllViews();
         TextView trash = new TextView(getContext());
         trash.setText("🗑");
@@ -1079,20 +1083,27 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         pageIndicator.addView(trash,
                 new LinearLayout.LayoutParams(dp(52), dp(42)));
         ViewGroup.LayoutParams rawParams = pageIndicator.getLayoutParams();
-        rawParams.height = dp(48);
-        pageIndicator.setLayoutParams(rawParams);
+        if (rawParams != null) {
+            rawParams.height = dp(48);
+            pageIndicator.setLayoutParams(rawParams);
+        }
         pageIndicator.setContentDescription(
                 "Перетащите приложение сюда, чтобы закрыть");
     }
 
     private void restorePageIndicator() {
+        if (!panelNavigationEnabled || released) {
+            return;
+        }
         pageIndicator.animate().cancel();
         pageIndicator.setScaleX(1f);
         pageIndicator.setScaleY(1f);
         pageIndicator.setBackground(rounded(0x8817212B, 12));
         ViewGroup.LayoutParams rawParams = pageIndicator.getLayoutParams();
-        rawParams.height = dp(24);
-        pageIndicator.setLayoutParams(rawParams);
+        if (rawParams != null) {
+            rawParams.height = dp(24);
+            pageIndicator.setLayoutParams(rawParams);
+        }
         updatePageIndicator(indicatorPageIndex, indicatorPageCount);
     }
 
@@ -1244,9 +1255,15 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     }
 
     void release() {
+        if (released) {
+            return;
+        }
+        released = true;
         voiceGestureGeneration++;
         appSwitchGeneration++;
         voiceState = VoiceState.IDLE;
+        removeCallbacks(deleteHoldRunnable);
+        pageIndicator.animate().cancel();
         clearTransitionSnapshot();
         cancelDeleteMode(false);
         resetInteractiveState();
@@ -1502,6 +1519,9 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     }
 
     private void attachSurfaceOrCreateDisplay(SurfaceHolder holder) {
+        if (released) {
+            return;
+        }
         Surface surface = holder.getSurface();
         if (!surface.isValid() || getWidth() <= 0 || getHeight() <= 0) {
             return;

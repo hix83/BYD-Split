@@ -32,9 +32,18 @@ final class VehicleDashboardView extends View {
     private static final int ENERGY_BLUE = 0xFF55B8FF;
     private static final int HEALTHY = 0xFF55C98A;
     private static final int AMBER = 0xFFF0A95B;
+    private static final long FLOW_FRAME_INTERVAL_MS = 80L;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
+    private final Path straightFlowPath = new Path();
+    private final Path directDrivePath = new Path();
+    private final Path generatorBatteryPath = new Path();
+    private final Path batteryMotorPath = new Path();
+    private final Path chargerBatteryPath = new Path();
+    private final PathMeasure flowMeasure = new PathMeasure();
+    private final float[] flowPosition = new float[2];
+    private final float[] flowTangent = new float[2];
     private final Bitmap vehicleBitmap;
     private final Bitmap engineBitmap;
     private final Bitmap generatorBitmap;
@@ -46,6 +55,13 @@ final class VehicleDashboardView extends View {
     private final RectF[] actionBounds = {
             new RectF(), new RectF(), new RectF(), new RectF()};
     private VehicleTelemetrySnapshot telemetry = VehicleTelemetrySnapshot.EMPTY;
+    private boolean animationFrameScheduled;
+    private final Runnable animationTick = () -> {
+        animationFrameScheduled = false;
+        if (isAttachedToWindow()) {
+            invalidate();
+        }
+    };
 
     VehicleDashboardView(Context context, ActionListener actionListener) {
         super(context);
@@ -69,6 +85,13 @@ final class VehicleDashboardView extends View {
     void setTelemetry(VehicleTelemetrySnapshot value) {
         telemetry = value == null ? VehicleTelemetrySnapshot.EMPTY : value;
         invalidate();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        removeCallbacks(animationTick);
+        animationFrameScheduled = false;
+        super.onDetachedFromWindow();
     }
 
     @Override
@@ -295,14 +318,20 @@ final class VehicleDashboardView extends View {
                 && telemetry.speedKmh > 0;
         boolean externalCharging = isExternalCharging(
                 telemetry.chargeGunState, telemetry.chargingType);
+        boolean motorDemand = wheelsMoving
+                || telemetry.motorPowerKw != null
+                && telemetry.motorPowerKw > 0;
         boolean directEngineDrive = telemetry.workMode != null
-                && (telemetry.workMode == 4 || telemetry.workMode == 5);
-        boolean generatorFeedsMotor = engineActive && tractionActive;
+                && (telemetry.workMode == 4 || telemetry.workMode == 5)
+                && wheelsMoving;
+        boolean generatorFeedsMotor = engineActive
+                && tractionActive && motorDemand;
         boolean generatorChargesBattery = engineActive
                 && batteryCharging && !externalCharging;
         boolean regenerativeBraking = batteryCharging
                 && wheelsMoving && !externalCharging
                 && !generatorChargesBattery;
+        boolean batteryFeedsMotor = batteryDischarging && motorDemand;
 
         drawFlowLine(canvas, engineX + imageWidth * 0.42f, nodeY,
                 generatorX - imageWidth * 0.42f, nodeY,
@@ -314,7 +343,8 @@ final class VehicleDashboardView extends View {
                 wheelX - imageWidth * 0.42f, nodeY,
                 ENERGY_BLUE, tractionActive && wheelsMoving);
 
-        Path directDrive = new Path();
+        Path directDrive = directDrivePath;
+        directDrive.reset();
         float mechanicalY = height * 0.642f;
         directDrive.moveTo(engineX, nodeY - imageHeight * 0.45f);
         directDrive.lineTo(engineX, mechanicalY);
@@ -332,7 +362,8 @@ final class VehicleDashboardView extends View {
                 batteryX + batteryWidth / 2f,
                 batteryY + batteryHeight / 2f);
 
-        Path generatorBattery = new Path();
+        Path generatorBattery = generatorBatteryPath;
+        generatorBattery.reset();
         generatorBattery.moveTo(generatorX,
                 nodeY + imageHeight * 0.45f);
         generatorBattery.lineTo(generatorX, battery.top - height * 0.012f);
@@ -343,7 +374,8 @@ final class VehicleDashboardView extends View {
         drawAnimatedFlow(canvas, generatorBattery,
                 ENERGY_BLUE, generatorChargesBattery);
 
-        Path batteryMotor = new Path();
+        Path batteryMotor = batteryMotorPath;
+        batteryMotor.reset();
         if (regenerativeBraking) {
             batteryMotor.moveTo(motorX,
                     nodeY + imageHeight * 0.45f);
@@ -363,9 +395,10 @@ final class VehicleDashboardView extends View {
         }
         drawAnimatedFlow(canvas, batteryMotor,
                 regenerativeBraking ? AMBER : ENERGY_BLUE,
-                regenerativeBraking || batteryDischarging);
+                regenerativeBraking || batteryFeedsMotor);
 
-        Path chargerBattery = new Path();
+        Path chargerBattery = chargerBatteryPath;
+        chargerBattery.reset();
         chargerBattery.moveTo(chargerX + width * 0.065f, chargerY);
         chargerBattery.lineTo(battery.left - width * 0.012f, chargerY);
         chargerBattery.lineTo(battery.left - width * 0.012f,
@@ -395,11 +428,15 @@ final class VehicleDashboardView extends View {
 
         drawBattery(canvas, battery, telemetry.batterySocPercent,
                 telemetry.batteryPowerKw);
-        if (engineActive || tractionActive
-                || batteryCharging || batteryDischarging
-                || externalCharging || directEngineDrive) {
-            postInvalidateOnAnimation();
-        }
+        boolean hasActiveFlow = engineActive
+                || generatorFeedsMotor
+                || tractionActive && wheelsMoving
+                || directEngineDrive
+                || generatorChargesBattery
+                || regenerativeBraking
+                || batteryFeedsMotor
+                || externalCharging;
+        scheduleFlowAnimation(hasActiveFlow);
     }
 
     private void drawQuickActions(Canvas canvas, float width, float height) {
@@ -642,7 +679,8 @@ final class VehicleDashboardView extends View {
                               float startX, float startY,
                               float endX, float endY,
                               int color, boolean active) {
-        Path flow = new Path();
+        Path flow = straightFlowPath;
+        flow.reset();
         flow.moveTo(startX, startY);
         flow.lineTo(endX, endY);
         drawAnimatedFlow(canvas, flow, color, active);
@@ -659,29 +697,47 @@ final class VehicleDashboardView extends View {
         if (!active) {
             return;
         }
-        PathMeasure measure = new PathMeasure(flow, false);
-        float length = measure.getLength();
+        flowMeasure.setPath(flow, false);
+        float length = flowMeasure.getLength();
         float spacing = getWidth() * 0.035f;
         float phase = (SystemClock.uptimeMillis() % 900L) / 900f;
-        float[] position = new float[2];
-        float[] tangent = new float[2];
         for (float distance = phase * spacing;
              distance < length; distance += spacing) {
-            if (!measure.getPosTan(distance, position, tangent)) {
+            if (!flowMeasure.getPosTan(
+                    distance, flowPosition, flowTangent)) {
                 continue;
             }
-            float angle = (float) Math.atan2(tangent[1], tangent[0]);
+            float angle = (float) Math.atan2(
+                    flowTangent[1], flowTangent[0]);
             float size = getWidth() * 0.010f;
             path.reset();
-            path.moveTo(position[0] + (float) Math.cos(angle) * size,
-                    position[1] + (float) Math.sin(angle) * size);
-            path.lineTo(position[0] + (float) Math.cos(angle + 2.45f) * size,
-                    position[1] + (float) Math.sin(angle + 2.45f) * size);
-            path.lineTo(position[0] + (float) Math.cos(angle - 2.45f) * size,
-                    position[1] + (float) Math.sin(angle - 2.45f) * size);
+            path.moveTo(flowPosition[0] + (float) Math.cos(angle) * size,
+                    flowPosition[1] + (float) Math.sin(angle) * size);
+            path.lineTo(flowPosition[0]
+                            + (float) Math.cos(angle + 2.45f) * size,
+                    flowPosition[1]
+                            + (float) Math.sin(angle + 2.45f) * size);
+            path.lineTo(flowPosition[0]
+                            + (float) Math.cos(angle - 2.45f) * size,
+                    flowPosition[1]
+                            + (float) Math.sin(angle - 2.45f) * size);
             path.close();
             paint.setColor(color);
             canvas.drawPath(path, paint);
+        }
+    }
+
+    private void scheduleFlowAnimation(boolean active) {
+        if (!active) {
+            if (animationFrameScheduled) {
+                removeCallbacks(animationTick);
+                animationFrameScheduled = false;
+            }
+            return;
+        }
+        if (!animationFrameScheduled && isAttachedToWindow()) {
+            animationFrameScheduled = true;
+            postDelayed(animationTick, FLOW_FRAME_INTERVAL_MS);
         }
     }
 
