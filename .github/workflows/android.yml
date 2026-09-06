@@ -18,6 +18,8 @@ jobs:
           cache: gradle
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+      - name: Test vehicle and automation logic
+        run: ./tools/test_logic.sh
       - name: Build and lint
         run: ./gradlew assembleDebug lintDebug testDebugUnitTest
       - name: Upload APK

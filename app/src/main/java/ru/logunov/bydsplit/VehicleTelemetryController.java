@@ -103,6 +103,7 @@ final class VehicleTelemetryController implements LocationListener {
         if (vehicle == null || demoActive) {
             return;
         }
+        SocHistory.record(context,vehicle);
         latest = latest.withVehicleData(vehicle);
         publish(latest);
     }

@@ -87,28 +87,30 @@ public final class SettingsActivity extends Activity
 
     private View createContent() {
         LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
+        root.setOrientation(LinearLayout.HORIZONTAL);
         root.setPadding(dp(18), dp(14), dp(18), dp(16));
         root.setBackground(rounded(getColor(R.color.background), 24));
 
         LinearLayout tabs = new LinearLayout(this);
-        tabs.setGravity(Gravity.CENTER_VERTICAL);
+        tabs.setOrientation(LinearLayout.VERTICAL);
+        tabs.setGravity(Gravity.TOP);
+        tabs.setPadding(0, dp(20), dp(12), 0);
         FrameLayout content = new FrameLayout(this);
-        String[] labels = {"Основные", "Камера парковки", "Места"};
+        String[] labels = {"Основные", "Камера парковки", "Места", "Автоматизации"};
         for (int index = 0; index < labels.length; index++) {
             Button tab = actionButton(labels[index]);
             final int page = index;
             tab.setOnClickListener(view -> showSettingsPage(content, tabs, page));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    0, dp(48), 1f);
-            if (index > 0) params.setMarginStart(dp(8));
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
+            if (index > 0) params.topMargin = dp(8);
             tabs.addView(tab, params);
         }
         root.addView(tabs, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+                dp(190), ViewGroup.LayoutParams.MATCH_PARENT));
         LinearLayout.LayoutParams contentParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        contentParams.topMargin = dp(10);
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        contentParams.setMarginStart(dp(10));
         root.addView(content, contentParams);
         showSettingsPage(content, tabs, 0);
         return root;
@@ -121,7 +123,7 @@ public final class SettingsActivity extends Activity
                     index == page ? R.color.accent : R.color.button), 14));
         }
         View content = page == 0 ? createGeneralPage()
-                : page == 1 ? createCameraPage() : createPlacesPage();
+                : page == 1 ? createCameraPage() : page == 2 ? createPlacesPage() : new TemperatureAutomationView(this);
         host.addView(content, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
@@ -333,23 +335,7 @@ public final class SettingsActivity extends Activity
         ScrollView scroll = pageScroll();
         LinearLayout root = pageRoot(scroll);
         root.addView(pageHeader("Места",
-                "При въезде в выбранную геозону интернет-камера откроется один раз. "
-                        + "После выезда зона снова станет активной."));
-
-        LinearLayout automationCard = card();
-        Switch enabled = settingsSwitch("Автоматически открывать камеру в местах",
-                AppPreferences.isParkingCameraAutoEnabled(this));
-        enabled.setOnCheckedChangeListener((button, checked) -> {
-            AppPreferences.get(this).edit()
-                    .putBoolean(AppPreferences.KEY_PARKING_CAMERA_AUTO, checked).apply();
-            if (checked && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                    != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION}, 342);
-            }
-        });
-        automationCard.addView(enabled, fullWidthWrap());
-        root.addView(automationCard, fullWidthWrap());
+                "Выберите места на карте и задайте радиус. Действия при въезде настраиваются в автоматизациях."));
 
         LinearLayout listCard = card();
         listCard.addView(sectionTitle("Геозоны"));
@@ -366,6 +352,10 @@ public final class SettingsActivity extends Activity
                     + String.format(java.util.Locale.US, "%.6f, %.6f",
                     place.latitude, place.longitude), 15, Color.WHITE);
             row.addView(label, new LinearLayout.LayoutParams(0, dp(58), 1f));
+            Button edit = actionButton("На карте");
+            edit.setOnClickListener(view -> PlaceMapDialog.show(this, place,
+                    () -> setContentView(createContentForPlaces())));
+            row.addView(edit, new LinearLayout.LayoutParams(dp(116), dp(48)));
             Button delete = actionButton("Удалить");
             delete.setOnClickListener(view -> {
                 places.remove(place);
@@ -386,36 +376,14 @@ public final class SettingsActivity extends Activity
     }
 
     private void showPlaceDialog() {
-        LinearLayout form = new LinearLayout(this);
-        form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding(dp(24), dp(8), dp(24), 0);
-        EditText name = input("Название", "Парковка", false);
-        EditText latitude = input("Широта", "", true);
-        EditText longitude = input("Долгота", "", true);
-        EditText radius = input("Радиус, м", "50", true);
-        form.addView(name); form.addView(latitude); form.addView(longitude); form.addView(radius);
-        Button current = actionButton("Подставить текущее местоположение");
-        current.setOnClickListener(view -> fillCurrentLocation(latitude, longitude));
-        addWithTop(form, current, 10);
-        new AlertDialog.Builder(this)
-                .setTitle("Новое место")
-                .setView(form)
-                .setNegativeButton("Отмена", null)
-                .setPositiveButton("Сохранить", (dialog, which) -> {
-                    try {
-                        List<CameraPlace> places = new ArrayList<>(
-                                AppPreferences.getCameraPlaces(this));
-                        places.add(new CameraPlace(name.getText().toString().trim(),
-                                Double.parseDouble(latitude.getText().toString()),
-                                Double.parseDouble(longitude.getText().toString()),
-                                Float.parseFloat(radius.getText().toString())));
-                        AppPreferences.setCameraPlaces(this, places);
-                        Toast.makeText(this, "Место сохранено", Toast.LENGTH_SHORT).show();
-                    } catch (NumberFormatException error) {
-                        Toast.makeText(this, "Проверьте координаты и радиус",
-                                Toast.LENGTH_LONG).show();
-                    }
-                }).show();
+        PlaceMapDialog.show(this, null, () -> setContentView(createContentForPlaces()));
+    }
+
+    private View createContentForPlaces() {
+        View root = createContent();
+        LinearLayout layout = (LinearLayout) root;
+        showSettingsPage((FrameLayout) layout.getChildAt(1), (LinearLayout) layout.getChildAt(0), 2);
+        return root;
     }
 
     private void fillCurrentLocation(EditText latitude, EditText longitude) {
@@ -611,7 +579,7 @@ public final class SettingsActivity extends Activity
     }
 
     private void styleLayoutButton(Button button, boolean selected) {
-        button.setTextColor(selected ? Color.BLACK : Color.WHITE);
+        button.setTextColor(getColor(R.color.text_primary));
         button.setBackground(rounded(
                 getColor(selected ? R.color.accent : R.color.button), 14));
     }

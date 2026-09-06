@@ -39,6 +39,9 @@ public final class SteeringAccessibilityService extends AccessibilityService {
         CharSequence packageName = event.getPackageName();
         if (packageName != null
                 && "ru.oneme.app".contentEquals(packageName)) {
+            if(event.getEventType()==AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                    && "one.me.android.calls.CallNotifierFixActivity".contentEquals(event.getClassName()==null?"":event.getClassName()))
+                MaxCallRouter.onCallActivity(this);
             Log.d(TAG, "MAX event type=" + event.getEventType()
                     + " class=" + event.getClassName()
                     + " text=" + event.getText());

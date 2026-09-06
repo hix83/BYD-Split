@@ -13,6 +13,11 @@ final class LocalAdbManager {
     private static final Pattern PARCEL_VALUE = Pattern.compile(
             "Parcel\\(00000000\\s+([0-9a-fA-F]{8})");
     private static LocalAdbManager instance;
+    private static LocalAdbManager callInstance;
+    static synchronized LocalAdbManager forCallRouting(Context context) {
+        if(callInstance==null)callInstance=new LocalAdbManager(context.getApplicationContext());
+        return callInstance;
+    }
 
     private final Context context;
     private final LocalAdbClient client;
@@ -64,6 +69,9 @@ final class LocalAdbManager {
                         "byd-split-steering.log", steeringArgs);
                 command += " " + accessibilityCommand();
             }
+            command = "wm set-ignore-orientation-request -d 0 true; "
+                    + "cmd notification allow_listener ru.logunov.bydsplit/ru.logunov.bydsplit.MaxCallNotificationService; "
+                    + command;
             client.shellV2(command);
             return true;
         } catch (Exception error) {
@@ -77,6 +85,8 @@ final class LocalAdbManager {
             String component, String packageName, int displayId) {
         try {
             client.connect();
+            if("ru.oneme.app".equals(packageName)&&MaxCallRouter.active()
+                    && moveMaxTasksToDisplay(displayId))return true;
             String output = client.shell(
                     "am start --display " + displayId
                             + " -f 0x00010000 -n " + component
@@ -108,6 +118,24 @@ final class LocalAdbManager {
             Log.e(TAG, "Cannot launch on virtual display", error);
             return false;
         }
+    }
+
+    synchronized boolean moveMaxTasksToDisplay(int displayId) {
+        if(displayId<1||displayId>999)return false;
+        try {
+            client.connect();
+            String output=client.shell("am stack list");
+            java.util.List<Integer> roots=MaxTaskParser.rootsToMove(output,displayId);
+            boolean found=MaxTaskParser.hasMaxOnDisplay(output,displayId);
+            for(int root:roots) {
+                client.shell("am display move-stack "+root+" "+displayId);
+            }
+            if(!roots.isEmpty()) {
+                found=MaxTaskParser.hasMaxOnDisplay(client.shell("am stack list"),displayId);
+                if(found)client.shell("am start -n ru.logunov.bydsplit/.MainActivity");
+            }
+            return found;
+        } catch(Exception error) {Log.w(TAG,"MAX call routing failed",error);return false;}
     }
 
     synchronized boolean closeApp(
@@ -169,6 +197,85 @@ final class LocalAdbManager {
         }
     }
 
+    synchronized Float[] readAutomationTemperatures() {
+        Float[] result = new Float[2];
+        try {
+            client.connect();
+            int[] fids = {1077936184, 1031798832};
+            for (int i=0;i<2;i++) {
+                Integer value = readAutomationInt(1000, fids[i]);
+                if(value != null && value >= -60 && value <= 80) result[i]=value.floatValue();
+            }
+        } catch(Exception error) { Log.w(TAG,"Automation temperature unavailable",error); }
+        return result;
+    }
+
+    private Integer readAutomationInt(int device, int fid) throws Exception {
+        Matcher m=PARCEL_VALUE.matcher(client.shell("service call autoservice 5 i32 "+device+" i32 "+fid));
+        return m.find() ? (int)Long.parseLong(m.group(1),16) : null;
+    }
+
+    // Song L setting API from the installed framework, not Leopard climate switches.
+    synchronized String applyComfortRule(int action, int level) {
+        int[] reads={0x4290000e,0x4fa0001b,0x4fa00023,0x4fa00018,0x4fa00020};
+        int[] writes={0x1ea00035,0x23200014,0x2320001c,0x23200010,0x23200018};
+        if(action<0||action>=5||level<0||level>(action==0?1:3)) return "Недопустимый уровень";
+        try {
+            client.connect();
+            Integer before=readAutomationInt(1001,reads[action]);
+            if(before==null||before<1||before>(action==0?2:4))
+                return "Показание функции недоступно · команда не отправлена";
+            int wanted=level+1;
+            if(before==wanted)return null;
+            Matcher reply=PARCEL_VALUE.matcher(client.shell("service call autoservice 6 i32 1001 i32 "+writes[action]+" i32 "+wanted));
+            if(!reply.find()||(int)Long.parseLong(reply.group(1),16)<0)return "Автомобиль отклонил команду";
+            for(int attempt=0;attempt<4;attempt++) {
+                Thread.sleep(250);
+                Integer actual=readAutomationInt(1001,reads[action]);
+                if(actual!=null&&actual==wanted)return null;
+            }
+            return "Изменение не подтверждено автомобилем";
+        } catch(Exception error) { return "Нет связи с автомобилем"; }
+    }
+
+    synchronized TechSnapshot readTechDetails() {
+        BatteryDetailsSnapshot battery=readBatteryDetails();
+        if(battery==null)return null;
+        try {
+            StringBuilder commands=new StringBuilder();
+            for(Object[] f:TechSnapshot.FIELDS) {
+                if(commands.length()>0)commands.append("; ");
+                commands.append("service call autoservice ").append(f[3]).append(" i32 ").append(f[1]).append(" i32 ").append(f[2]);
+            }
+            Matcher m=PARCEL_VALUE.matcher(client.shell(commands.toString()));
+            int[] raw=new int[TechSnapshot.FIELDS.length];int n=0;
+            while(m.find()&&n<raw.length)raw[n++]=(int)Long.parseLong(m.group(1),16);
+            return n==raw.length?new TechSnapshot(battery,raw):null;
+        } catch(Exception error) { Log.w(TAG,"Tech panel unavailable",error);return null; }
+    }
+
+    synchronized BatteryDetailsSnapshot readBatteryDetails() {
+        VehicleTelemetrySnapshot vehicle = readVehicleTelemetry();
+        if (vehicle == null) return null;
+        try {
+            String output = client.shell(
+                    "service call autoservice 5 i32 1014 i32 1147142160; "
+                    + "service call autoservice 5 i32 1014 i32 1147142192; "
+                    + "service call autoservice 7 i32 1014 i32 1032871984; "
+                    + "service call autoservice 7 i32 1009 i32 666894360; "
+                    + "service call autoservice 5 i32 1009 i32 876609560");
+            Matcher matcher = PARCEL_VALUE.matcher(output);
+            int[] raw = new int[5];
+            int count = 0;
+            while (matcher.find() && count < raw.length)
+                raw[count++] = (int) Long.parseLong(matcher.group(1), 16);
+            return count == raw.length ? new BatteryDetailsSnapshot(vehicle, raw) : null;
+        } catch (Exception error) {
+            Log.w(TAG, "Cannot read battery details", error);
+            return null;
+        }
+    }
+
     synchronized VehicleTelemetrySnapshot readVehicleTelemetry() {
         try {
             client.connect();
@@ -187,8 +294,19 @@ final class LocalAdbManager {
                             + "service call autoservice 7 i32 1014 i32 1246777400; "
                             + "service call autoservice 5 i32 1012 i32 339738656; "
                             + "service call autoservice 5 i32 1009 i32 876609586; "
-                            + "service call autoservice 5 i32 1009 i32 876609592");
-            int[] raw = new int[15];
+                            + "service call autoservice 5 i32 1009 i32 876609592; "
+                            + "service call autoservice 5 i32 1014 i32 1246785600; "
+                            + "service call autoservice 5 i32 1014 i32 1145045032; "
+                            + "service call autoservice 5 i32 1014 i32 1148190736; "
+                            + "service call autoservice 5 i32 1014 i32 1148190752; "
+                            + "service call autoservice 5 i32 1012 i32 282066952; "
+                            + "service call autoservice 5 i32 1012 i32 1141899272; "
+                            + "service call autoservice 5 i32 1014 i32 1033199672; "
+                            + "service call autoservice 7 i32 1001 i32 1128267816; "
+                            + "service call autoservice 5 i32 1000 i32 1077936144; "
+                            + "service call autoservice 5 i32 1000 i32 1077936156; "
+                            + "service call autoservice 5 i32 1000 i32 1077936152");
+            int[] raw = new int[26];
             Matcher matcher = PARCEL_VALUE.matcher(output);
             int count = 0;
             while (matcher.find() && count < raw.length) {
@@ -208,13 +326,38 @@ final class LocalAdbManager {
                     decodeTemperature(raw[7]), decodeTemperature(raw[8]),
                     decodeEnum(raw[9]), decodeEnum(raw[10]), null,
                     decodePercent(raw[11]), decodePower(raw[12]),
-                    null, null, null,
-                    decodeEnum(raw[13]), decodeEnum(raw[14]));
+                    decodeRpm(raw[19]), null, null,
+                    decodeEnum(raw[13]), decodeEnum(raw[14]),
+                    decodeIntPercent(raw[15]), decodeIntPercent(raw[16]),
+                    decodeBatteryTemperature(raw[17]), decodeBatteryTemperature(raw[18]),
+                    decodeRpm(raw[20]), decodeCoolantTemperature(raw[21]), decodeAuxiliaryVoltage(raw[22]),
+                    ClimateIconState.decode(raw[23], raw[24], raw[25]));
         } catch (Exception error) {
             client.close();
             Log.w(TAG, "Cannot read vehicle telemetry", error);
             return null;
         }
+    }
+
+    private static Integer decodeCoolantTemperature(int raw) {
+        return raw >= -40 && raw <= 150 ? raw : null;
+    }
+
+    private static Float decodeAuxiliaryVoltage(int raw) {
+        Float value = decodeFloat(raw);
+        return value != null && value >= 5f && value <= 20f ? value : null;
+    }
+
+    private static Integer decodeIntPercent(int raw) {
+        return raw >= 0 && raw <= 100 ? raw : null;
+    }
+
+    private static Integer decodeBatteryTemperature(int raw) {
+        return raw >= 0 && raw <= 165 ? raw - 40 : null;
+    }
+
+    private static Integer decodeRpm(int raw) {
+        return raw >= 0 && raw <= 25000 ? raw : null;
     }
 
     private static Float decodeFloat(int raw) {

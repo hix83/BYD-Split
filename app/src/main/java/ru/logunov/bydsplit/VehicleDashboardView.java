@@ -20,20 +20,23 @@ import java.util.Locale;
 final class VehicleDashboardView extends View {
     static final int ACTION_AUTO = 0;
     static final int ACTION_CLIMATE = 1;
+    static final int ACTION_BATTERY_DETAILS = 4;
+    static final int ACTION_TECH_DETAILS = 5;
     static final int ACTION_CAR_SETTINGS = 2;
     static final int ACTION_HOME = 3;
 
     interface ActionListener {
         void onVehicleAction(int action);
     }
-    private static final int TEXT_PRIMARY = 0xFFEEF3FA;
-    private static final int TEXT_SECONDARY = 0xFF8E9AAF;
-    private static final int BLUE = 0xFF4C8DFF;
+    private static final int TEXT_PRIMARY = 0xFFDAE1EB;
+    private static final int TEXT_SECONDARY = 0xFF99A4AF;
+    private static final int BLUE = 0xFF2682DF;
     private static final int ENERGY_BLUE = 0xFF55B8FF;
     private static final int HEALTHY = 0xFF55C98A;
     private static final int AMBER = 0xFFF0A95B;
     private static final long FLOW_FRAME_INTERVAL_MS = 80L;
 
+    private final android.graphics.Typeface ui7Typeface;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private final Path straightFlowPath = new Path();
@@ -45,16 +48,22 @@ final class VehicleDashboardView extends View {
     private final float[] flowPosition = new float[2];
     private final float[] flowTangent = new float[2];
     private final Bitmap vehicleBitmap;
+    private final Bitmap[] nativeBattery = new Bitmap[21];
+    private final NativeEnergySprites nativeFlows;
     private final Bitmap engineBitmap;
-    private final Bitmap generatorBitmap;
-    private final Bitmap controllerBitmap;
+    private final Bitmap engineActiveBitmap;
+    private final Bitmap driveActiveBitmap;
     private final Bitmap motorBitmap;
-    private final Bitmap wheelBitmap;
-    private final Bitmap batteryShellBitmap;
     private final ActionListener actionListener;
     private final RectF[] actionBounds = {
-            new RectF(), new RectF(), new RectF(), new RectF()};
+            new RectF(), new RectF(), new RectF(), new RectF(), new RectF()};
+    private ClimateIconRenderer climateIcon;
     private VehicleTelemetrySnapshot telemetry = VehicleTelemetrySnapshot.EMPTY;
+    private int demoScenario;
+    private int demoSoc = 68;
+    private int demoFuel = 65;
+    private final RectF batteryBounds = new RectF(), fuelBounds = new RectF();
+    private final boolean demoMode;
     private boolean animationFrameScheduled;
     private final Runnable animationTick = () -> {
         animationFrameScheduled = false;
@@ -65,15 +74,18 @@ final class VehicleDashboardView extends View {
 
     VehicleDashboardView(Context context, ActionListener actionListener) {
         super(context);
+        ui7Typeface = context.getResources().getFont(R.font.ui7_regular);
+        nativeFlows = new NativeEnergySprites(getResources());
         this.actionListener = actionListener;
+        demoMode = AppPreferences.isDemoModeEnabled(context);
         vehicleBitmap = BitmapFactory.decodeResource(
-                getResources(), R.drawable.song_l_dmi_top);
-        engineBitmap = loadBitmap(R.drawable.dmi_engine_reference);
-        generatorBitmap = loadBitmap(R.drawable.dmi_generator_reference);
-        controllerBitmap = loadBitmap(R.drawable.dmi_controller_reference);
-        motorBitmap = loadBitmap(R.drawable.dmi_motor_reference);
-        wheelBitmap = loadBitmap(R.drawable.dmi_wheel_reference);
-        batteryShellBitmap = loadBitmap(R.drawable.dmi_battery_shell_reference);
+                getResources(), R.drawable.ui7_dmi_body);
+        int[] batteryIds = {R.drawable.ui7_dmi_battery_0,R.drawable.ui7_dmi_battery_1,R.drawable.ui7_dmi_battery_2,R.drawable.ui7_dmi_battery_3,R.drawable.ui7_dmi_battery_4,R.drawable.ui7_dmi_battery_5,R.drawable.ui7_dmi_battery_6,R.drawable.ui7_dmi_battery_7,R.drawable.ui7_dmi_battery_8,R.drawable.ui7_dmi_battery_9,R.drawable.ui7_dmi_battery_10,R.drawable.ui7_dmi_battery_11,R.drawable.ui7_dmi_battery_12,R.drawable.ui7_dmi_battery_13,R.drawable.ui7_dmi_battery_14,R.drawable.ui7_dmi_battery_15,R.drawable.ui7_dmi_battery_16,R.drawable.ui7_dmi_battery_17,R.drawable.ui7_dmi_battery_18,R.drawable.ui7_dmi_battery_19,R.drawable.ui7_dmi_battery_20};
+        for (int i = 0; i < batteryIds.length; i++) nativeBattery[i] = loadBitmap(batteryIds[i]);
+        engineBitmap = loadBitmap(R.drawable.ui7_dmi_engine);
+        engineActiveBitmap = loadBitmap(R.drawable.ui7_dmi_engine_active);
+        driveActiveBitmap = loadBitmap(R.drawable.ui7_dmi_drive_active);
+        motorBitmap = loadBitmap(R.drawable.ui7_dmi_drive);
         setContentDescription(
                 "Состояние BYD Song L DM-i: скорость, направление, режим и шины");
     }
@@ -106,14 +118,14 @@ final class VehicleDashboardView extends View {
         drawBackground(canvas, width, height);
         drawHeader(canvas, width, height);
         drawVehicle(canvas, width, height);
-        drawPowerFlow(canvas, width, height);
+
         drawQuickActions(canvas, width, height);
     }
 
     private void drawBackground(Canvas canvas, float width, float height) {
         paint.setShader(new LinearGradient(
                 0, 0, width, height,
-                new int[]{0xFF111B2B, 0xFF0B1422, 0xFF070D16},
+                new int[]{0xFF1D252E, 0xFF191F27, 0xFF15181F},
                 new float[]{0f, 0.53f, 1f}, Shader.TileMode.CLAMP));
         canvas.drawRoundRect(new RectF(0, 0, width, height),
                 width * 0.035f, width * 0.035f, paint);
@@ -121,15 +133,15 @@ final class VehicleDashboardView extends View {
 
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(Math.max(1f, width * 0.0015f));
-        paint.setColor(0x304C8DFF);
+        paint.setColor(0x24B0B0B0);
         canvas.drawRoundRect(new RectF(1, 1, width - 1, height - 1),
                 width * 0.035f, width * 0.035f, paint);
         paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawHeader(Canvas canvas, float width, float height) {
-        String speed = telemetry.speedKmh == null
-                ? "—" : String.valueOf(telemetry.speedKmh);
+        Integer shownSpeed = demoMode ? scenarioSnapshot(demoScenario).speedKmh : telemetry.speedKmh;
+        String speed = shownSpeed == null ? "—" : String.valueOf(shownSpeed);
         drawText(canvas, speed, width * 0.075f, height * 0.13f,
                 width * 0.13f, TEXT_PRIMARY, Paint.Align.LEFT);
         drawText(canvas, "км/ч", width * 0.08f, height * 0.18f,
@@ -137,11 +149,24 @@ final class VehicleDashboardView extends View {
 
         drawModeStatus(canvas, width, height);
         drawCompass(canvas, width, height);
+        drawText(canvas, "SOH  " + (demoMode ? "98%" : telemetry.batterySohPercent == null ? "—%" : telemetry.batterySohPercent + "%"),
+                width * .08f, height * .265f, width * .032f, HEALTHY, Paint.Align.LEFT);
+        String batteryTemperature = demoMode ? "24–26 °C" :
+                telemetry.batteryMinTempC == null || telemetry.batteryMaxTempC == null ? "— °C" :
+                telemetry.batteryMinTempC + "–" + telemetry.batteryMaxTempC + " °C";
+        drawText(canvas, "Батарея  " + batteryTemperature,
+                width * .08f, height * .302f, width * .028f, TEXT_SECONDARY, Paint.Align.LEFT);
+        drawText(canvas, "ОЖ ДВС  " + (demoMode ? "82 °C" : telemetry.coolantTempC == null ? "— °C" : telemetry.coolantTempC + " °C"),
+                width * .92f, height * .265f, width * .028f, TEXT_SECONDARY, Paint.Align.RIGHT);
+        String voltage = demoMode ? "13,8 В" : telemetry.auxiliaryVoltage == null ? "— В" :
+                String.format(Locale.forLanguageTag("ru"), "%.1f В", telemetry.auxiliaryVoltage);
+        drawText(canvas, "Бортсеть  " + voltage,
+                width * .92f, height * .302f, width * .028f, TEXT_SECONDARY, Paint.Align.RIGHT);
     }
 
     private void drawModeStatus(Canvas canvas, float width, float height) {
         float centerX = width * 0.5f;
-        String workMode = workModeLabel(telemetry.workMode);
+        String workMode = workModeLabel(demoMode ? scenarioSnapshot(demoScenario).workMode : telemetry.workMode);
         String driveMode = driveModeLabel(telemetry.driveMode);
         drawText(canvas, workMode, centerX, height * 0.095f,
                 width * 0.038f, TEXT_PRIMARY, Paint.Align.CENTER);
@@ -161,44 +186,33 @@ final class VehicleDashboardView extends View {
         Float bearing = telemetry.bearingDegrees;
         float heading = bearing == null ? 0f : bearing;
 
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(width * 0.002f);
-        paint.setColor(0x706D7E99);
-        canvas.drawCircle(centerX, centerY, radius, paint);
-
-        for (int angle = 0; angle < 360; angle += 15) {
-            float relative = angle - heading;
-            double radians = Math.toRadians(relative - 90f);
-            float outerX = centerX + (float) Math.cos(radians) * radius * 0.91f;
-            float outerY = centerY + (float) Math.sin(radians) * radius * 0.91f;
-            float tickLength = angle % 45 == 0 ? radius * 0.13f : radius * 0.07f;
-            float innerX = centerX + (float) Math.cos(radians)
-                    * (radius * 0.91f - tickLength);
-            float innerY = centerY + (float) Math.sin(radians)
-                    * (radius * 0.91f - tickLength);
-            paint.setStrokeWidth(angle % 45 == 0
-                    ? width * 0.003f : width * 0.0014f);
-            paint.setColor(angle == 0 ? BLUE : 0x708E9AAF);
-            canvas.drawLine(innerX, innerY, outerX, outerY, paint);
-        }
         paint.setStyle(Paint.Style.FILL);
-
+        paint.setColor(0xFF222B34);
+        canvas.drawCircle(centerX, centerY, radius, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(width * .003f);
+        paint.setColor(0xFF46515C);
+        canvas.drawCircle(centerX, centerY, radius, paint);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(width * .005f);
+        paint.setColor(BLUE);
+        canvas.drawArc(new RectF(centerX-radius, centerY-radius, centerX+radius, centerY+radius),
+                -103f-heading, 26f, false, paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setStrokeCap(Paint.Cap.BUTT);
         String[] points = {"С", "В", "Ю", "З"};
         for (int index = 0; index < points.length; index++) {
-            float relative = index * 90f - heading;
-            double radians = Math.toRadians(relative - 90f);
-            float x = centerX + (float) Math.cos(radians) * radius * 0.61f;
-            float y = centerY + (float) Math.sin(radians) * radius * 0.61f
-                    + width * 0.008f;
-            drawText(canvas, points[index], x, y, width * 0.020f,
-                    index == 0 ? BLUE : TEXT_SECONDARY, Paint.Align.CENTER);
+            double radians = Math.toRadians(index * 90f - heading - 90f);
+            float x = centerX + (float) Math.cos(radians) * radius * .65f;
+            float y = centerY + (float) Math.sin(radians) * radius * .65f + width * .011f;
+            drawText(canvas, points[index], x, y, width * .027f,
+                    index == 0 ? BLUE : TEXT_PRIMARY, Paint.Align.CENTER);
         }
-
-        paint.setColor(TEXT_PRIMARY);
+        paint.setColor(Color.WHITE);
         path.reset();
-        path.moveTo(centerX, centerY - radius * 1.08f);
-        path.lineTo(centerX - radius * 0.11f, centerY - radius * 0.84f);
-        path.lineTo(centerX + radius * 0.11f, centerY - radius * 0.84f);
+        path.moveTo(centerX, centerY - radius * 1.16f);
+        path.lineTo(centerX - radius * .16f, centerY - radius * .83f);
+        path.lineTo(centerX + radius * .16f, centerY - radius * .83f);
         path.close();
         canvas.drawPath(path, paint);
 
@@ -209,44 +223,121 @@ final class VehicleDashboardView extends View {
     }
 
     private void drawVehicle(Canvas canvas, float width, float height) {
-        float cardLeft = width * 0.055f;
-        float cardTop = height * 0.22f;
-        float cardRight = width * 0.945f;
-        float cardBottom = height * 0.57f;
-        paint.setColor(0x66162437);
-        canvas.drawRoundRect(new RectF(cardLeft, cardTop, cardRight, cardBottom),
-                width * 0.025f, width * 0.025f, paint);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(Math.max(1f, width * 0.0015f));
-        paint.setColor(0x4A304967);
-        canvas.drawRoundRect(new RectF(cardLeft, cardTop, cardRight, cardBottom),
-                width * 0.025f, width * 0.025f, paint);
-        paint.setStyle(Paint.Style.FILL);
-
-        float carHeight = height * 0.30f;
-        float carWidth = carHeight * vehicleBitmap.getWidth()
-                / vehicleBitmap.getHeight();
-        RectF car = new RectF(
-                width * 0.5f - carWidth / 2f,
-                height * 0.245f,
-                width * 0.5f + carWidth / 2f,
-                height * 0.245f + carHeight);
+        VehicleTelemetrySnapshot shown = demoMode ? scenarioSnapshot(demoScenario) : telemetry;
+        DmiEnergyFlow flow = new DmiEnergyFlow(shown,
+                demoMode ? demoScenario == 3 || demoScenario == 5 : null);
+        String label = demoMode ? "ДЕМО · " + SCENARIOS[demoScenario] + "  ›" : "Состояние автомобиля";
+        drawText(canvas, label, width * .5f, height * .225f, width * .029f,
+                TEXT_PRIMARY, Paint.Align.CENTER);
+        // Native Energy screen uses this 1170 × 1034 isometric SUV asset.
+        // Keep the body, battery and powertrain in the same projection.
+        float scale = Math.min(width / 1170f, height * .61f / 1034f);
+        float left = (width - 1170f * scale) / 2;
+        float sceneBaseTop = height * .275f;
+        float top = sceneBaseTop - 18f;
+        canvas.save();
+        canvas.translate(left, top);
+        canvas.scale(scale, scale);
+        paint.setAlpha(155);
+        canvas.drawBitmap(vehicleBitmap, null, new RectF(0, 0, 1170, 1034), paint);
         paint.setAlpha(255);
-        canvas.drawBitmap(vehicleBitmap, null, car, paint);
 
-        float labelSize = width * 0.027f;
-        drawTireStatus(canvas, telemetry.tirePressFlKpa, telemetry.tireTempFlC,
-                width * 0.31f,
-                height * 0.32f, car.left, labelSize, true);
-        drawTireStatus(canvas, telemetry.tirePressFrKpa, telemetry.tireTempFrC,
-                width * 0.69f,
-                height * 0.32f, car.right, labelSize, false);
-        drawTireStatus(canvas, telemetry.tirePressRlKpa, telemetry.tireTempRlC,
-                width * 0.31f,
-                height * 0.48f, car.left, labelSize, true);
-        drawTireStatus(canvas, telemetry.tirePressRrKpa, telemetry.tireTempRrC,
-                width * 0.69f,
-                height * 0.48f, car.right, labelSize, false);
+        // Component anchors follow the original carbody layout (xhdpi = 2 px/dp).
+        float engineX = 281.5f, engineY = 709;
+        float driveX = 396.5f, driveY = 650;
+        float batteryX = 610, batteryY = 525;
+        float farX = 276, farY = 574, nearX = 534, nearY = 775;
+
+        float soc = demoMode ? demoSoc : shown.batterySocPercent == null ? 0 : Math.max(0, Math.min(100, shown.batterySocPercent));
+        batteryBounds.set(left + 420 * scale, top + 405 * scale, left + 790 * scale, top + 640 * scale);
+        fuelBounds.set(left + 658 * scale, top + 264 * scale,
+                left + 926 * scale, top + 452 * scale);
+        Bitmap battery = nativeBattery[Math.round(soc / 5)];
+        drawNativeComponent(canvas, flow.engineToGenerator || flow.engineToWheels
+                ? engineActiveBitmap : engineBitmap, engineX, engineY, 139, 142);
+        drawNativeComponent(canvas, flow.motorToWheels || flow.wheelsToMotor || flow.engineToGenerator
+                ? driveActiveBitmap : motorBitmap, driveX, driveY, 125, 112);
+        // OEM layering: couplings above engine/motor, battery casing above cables.
+        nativeFlows.draw(canvas, paint, flow);
+        drawNativeComponent(canvas, battery, batteryX, batteryY, 385, 275);
+        drawText(canvas, shown.batterySocPercent == null ? "—" : Math.round(soc) + "%",
+                batteryX, batteryY + 10, 44, TEXT_PRIMARY, Paint.Align.CENTER);
+
+        drawFuelTank(canvas);
+
+        drawNativeTireLabel(canvas, shown.tirePressFlKpa, shown.tireTempFlC,
+                664, 881, nearX, nearY, Paint.Align.CENTER);
+        drawNativeTireLabel(canvas, shown.tirePressFrKpa, shown.tireTempFrC,
+                126, 494, farX, farY, Paint.Align.CENTER);
+        drawNativeTireLabel(canvas, shown.tirePressRlKpa, shown.tireTempRlC,
+                1045, 572, 948, 478, Paint.Align.CENTER);
+        drawNativeTireLabel(canvas, shown.tirePressRrKpa, shown.tireTempRrC,
+                620, 150, 670, 345, Paint.Align.CENTER);
+        canvas.restore();
+        // A compact legend belongs to the same scene; no second energy card.
+        float y = Math.min(height * .865f, sceneBaseTop + 1034 * scale + height * .018f);
+        drawText(canvas, "ДВС", width * .16f, y - height * .026f,
+                width * .024f, TEXT_SECONDARY, Paint.Align.CENTER);
+        drawText(canvas, formatRpm(shown.engineRpm), width * .16f, y,
+                width * .026f, TEXT_PRIMARY, Paint.Align.CENTER);
+        drawText(canvas, "Электропривод", width * .50f, y - height * .026f,
+                width * .024f, TEXT_SECONDARY, Paint.Align.CENTER);
+        drawText(canvas, formatRpm(demoMode ? Integer.valueOf(2450) : shown.motorRpm), width * .50f, y,
+                width * .026f, TEXT_PRIMARY, Paint.Align.CENTER);
+        drawText(canvas, "Батарея", width * .84f, y - height * .026f,
+                width * .024f, TEXT_SECONDARY, Paint.Align.CENTER);
+        drawText(canvas, formatPower(shown.batteryPowerKw), width * .84f, y,
+                width * .026f, TEXT_PRIMARY, Paint.Align.CENTER);
+        scheduleFlowAnimation(flow.engineToGenerator || flow.engineToWheels
+                || flow.motorToWheels || flow.wheelsToMotor || flow.driveToBattery);
+    }
+
+    private void drawNativeComponent(Canvas canvas, Bitmap bitmap, float x, float y,
+                                     float width, float height) {
+        float scale = Math.min(width / bitmap.getWidth(), height / bitmap.getHeight());
+        paint.setAlpha(255);
+        canvas.drawBitmap(bitmap, null, new RectF(x - bitmap.getWidth() * scale / 2,
+                y - bitmap.getHeight() * scale / 2, x + bitmap.getWidth() * scale / 2,
+                y + bitmap.getHeight() * scale / 2), paint);
+    }
+
+    private void drawNativeTireLabel(Canvas canvas, Integer pressure, Integer temperature,
+                                     float x, float y, float wheelX, float wheelY, Paint.Align align) {
+        int color = pressure == null ? TEXT_SECONDARY : pressure >= 220 && pressure <= 260 ? HEALTHY : AMBER;
+        // Short orthogonal callouts: horizontal/vertical segments only.
+        // Labels sit outside the silhouette, clear of the energy circuit.
+        paint.setColor(0x906C8590);
+        paint.setStrokeWidth(2);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        if (Math.abs(x - wheelX) < 95) {
+            float startY = y < wheelY ? y + 58 : y - 28;
+            canvas.drawLine(x, startY, x, wheelY, paint);
+            canvas.drawLine(x, wheelY, wheelX, wheelY, paint);
+        } else {
+            float startX = x + (x < wheelX ? 86 : -86);
+            float startY = y + 12;
+            canvas.drawLine(startX, startY, wheelX, startY, paint);
+            canvas.drawLine(wheelX, startY, wheelX, wheelY, paint);
+        }
+        paint.setColor(0xFF82949F);
+        canvas.drawCircle(wheelX, wheelY, 3, paint);
+        drawText(canvas, pressure == null ? "— bar" : String.format(Locale.US, "%.1f bar", pressure / 100f),
+                x, y, 36, color, align);
+        drawText(canvas, temperature == null ? "—°C" : temperature + "°C", x, y + 40,
+                31, TEXT_SECONDARY, align);
+    }
+
+    private static final String[] SCENARIOS = {"Электротяга", "Заряд от ДВС", "Последовательный",
+            "Совместная тяга", "Рекуперация", "Привод от ДВС"};
+
+    private static VehicleTelemetrySnapshot scenarioSnapshot(int scenario) {
+        int[][] data = {{72, 28, 0, 0, 26}, {0, -18, 1600, 20, 0},
+                {72, 0, 1850, 28, 26}, {90, 20, 2100, 0, 18},
+                {55, -22, 0, 0, -24}, {90, 0, 1900, 0, 0}};
+        int[] d = data[scenario];
+        return new VehicleTelemetrySnapshot(d[0], 240, 240, 230, 230, 31, 32, 29, 30,
+                3, scenario == 0 || scenario == 4 ? 1 : 3, 308f, 68f,
+                d[1], d[2], d[3], d[4], 1, null);
     }
 
     private void drawTireStatus(Canvas canvas, Integer pressureKpa,
@@ -272,263 +363,133 @@ final class VehicleDashboardView extends View {
                 end, y - size * 0.25f, paint);
     }
 
-    private void drawPowerFlow(Canvas canvas, float width, float height) {
-        float cardTop = height * 0.585f;
-        float cardBottom = height * 0.885f;
-        paint.setColor(0x52101D30);
-        canvas.drawRoundRect(new RectF(
-                        width * 0.035f, cardTop,
-                        width * 0.965f, cardBottom),
-                width * 0.025f, width * 0.025f, paint);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(Math.max(1f, width * 0.0015f));
-        paint.setColor(0x55315F9E);
-        canvas.drawRoundRect(new RectF(
-                        width * 0.035f, cardTop,
-                        width * 0.965f, cardBottom),
-                width * 0.025f, width * 0.025f, paint);
-        paint.setStyle(Paint.Style.FILL);
-
-        float titleY = height * 0.617f;
-        drawText(canvas, powerFlowTitle(telemetry.workMode), width * 0.5f,
-                titleY, width * 0.025f, TEXT_PRIMARY, Paint.Align.CENTER);
-
-        float nodeY = height * 0.695f;
-        float imageWidth = width * 0.145f;
-        float imageHeight = height * 0.083f;
-        float engineX = width * 0.105f;
-        float generatorX = width * 0.325f;
-        float motorX = width * 0.685f;
-        float wheelX = width * 0.895f;
-        float chargerX = width * 0.225f;
-        float chargerY = height * 0.815f;
-        float batteryX = width * 0.55f;
-
-        boolean engineActive = telemetry.workMode != null
-                && telemetry.workMode >= 3 && telemetry.workMode <= 5;
-        boolean tractionActive = telemetry.workMode != null
-                && telemetry.workMode >= 1 && telemetry.workMode <= 5;
-        boolean batteryDischarging = telemetry.batteryPowerKw != null
-                ? telemetry.batteryPowerKw > 1
-                : telemetry.workMode != null
-                && (telemetry.workMode == 1 || telemetry.workMode == 2);
-        boolean batteryCharging = telemetry.batteryPowerKw != null
-                && telemetry.batteryPowerKw < -1;
-        boolean wheelsMoving = telemetry.speedKmh != null
-                && telemetry.speedKmh > 0;
-        boolean externalCharging = isExternalCharging(
-                telemetry.chargeGunState, telemetry.chargingType);
-        boolean motorDemand = wheelsMoving
-                || telemetry.motorPowerKw != null
-                && telemetry.motorPowerKw > 0;
-        boolean directEngineDrive = telemetry.workMode != null
-                && (telemetry.workMode == 4 || telemetry.workMode == 5)
-                && wheelsMoving;
-        boolean generatorFeedsMotor = engineActive
-                && tractionActive && motorDemand;
-        boolean generatorChargesBattery = engineActive
-                && batteryCharging && !externalCharging;
-        boolean regenerativeBraking = batteryCharging
-                && wheelsMoving && !externalCharging
-                && !generatorChargesBattery;
-        boolean batteryFeedsMotor = batteryDischarging && motorDemand;
-
-        drawFlowLine(canvas, engineX + imageWidth * 0.42f, nodeY,
-                generatorX - imageWidth * 0.42f, nodeY,
-                AMBER, engineActive);
-        drawFlowLine(canvas, generatorX + imageWidth * 0.42f, nodeY,
-                motorX - imageWidth * 0.42f, nodeY,
-                ENERGY_BLUE, generatorFeedsMotor);
-        drawFlowLine(canvas, motorX + imageWidth * 0.42f, nodeY,
-                wheelX - imageWidth * 0.42f, nodeY,
-                ENERGY_BLUE, tractionActive && wheelsMoving);
-
-        Path directDrive = directDrivePath;
-        directDrive.reset();
-        float mechanicalY = height * 0.642f;
-        directDrive.moveTo(engineX, nodeY - imageHeight * 0.45f);
-        directDrive.lineTo(engineX, mechanicalY);
-        directDrive.lineTo(wheelX, mechanicalY);
-        directDrive.lineTo(wheelX, nodeY - imageHeight * 0.45f);
-        drawAnimatedFlow(canvas, directDrive, AMBER, directEngineDrive);
-
-        float batteryY = height * 0.825f;
-        float batteryWidth = width * 0.32f;
-        float batteryHeight = batteryWidth
-                * batteryShellBitmap.getHeight() / batteryShellBitmap.getWidth();
-        RectF battery = new RectF(
-                batteryX - batteryWidth / 2f,
-                batteryY - batteryHeight / 2f,
-                batteryX + batteryWidth / 2f,
-                batteryY + batteryHeight / 2f);
-
-        Path generatorBattery = generatorBatteryPath;
-        generatorBattery.reset();
-        generatorBattery.moveTo(generatorX,
-                nodeY + imageHeight * 0.45f);
-        generatorBattery.lineTo(generatorX, battery.top - height * 0.012f);
-        generatorBattery.lineTo(batteryX - batteryWidth * 0.28f,
-                battery.top - height * 0.012f);
-        generatorBattery.lineTo(batteryX - batteryWidth * 0.28f,
-                battery.top + battery.height() * 0.18f);
-        drawAnimatedFlow(canvas, generatorBattery,
-                ENERGY_BLUE, generatorChargesBattery);
-
-        Path batteryMotor = batteryMotorPath;
-        batteryMotor.reset();
-        if (regenerativeBraking) {
-            batteryMotor.moveTo(motorX,
-                    nodeY + imageHeight * 0.45f);
-            batteryMotor.lineTo(motorX, battery.top - height * 0.012f);
-            batteryMotor.lineTo(batteryX + batteryWidth * 0.28f,
-                    battery.top - height * 0.012f);
-            batteryMotor.lineTo(batteryX + batteryWidth * 0.28f,
-                    battery.top + battery.height() * 0.18f);
-        } else {
-            batteryMotor.moveTo(batteryX + batteryWidth * 0.28f,
-                    battery.top + battery.height() * 0.18f);
-            batteryMotor.lineTo(batteryX + batteryWidth * 0.28f,
-                    battery.top - height * 0.012f);
-            batteryMotor.lineTo(motorX, battery.top - height * 0.012f);
-            batteryMotor.lineTo(motorX,
-                    nodeY + imageHeight * 0.45f);
-        }
-        drawAnimatedFlow(canvas, batteryMotor,
-                regenerativeBraking ? AMBER : ENERGY_BLUE,
-                regenerativeBraking || batteryFeedsMotor);
-
-        Path chargerBattery = chargerBatteryPath;
-        chargerBattery.reset();
-        chargerBattery.moveTo(chargerX + width * 0.065f, chargerY);
-        chargerBattery.lineTo(battery.left - width * 0.012f, chargerY);
-        chargerBattery.lineTo(battery.left - width * 0.012f,
-                battery.centerY());
-        chargerBattery.lineTo(battery.left + battery.width() * 0.04f,
-                battery.centerY());
-        drawAnimatedFlow(canvas, chargerBattery,
-                ENERGY_BLUE, externalCharging);
-
-        drawPowerNode(canvas, engineBitmap, engineX, nodeY,
-                imageWidth, imageHeight, "ДВС",
-                formatRpm(telemetry.engineRpm));
-        drawPowerNode(canvas, generatorBitmap, generatorX, nodeY,
-                imageWidth, imageHeight, "Генератор",
-                formatPower(telemetry.generatorPowerKw));
-        drawPowerNode(canvas, motorBitmap, motorX, nodeY,
-                imageWidth, imageHeight, "Эл. мотор",
-                formatPower(telemetry.motorPowerKw));
-        drawPowerNode(canvas, wheelBitmap, wheelX, nodeY,
-                imageWidth, imageHeight, "Колёса",
-                telemetry.speedKmh == null ? "— км/ч"
-                        : telemetry.speedKmh + " км/ч");
-        drawPowerNode(canvas, controllerBitmap, chargerX, chargerY,
-                width * 0.115f, height * 0.055f, "Зарядный блок",
-                chargerTypeLabel(telemetry.chargeGunState,
-                        telemetry.chargingType));
-
-        drawBattery(canvas, battery, telemetry.batterySocPercent,
-                telemetry.batteryPowerKw);
-        boolean hasActiveFlow = engineActive
-                || generatorFeedsMotor
-                || tractionActive && wheelsMoving
-                || directEngineDrive
-                || generatorChargesBattery
-                || regenerativeBraking
-                || batteryFeedsMotor
-                || externalCharging;
-        scheduleFlowAnimation(hasActiveFlow);
-    }
-
     private void drawQuickActions(Canvas canvas, float width, float height) {
-        String[] labels = {"АВТО", "КЛИМАТ", "НАСТР.", "ДОМОЙ"};
         float gap = width * 0.014f;
         float left = width * 0.055f;
         float totalWidth = width * 0.89f;
-        float chipWidth = (totalWidth - gap * 3f) / 4f;
+        float chipWidth = (totalWidth - gap * (actionBounds.length-1)) / actionBounds.length;
         float top = height * 0.895f;
         float bottom = height * 0.972f;
-        for (int index = 0; index < labels.length; index++) {
+        for (int index = 0; index < actionBounds.length; index++) {
             float chipLeft = left + index * (chipWidth + gap);
             RectF chip = actionBounds[index];
             chip.set(chipLeft, top, chipLeft + chipWidth, bottom);
-            paint.setColor(0xA6172234);
+            paint.setColor(0xFF262D33);
             canvas.drawRoundRect(chip, width * 0.018f,
                     width * 0.018f, paint);
             drawActionIcon(canvas, index, chip.centerX(),
-                    chip.top + chip.height() * 0.35f, width * 0.027f);
-            drawText(canvas, labels[index], chip.centerX(),
-                    chip.bottom - width * 0.010f, width * 0.017f,
-                    TEXT_SECONDARY, Paint.Align.CENTER);
+                    chip.centerY(), width * 0.034f);
+
         }
     }
 
     private void drawActionIcon(Canvas canvas, int action,
                                 float centerX, float centerY, float size) {
-        paint.setColor(TEXT_PRIMARY);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(Math.max(2f, size * 0.11f));
-        paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setStrokeJoin(Paint.Join.ROUND);
-        path.reset();
-        if (action == ACTION_AUTO) {
-            RectF body = new RectF(centerX - size * 0.75f,
-                    centerY - size * 0.24f, centerX + size * 0.75f,
-                    centerY + size * 0.42f);
-            canvas.drawRoundRect(body, size * 0.22f, size * 0.22f, paint);
-            path.moveTo(centerX - size * 0.48f, body.top);
-            path.lineTo(centerX - size * 0.28f, centerY - size * 0.62f);
-            path.lineTo(centerX + size * 0.28f, centerY - size * 0.62f);
-            path.lineTo(centerX + size * 0.48f, body.top);
-            canvas.drawPath(path, paint);
-            canvas.drawCircle(centerX - size * 0.45f,
-                    body.bottom, size * 0.14f, paint);
-            canvas.drawCircle(centerX + size * 0.45f,
-                    body.bottom, size * 0.14f, paint);
-        } else if (action == ACTION_CLIMATE) {
-            for (int blade = 0; blade < 4; blade++) {
-                canvas.save();
-                canvas.rotate(blade * 90f, centerX, centerY);
-                canvas.drawArc(new RectF(centerX - size * 0.12f,
-                                centerY - size * 0.68f,
-                                centerX + size * 0.48f,
-                                centerY + size * 0.02f),
-                        190f, 130f, false, paint);
-                canvas.restore();
-            }
-            canvas.drawCircle(centerX, centerY, size * 0.13f, paint);
-        } else if (action == ACTION_CAR_SETTINGS) {
-            canvas.drawCircle(centerX, centerY, size * 0.54f, paint);
-            canvas.drawCircle(centerX, centerY, size * 0.20f, paint);
-            for (int tooth = 0; tooth < 8; tooth++) {
-                double angle = Math.toRadians(tooth * 45f);
-                canvas.drawLine(
-                        centerX + (float) Math.cos(angle) * size * 0.60f,
-                        centerY + (float) Math.sin(angle) * size * 0.60f,
-                        centerX + (float) Math.cos(angle) * size * 0.78f,
-                        centerY + (float) Math.sin(angle) * size * 0.78f,
-                        paint);
-            }
-        } else {
-            path.moveTo(centerX - size * 0.72f, centerY - size * 0.02f);
-            path.lineTo(centerX, centerY - size * 0.67f);
-            path.lineTo(centerX + size * 0.72f, centerY - size * 0.02f);
-            path.moveTo(centerX - size * 0.52f, centerY - size * 0.12f);
-            path.lineTo(centerX - size * 0.52f, centerY + size * 0.62f);
-            path.lineTo(centerX + size * 0.52f, centerY + size * 0.62f);
-            path.lineTo(centerX + size * 0.52f, centerY - size * 0.12f);
-            canvas.drawPath(path, paint);
+        if (action == ACTION_CLIMATE) {
+            if (climateIcon == null) climateIcon = new ClimateIconRenderer(getContext());
+            int radius = Math.round(size * 1.5f * 1.30f);
+            climateIcon.draw(canvas, Math.round(centerX), Math.round(centerY), radius,
+                    demoMode ? ClimateIconState.decode(1, 4, 2) : telemetry.climate);
+            return;
         }
+        paint.setColor(TEXT_PRIMARY);
+        int[] icons = {R.drawable.ui7_oem_car, R.drawable.ui7_climate, R.drawable.ui7_car_settings, R.drawable.ui7_home, R.drawable.ui7_tech};
+        android.graphics.drawable.Drawable icon = getContext().getDrawable(icons[action]);
+        icon = icon.mutate();
+        icon.setTint(Color.WHITE);
+        if (action == ACTION_AUTO) {
+            // OEM default PNG peaks at alpha 152; white tint alone retains that dimness.
+            icon.setColorFilter(new android.graphics.ColorMatrixColorFilter(new float[]{
+                    0, 0, 0, 0, 255,
+                    0, 0, 0, 0, 255,
+                    0, 0, 0, 0, 255,
+                    0, 0, 0, 255f / 152f, 0}));
+        }
+        float opticalScale = action == ACTION_CLIMATE ? 1.30f
+                : action == ACTION_CAR_SETTINGS ? 1.32f : 1f;
+        int radius = Math.round(size * 1.5f * opticalScale);
+        icon.setBounds(Math.round(centerX)-radius, Math.round(centerY)-radius,
+                Math.round(centerX)+radius, Math.round(centerY)+radius);
+        icon.draw(canvas);
+    }
+
+    private void drawFuelTank(Canvas canvas) {
+        canvas.save();
+        // Rearward offset along the vehicle axis, with clearance from the battery.
+        // Position selected by the user in the emulator; fixed for demo and live views.
+        canvas.translate(-8.96381f, -61.030228f);
+        // Shared projected vectors keep corresponding opposite edges parallel.
+        // Transverse direction follows the battery's rear end face (147,83).
+        float cx = 820, cy = 390;
+        float ux = 227 * .30f, uy = -139 * .30f;
+        // Broad transverse tank, short longitudinal footprint.
+        float vx = 147 * 1.15f * .90f, vy = 83 * 1.15f * .90f;
+        float lx = cx - (ux + vx) / 2, ly = cy - (uy + vy) / 2;
+        float tx = lx + ux, ty = ly + uy;
+        float fx = lx + vx, fy = ly + vy;
+        float rx = tx + vx, ry = ty + vy, depth = 64;
+        float[] roof = {lx,ly,tx,ty,rx,ry,fx,fy};
+        float[] front = {lx,ly,fx,fy,fx,fy+depth,lx,ly+depth};
+        float[] side = {fx,fy,rx,ry,rx,ry+depth,fx,fy+depth};
+        paint.setPathEffect(new android.graphics.CornerPathEffect(5));
+        tankFace(canvas, roof, 0xB83D3D3D);
+        tankFace(canvas, front, 0xD04A4A4A);
+        tankFace(canvas, side, 0xD0333333);
+        Integer fuel = demoMode ? Integer.valueOf(demoFuel) : telemetry.fuelPercent;
+        if (fuel != null && fuel > 0) {
+            float level = depth * (1 - fuel / 100f);
+            tankFace(canvas, new float[]{lx,ly+level,fx,fy+level,fx,fy+depth,lx,ly+depth}, 0xC080795B);
+            tankFace(canvas, new float[]{fx,fy+level,rx,ry+level,rx,ry+depth,fx,fy+depth}, 0xC0625D49);
+            tankFace(canvas, new float[]{lx,ly+level,tx,ty+level,rx,ry+level,fx,fy+level}, 0xCA9B9270);
+        }
+        tankFace(canvas, roof, 0x183E3E3E);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(2.5f);
+        tankFace(canvas, roof, 0x887F7F7F);
+        tankFace(canvas, front, 0x806B6B6B);
+        tankFace(canvas, side, 0x805E5E5E);
         paint.setStyle(Paint.Style.FILL);
+        paint.setPathEffect(null);
+        drawText(canvas, fuel == null ? "—" : fuel + "%", 820, 411, 34,
+                TEXT_PRIMARY, Paint.Align.CENTER);
+        canvas.restore();
+    }
+
+    private void tankFace(Canvas canvas, float[] points, int color) {
+        path.reset();
+        path.moveTo(points[0], points[1]);
+        for (int i = 2; i < points.length; i += 2) path.lineTo(points[i], points[i + 1]);
+        path.close();
+        paint.setColor(color);
+        canvas.drawPath(path, paint);
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+            if (event.getX() >= getWidth() * .05f && event.getX() <= getWidth() * .40f
+                    && event.getY() >= getHeight() * .225f && event.getY() <= getHeight() * .28f) {
+                performClick();
+                if (actionListener != null) actionListener.onVehicleAction(ACTION_BATTERY_DETAILS);
+                return true;
+            }
+            if (demoMode && (batteryBounds.contains(event.getX(), event.getY()) || fuelBounds.contains(event.getX(), event.getY()))) {
+                if (batteryBounds.contains(event.getX(), event.getY())) demoSoc = demoSoc >= 100 ? 0 : Math.min(100, (demoSoc / 25 + 1) * 25);
+                else demoFuel = demoFuel >= 100 ? 0 : Math.min(100, (demoFuel / 25 + 1) * 25);
+                performClick(); invalidate(); return true;
+            }
+            if (demoMode && event.getY() > getHeight() * .18f
+                    && event.getY() < getHeight() * .87f) {
+                demoScenario = (demoScenario + 1) % SCENARIOS.length;
+                performClick();
+                invalidate();
+                return true;
+            }
             for (int index = 0; index < actionBounds.length; index++) {
                 if (actionBounds[index].contains(event.getX(), event.getY())) {
                     performClick();
                     if (actionListener != null) {
-                        actionListener.onVehicleAction(index);
+                        actionListener.onVehicleAction(index==4?ACTION_TECH_DETAILS:index);
                     }
                     return true;
                 }
@@ -540,6 +501,7 @@ final class VehicleDashboardView extends View {
     @Override
     public boolean performClick() {
         super.performClick();
+        playSoundEffect(android.view.SoundEffectConstants.CLICK);
         return true;
     }
 
@@ -579,100 +541,6 @@ final class VehicleDashboardView extends View {
     private static String directionLabel(float bearing) {
         String[] labels = {"С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"};
         return labels[Math.round(bearing / 45f) % labels.length];
-    }
-
-    private void drawPowerNode(Canvas canvas, Bitmap bitmap,
-                               float centerX, float centerY,
-                               float maxWidth, float maxHeight,
-                               String label, String value) {
-        float scale = Math.min(maxWidth / bitmap.getWidth(),
-                maxHeight / bitmap.getHeight());
-        float drawWidth = bitmap.getWidth() * scale;
-        float drawHeight = bitmap.getHeight() * scale;
-        RectF target = new RectF(
-                centerX - drawWidth / 2f, centerY - drawHeight / 2f,
-                centerX + drawWidth / 2f, centerY + drawHeight / 2f);
-        paint.setAlpha(255);
-        canvas.drawBitmap(bitmap, null, target, paint);
-        drawText(canvas, label, centerX,
-                centerY + maxHeight * 0.67f,
-                getWidth() * 0.018f, TEXT_PRIMARY, Paint.Align.CENTER);
-        drawText(canvas, value, centerX,
-                centerY + maxHeight * 0.90f,
-                getWidth() * 0.016f, BLUE, Paint.Align.CENTER);
-    }
-
-    private void drawBattery(Canvas canvas, RectF target,
-                             Float socPercent, Integer batteryPowerKw) {
-        float soc = socPercent == null ? 0f
-                : Math.max(0f, Math.min(100f, socPercent));
-        float left = target.left + target.width() * 0.050f;
-        float right = target.left + target.width() * 0.930f;
-        float top = target.top + target.height() * 0.230f;
-        float bottom = target.top + target.height() * 0.860f;
-        RectF liveFrame = new RectF(
-                left - target.width() * 0.035f,
-                top - target.height() * 0.09f,
-                right + target.width() * 0.035f,
-                bottom + target.height() * 0.09f);
-        paint.setColor(0xFF071629);
-        canvas.drawRoundRect(liveFrame, target.height() * 0.12f,
-                target.height() * 0.12f, paint);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(Math.max(1.5f, target.height() * 0.025f));
-        paint.setColor(0xC52F9DFF);
-        canvas.drawRoundRect(liveFrame, target.height() * 0.12f,
-                target.height() * 0.12f, paint);
-        paint.setStyle(Paint.Style.FILL);
-        float gap = target.width() * 0.007f;
-        float cellWidth = (right - left - gap * 11f) / 12f;
-        for (int index = 0; index < 12; index++) {
-            float cellLeft = left + index * (cellWidth + gap);
-            RectF cell = new RectF(cellLeft, top,
-                    cellLeft + cellWidth, bottom);
-            paint.setColor(0xFF102039);
-            canvas.drawRoundRect(cell, cellWidth * 0.24f,
-                    cellWidth * 0.24f, paint);
-            float fill = Math.max(0f, Math.min(1f,
-                    (soc - index * (100f / 12f)) / (100f / 12f)));
-            if (fill > 0f) {
-                int save = canvas.save();
-                canvas.clipRect(cell.left, cell.top,
-                        cell.left + cell.width() * fill, cell.bottom);
-                paint.setShader(new LinearGradient(
-                        cell.left, cell.top, cell.right, cell.bottom,
-                        index < 7 ? 0xFF168BFF : 0xFF25E884,
-                        index < 9 ? 0xFF22D8FF : 0xFFB4F52B,
-                        Shader.TileMode.CLAMP));
-                canvas.drawRoundRect(cell, cellWidth * 0.24f,
-                        cellWidth * 0.24f, paint);
-                paint.setShader(null);
-                canvas.restoreToCount(save);
-            }
-        }
-        paint.setAlpha(255);
-        canvas.drawBitmap(batteryShellBitmap, null, target, paint);
-
-        String socLabel = socPercent == null
-                ? "SOC —%" : "SOC " + Math.round(soc) + "%";
-        float pillWidth = target.width() * 0.42f;
-        float pillHeight = target.height() * 0.26f;
-        RectF pill = new RectF(
-                target.centerX() - pillWidth / 2f,
-                target.centerY() - pillHeight / 2f,
-                target.centerX() + pillWidth / 2f,
-                target.centerY() + pillHeight / 2f);
-        paint.setColor(0xB0071224);
-        canvas.drawRoundRect(pill, pillHeight / 2f, pillHeight / 2f, paint);
-        drawText(canvas, socLabel, target.centerX(),
-                target.centerY() + getWidth() * 0.009f,
-                getWidth() * 0.021f, TEXT_PRIMARY, Paint.Align.CENTER);
-        drawText(canvas, "АКБ " + formatPower(batteryPowerKw),
-                target.centerX(), target.bottom + getWidth() * 0.016f,
-                getWidth() * 0.016f,
-                batteryPowerKw != null && batteryPowerKw < -1
-                        ? AMBER : ENERGY_BLUE,
-                Paint.Align.CENTER);
     }
 
     private void drawFlowLine(Canvas canvas,
@@ -784,10 +652,10 @@ final class VehicleDashboardView extends View {
         paint.setShader(null);
         paint.setStyle(Paint.Style.FILL);
         paint.setTextAlign(align);
-        paint.setTextSize(size);
+        // Dynasty pad body-4 is 12sp; keep telemetry legible in the 1/3 pane.
+        paint.setTextSize(Math.max(size, 12f * getResources().getDisplayMetrics().scaledDensity));
         paint.setColor(color);
-        paint.setTypeface(android.graphics.Typeface.create(
-                "sans", android.graphics.Typeface.NORMAL));
+        paint.setTypeface(ui7Typeface);
         canvas.drawText(value, x, y, paint);
     }
 }

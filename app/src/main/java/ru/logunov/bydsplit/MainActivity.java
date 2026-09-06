@@ -72,6 +72,9 @@ public final class MainActivity extends Activity {
     private View dividerView;
     private FrameLayout driverSlot;
     private FrameLayout farSlot;
+    private BatteryDetailsView batteryDetailsView;
+    private View batteryDisplacedApp;
+    private boolean batteryClosing;
     private EmbeddedAppPane driverEmbeddedPane;
     private EmbeddedAppPane farEmbeddedPane;
     private boolean showingVehicleDashboard;
@@ -133,6 +136,11 @@ public final class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0
+                && intent.getBooleanExtra("debug_max_call_route",false)) {
+            intent.removeExtra("debug_max_call_route");
+            MaxCallRouter.onCallActivity(this);
+        }
         if (applyDebugLaunchOptions(intent)) {
             pickingKey = null;
             render();
@@ -143,6 +151,7 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        if (batteryDetailsView != null) batteryDetailsView.setActive(true);
         settingsVisible = false;
         applySystemBarsMode();
         updateCompactDockSelection();
@@ -150,17 +159,16 @@ public final class MainActivity extends Activity {
             vehicleTelemetryController.start(
                     AppPreferences.isDemoModeEnabled(this));
         }
+        cameraAutomation.start();
         boolean locationNeeded = showingVehicleDashboard
-                || AppPreferences.isParkingCameraAutoEnabled(this);
+                || AutomationStore.hasCameraRules(this);
         if (locationNeeded && checkSelfPermission(
                 android.Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION,
                     android.Manifest.permission.ACCESS_COARSE_LOCATION}, 341);
         } else {
-            if (AppPreferences.isParkingCameraAutoEnabled(this)) {
-                cameraAutomation.start();
-            }
+            cameraAutomation.start();
             vehicleTelemetryController.startLocationIfPermitted();
         }
     }
@@ -217,6 +225,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onPause() {
         resumed = false;
+        if (batteryDetailsView != null) batteryDetailsView.setActive(false);
         super.onPause();
     }
 
@@ -246,6 +255,16 @@ public final class MainActivity extends Activity {
             }
         }
         return false;
+    }
+
+    static int prepareMaxCallPane() {
+        MainActivity activity=currentActivity.get();
+        if(activity==null||activity.isFinishing()||activity.isDestroyed())return -1;
+        if(activity.showingVehicleDashboard||activity.driverEmbeddedPane==null||!activity.driverEmbeddedPane.isMaxPane()) {
+            activity.hidePicker();
+            activity.activateCompactAppInternal(false,true,PACKAGE_MAX);
+        }
+        return activity.driverEmbeddedPane==null?-1:activity.driverEmbeddedPane.embeddedDisplayId();
     }
 
     static boolean isActive() {
@@ -321,9 +340,10 @@ public final class MainActivity extends Activity {
         compactPaneContainer.setBackgroundColor(Color.TRANSPARENT);
         compactPaneContainer.addView(driverSlot, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        compactPaneContainer.addView(createCompactDock(),
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, dp(86)));
+        LinearLayout.LayoutParams dockParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(86));
+        dockParams.topMargin = dp(8);
+        compactPaneContainer.addView(createCompactDock(), dockParams);
 
         dividerView = createDivider();
         attachPanelOrder();
@@ -366,9 +386,9 @@ public final class MainActivity extends Activity {
         FrameLayout divider = new FrameLayout(this);
         divider.setContentDescription("Фиксированная граница областей");
         View handle = new View(this);
-        handle.setBackground(roundedBackground(0x994C8DFF, 4));
+        handle.setBackground(roundedBackground(0x99DAE1EB, 4));
         divider.addView(handle, new FrameLayout.LayoutParams(
-                dp(2), dp(62), Gravity.CENTER));
+                dp(3), dp(72), Gravity.CENTER));
         return divider;
     }
 
@@ -377,27 +397,27 @@ public final class MainActivity extends Activity {
         dock.setOrientation(LinearLayout.HORIZONTAL);
         dock.setGravity(Gravity.CENTER);
         dock.setPadding(0, dp(5), 0, dp(4));
-        dock.setBackgroundColor(Color.TRANSPARENT);
+        dock.setBackground(roundedBackground(0xFF1D252E, 12));
 
         quickMusicApp = resolveQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP,
                 PACKAGE_YANDEX_MUSIC, PACKAGE_YANDEX_MUSIC_ALT);
         quickMaxApp = resolveQuickApp(AppPreferences.KEY_QUICK_MAX_APP, PACKAGE_MAX);
         compactAutoButton = addCompactButton(dock, "Авто",
-                getDrawable(R.drawable.dock_song_reference),
+                getDrawable(R.drawable.dock_ui7_song),
                 () -> showVehicleDashboard(true), null);
         compactCameraButton = addCompactButton(dock, "Камеры",
-                getDrawable(R.drawable.dock_camera_reference),
+                getDrawable(R.drawable.dock_ui7_camera),
                 this::showParkingCamera, null);
         compactMusicButton = addCompactButton(dock, "Музыка",
-                getDrawable(R.drawable.dock_music_reference),
+                getDrawable(R.drawable.dock_ui7_music),
                 () -> activateQuickApp(quickMusicApp),
                 () -> chooseQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP));
-        compactMaxButton = addCompactButton(dock, "MAX",
-                getDrawable(R.drawable.dock_max_reference),
+        compactMaxButton = addCompactButton(dock, "Сообщения",
+                getDrawable(R.drawable.dock_ui7_message),
                 () -> activateQuickApp(quickMaxApp),
                 () -> chooseQuickApp(AppPreferences.KEY_QUICK_MAX_APP));
         compactSettingsButton = addCompactButton(dock, "Настройки",
-                getDrawable(R.drawable.dock_settings_reference),
+                getDrawable(R.drawable.dock_ui7_settings),
                 this::openSettings, null);
         updateCompactDockSelection();
         return dock;
@@ -420,14 +440,26 @@ public final class MainActivity extends Activity {
         ImageView image = new ImageView(this);
         image.setImageDrawable(icon);
         image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        button.addView(image, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
+                dp(40), dp(40), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        iconParams.topMargin = dp(7);
+        button.addView(image, iconParams);
+        TextView caption = new TextView(this);
+        caption.setText("Авто".equals(label) ? "BYD SONG" : label.toUpperCase(java.util.Locale.ROOT));
+        caption.setTextColor(getColor(R.color.text_primary));
+        caption.setTextSize(11);
+        caption.setGravity(Gravity.CENTER);
+        caption.setSingleLine(true);
+        FrameLayout.LayoutParams captionParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(22),
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        captionParams.bottomMargin = dp(9);
+        button.addView(caption, captionParams);
 
         View indicator = new View(this);
         FrameLayout.LayoutParams indicatorParams = new FrameLayout.LayoutParams(
-                dp(46), dp(4), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        indicatorParams.bottomMargin = dp(7);
+                dp(24), dp(2), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        indicatorParams.bottomMargin = dp(4);
         button.addView(indicator, indicatorParams);
         button.setTag(new CompactButtonVisual(image, indicator));
 
@@ -463,9 +495,9 @@ public final class MainActivity extends Activity {
                 visual.tile.setAlpha(1f);
                 visual.indicator.animate().cancel();
                 visual.indicator.setBackground(roundedBackground(
-                        active ? 0xFF25A9FF : 0xFF35516A, 3));
+                        active ? 0xFF2682DF : Color.TRANSPARENT, 3));
                 visual.indicator.setAlpha(active ? 1f : 0.22f);
-                visual.indicator.setElevation(active ? dp(8) : 0f);
+                visual.indicator.setElevation(0f);
             }
         }
     }
@@ -574,13 +606,82 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void openBatteryDetails() { openVehicleDetails(false); }
+
+    private void openVehicleDetails(boolean technical) {
+        if (farSlot == null || batteryDetailsView != null) return;
+        hidePicker();
+        batteryDisplacedApp = farSlot.getChildCount() > 0 ? farSlot.getChildAt(0) : null;
+        BatteryDetailsView page = new BatteryDetailsView(this, () -> closeBatteryDetails(true), technical);
+        batteryDetailsView = page;
+        farSlot.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        float width = Math.max(1, farSlot.getWidth());
+        page.setTranslationX(-width);
+        if (batteryDisplacedApp != null)
+            batteryDisplacedApp.animate().translationX(width).setDuration(300)
+                    .setInterpolator(new DecelerateInterpolator()).start();
+        page.animate().translationX(0).setDuration(300)
+                .setInterpolator(new DecelerateInterpolator()).start();
+        page.setActive(resumed);
+    }
+
+    private void closeBatteryDetails(boolean animate) {
+        if (batteryDetailsView == null) return;
+        if (batteryClosing && animate) return;
+        batteryClosing = true;
+        BatteryDetailsView page = batteryDetailsView;
+        View app = batteryDisplacedApp;
+        page.setActive(false);
+        page.animate().cancel();
+        if (app != null) app.animate().cancel();
+        Runnable finished = () -> {
+            if (page.getParent() instanceof ViewGroup) ((ViewGroup) page.getParent()).removeView(page);
+            if (app != null) app.setTranslationX(0);
+            if (batteryDetailsView == page) {
+                batteryDetailsView = null; batteryDisplacedApp = null; batteryClosing = false;
+            }
+        };
+        if (!animate) { finished.run(); return; }
+        if (app != null) app.animate().translationX(0).setDuration(300).start();
+        page.animate().translationX(-Math.max(1,farSlot.getWidth())).setDuration(300)
+                .withEndAction(finished).start();
+    }
+
+    @Override public void onBackPressed() {
+        // Embedded apps own the editor, but this window is their IME control target.
+        // Hide through window insets: this Activity has no served EditText/token.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            View decor = getWindow().getDecorView();
+            WindowInsets insets = decor.getRootWindowInsets();
+            if (insets != null && insets.isVisible(WindowInsets.Type.ime())) {
+                WindowInsetsController controller = decor.getWindowInsetsController();
+                if (controller != null) controller.hide(WindowInsets.Type.ime());
+                return;
+            }
+        }
+        if (batteryDetailsView != null) { closeBatteryDetails(true); return; }
+        super.onBackPressed();
+    }
+
     private void handleVehicleAction(int action) {
+        if (action == VehicleDashboardView.ACTION_BATTERY_DETAILS || action == VehicleDashboardView.ACTION_TECH_DETAILS) {
+            boolean technical=action==VehicleDashboardView.ACTION_TECH_DETAILS;
+            if (batteryDetailsView == null) openVehicleDetails(technical);
+            else if(batteryDetailsView.technical!=technical) { closeBatteryDetails(false);openVehicleDetails(technical); }
+            else closeBatteryDetails(true);
+            return;
+        }
         Intent intent;
         if (action == VehicleDashboardView.ACTION_AUTO) {
             intent = Intent.makeMainActivity(new ComponentName(
                     "com.byd.mycar", "com.byd.mycar.StartActivity"));
         } else if (action == VehicleDashboardView.ACTION_CLIMATE) {
-            intent = new Intent("OPEN_AIR_CONDITIONING");
+            // Match the OEM navigation bar's climate launch contract.
+            intent = new Intent("OPEN_AIR_CONDITIONING_FUNCTION");
+            intent.addCategory(Intent.CATEGORY_DEFAULT);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.putExtra("OPEN_AIR_CONDITIONING_FRAGMENT_ID", 1000);
+            intent.putExtra("from", "Navbar");
             intent.setComponent(new ComponentName(
                     "com.byd.airconditioning",
                     "com.byd.airconditioning.mainactivity.FullScreenMainActivity"));
@@ -665,9 +766,7 @@ public final class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == 341 && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            if (AppPreferences.isParkingCameraAutoEnabled(this)) {
-                cameraAutomation.start();
-            }
+            cameraAutomation.start();
             vehicleTelemetryController.startLocationIfPermitted();
         }
     }
@@ -1128,6 +1227,7 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshPane(String preferenceKey) {
+        if (KEY_FAR_APP.equals(preferenceKey)) closeBatteryDetails(false);
         boolean driverPane = KEY_DRIVER_APP.equals(preferenceKey);
         FrameLayout slot = driverPane ? driverSlot : farSlot;
         if (slot == null) {
@@ -1255,6 +1355,7 @@ public final class MainActivity extends Activity {
     }
 
     private void releasePanes() {
+        closeBatteryDetails(false);
         for (EmbeddedAppPane pane : activePanes) {
             pane.release();
         }

@@ -9,3 +9,8 @@
 *.keystore
 keystore.properties
 photo_*.jpg
+
+# Local firmware extraction, personal captures and incomplete device backups
+/tmp/
+*.incomplete
+*.stderr

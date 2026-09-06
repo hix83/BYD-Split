@@ -38,6 +38,11 @@ if [ "$mode" = "dilink" ]; then
     adb -s "$serial" shell \
         "nohup /system/bin/sh -c 'export CLASSPATH=$apk_path; exec /system/bin/app_process /system/bin ru.logunov.bydsplit.SteeringInputDaemon' >$steering_log 2>&1 </dev/null &"
 
+    adb -s "$serial" shell wm set-ignore-orientation-request -d 0 true
+    adb -s "$serial" shell cmd notification allow_listener \
+        ru.logunov.bydsplit/ru.logunov.bydsplit.MaxCallNotificationService
+
+
     accessibility_service="ru.logunov.bydsplit/ru.logunov.bydsplit.SteeringAccessibilityService"
     enabled_services=$(adb -s "$serial" shell settings get secure \
         enabled_accessibility_services | tr -d '\r')

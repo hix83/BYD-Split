@@ -1274,6 +1274,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         }
     }
 
+    int embeddedDisplayId() { return virtualDisplay==null?-1:virtualDisplay.getDisplay().getDisplayId(); }
+
     boolean isMaxPane() {
         return "ru.oneme.app".equals(entry.component.getPackageName());
     }

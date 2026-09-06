@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.BYDSplit" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
+        <item name="android:fontFamily">@font/ui7_regular</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:colorAccent">@color/accent</item>
         <item name="android:navigationBarColor">@color/background</item>
@@ -13,7 +13,7 @@
 
     <style name="Theme.BYDSplit.SettingsDialog"
         parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
+        <item name="android:fontFamily">@font/ui7_regular</item>
         <item name="android:colorAccent">@color/accent</item>
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowIsFloating">true</item>
