@@ -6,3 +6,9 @@ Licensed under the Apache License, Version 2.0.
 BYD, DiLink, MAX and Yandex are trademarks of their respective owners.
 This independent experimental project is not affiliated with or endorsed by
 BYD Company Limited or the owners of the applications displayed by BYD Split.
+
+ClusterMusicBridge / ClusterMusicWriter protocol and behavior adapted from BYDMate v3.19.6.
+Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
+These adapted components are licensed under PolyForm Noncommercial License 1.0.0,
+not Apache 2.0. Terms: https://polyformproject.org/licenses/noncommercial/1.0.0/
+Full license included in app/src/main/assets/BYDMate-LICENSE.txt and in APK assets.

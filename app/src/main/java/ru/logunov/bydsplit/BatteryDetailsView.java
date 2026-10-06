@@ -112,7 +112,7 @@ final class BatteryDetailsView extends LinearLayout {
         put("engineRpm",number(s.engineRpm,"об/мин",0));put("coolant",number(s.coolantTempC,"°C",0));put("fuel",number(s.fuelPercent,"%",0));
         String[] modes={"STOP","EV","EV MAX","HEV","ДВС","KEEP"};
         put("work",s.workMode==null?"—":s.workMode>=0&&s.workMode<modes.length?modes[s.workMode]:"Код "+s.workMode);
-        put("drive",s.driveMode==null?"—":s.driveMode==1?"ECO":s.driveMode==2?"SPORT":s.driveMode==4?"SNOW":s.driveMode==0||s.driveMode==3?"NORMAL":"Код "+s.driveMode);
+        put("drive",s.driveMode==null?"—":s.driveMode==1?"ECO":s.driveMode==2?"SPORT":s.driveMode==4?"SNOWFIELD":s.driveMode==0||s.driveMode==3?"NORMAL":"Код "+s.driveMode);
         put("generator",number(s.generatorPowerKw,"кВт",0));
         put("soc",number(s.batterySocPercent,"%",0));put("soh",number(s.batterySohPercent,"%",0));
         put("avgTemp",number(s.batteryMinTempC!=null&&s.batteryMaxTempC!=null?(s.batteryMinTempC+s.batteryMaxTempC)/2f:null,"°C",1));

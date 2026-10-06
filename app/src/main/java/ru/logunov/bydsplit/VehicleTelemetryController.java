@@ -31,6 +31,8 @@ final class VehicleTelemetryController implements LocationListener {
 
     private volatile VehicleTelemetrySnapshot latest =
             VehicleTelemetrySnapshot.EMPTY;
+    private Integer lastLoggedEnergyState;
+    private Integer lastLoggedDriveMode;
     private ScheduledFuture<?> polling;
     private boolean locationStarted;
     private volatile boolean demoActive;
@@ -102,6 +104,17 @@ final class VehicleTelemetryController implements LocationListener {
         VehicleTelemetrySnapshot vehicle = localAdb.readVehicleTelemetry();
         if (vehicle == null || demoActive) {
             return;
+        }
+        if (!java.util.Objects.equals(lastLoggedEnergyState, vehicle.energyState)) {
+            Log.i(TAG, "ENERGY_STATE=" + vehicle.energyState
+                    + " speed=" + vehicle.speedKmh
+                    + " engineRpm=" + vehicle.engineRpm
+                    + " motorRpm=" + vehicle.motorRpm);
+            lastLoggedEnergyState = vehicle.energyState;
+        }
+        if (!java.util.Objects.equals(lastLoggedDriveMode, vehicle.driveMode)) {
+            Log.i(TAG, "DRIVE_MODE=" + vehicle.driveMode);
+            lastLoggedDriveMode = vehicle.driveMode;
         }
         SocHistory.record(context,vehicle);
         latest = latest.withVehicleData(vehicle);

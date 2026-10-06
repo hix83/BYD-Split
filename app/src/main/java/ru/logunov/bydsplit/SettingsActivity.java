@@ -242,6 +242,19 @@ public final class SettingsActivity extends Activity
                 14, getColor(R.color.text_secondary));
         addWithTop(behaviorCard, fullscreenHelp, 6);
 
+        Switch clusterMusic = settingsSwitch("Трек Яндекса на приборной панели",
+                AppPreferences.get(this).getBoolean(ClusterMusicBridge.KEY, false));
+        clusterMusic.setOnCheckedChangeListener((button, checked) ->
+                AppPreferences.get(this).edit().putBoolean(ClusterMusicBridge.KEY, checked).apply());
+        addWithTop(behaviorCard, clusterMusic, 12);
+        addWithTop(behaviorCard, text("Название, исполнитель и прогресс Яндекс Музыки в штатной карточке приборной панели. Требуется доступ к уведомлениям и подключение ADB.",
+                14, getColor(R.color.text_secondary)), 6);
+
+        android.widget.Button mediaAccess = actionButton("Доступ к уведомлениям");
+        mediaAccess.setOnClickListener(view -> startActivity(new android.content.Intent(
+                "android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")));
+        addWithTop(behaviorCard, mediaAccess, 8);
+
         Switch autoStart = settingsSwitch(
                 "Автозапуск после загрузки DiLink",
                 AppPreferences.isAutoStartEnabled(this));
@@ -275,7 +288,28 @@ public final class SettingsActivity extends Activity
         LinearLayout.LayoutParams behaviorParams = fullWidthWrap();
         behaviorParams.topMargin = dp(16);
         root.addView(behaviorCard, behaviorParams);
+        LinearLayout updateCard = card();
+        updateCard.addView(sectionTitle("Обновления"));
+        Switch autoUpdate = settingsSwitch("Проверять обновления автоматически",
+                AppPreferences.get(this).getBoolean(GithubUpdater.AUTO_KEY, true));
+        autoUpdate.setOnCheckedChangeListener((button, checked) ->
+                AppPreferences.get(this).edit().putBoolean(GithubUpdater.AUTO_KEY, checked).apply());
+        addWithTop(updateCard, autoUpdate, 10);
+        Button checkUpdate = actionButton("Проверить обновления");
+        checkUpdate.setOnClickListener(view -> GithubUpdater.check(this, true));
+        addWithTop(updateCard, checkUpdate, 10);
+        addWithTop(updateCard, text("GitHub Releases · проверка раз в сутки. Установка с сохранением настроек после подтверждения.",
+                14, getColor(R.color.text_secondary)), 6);
+        LinearLayout.LayoutParams updateParams = fullWidthWrap();
+        updateParams.topMargin = dp(16);
+        root.addView(updateCard, updateParams);
         return scroll;
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (AppPreferences.get(this).getBoolean("update_pending_install", false))
+            GithubUpdater.onResume(this);
     }
 
     private View createCameraPage() {

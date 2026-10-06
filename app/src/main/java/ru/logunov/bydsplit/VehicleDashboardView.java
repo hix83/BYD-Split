@@ -523,7 +523,7 @@ final class VehicleDashboardView extends View {
         switch (mode) {
             case 1: return "ECO";
             case 2: return "SPORT";
-            case 4: return "SNOW";
+            case 4: return "SNOWFIELD";
             case 0:
             case 3: return "NORMAL";
             default: return "РЕЖИМ " + mode;

@@ -8,6 +8,7 @@ source_dir=app/src/main/java/ru/logunov/bydsplit
 "${java_bin}javac" -d "$test_classes" \
   "$source_dir/VehicleTelemetrySnapshot.java" "$source_dir/ClimateIconState.java" \
   "$source_dir/BatteryDetailsSnapshot.java" "$source_dir/TechSnapshot.java" \
+  "$source_dir/ClusterTrackText.java" "$source_dir/UpdateVersion.java" \
   "$source_dir/DmiEnergyFlow.java" "$source_dir/TemperatureRules.java" \
   "$source_dir/MaxCallClassifier.java" "$source_dir/MaxTaskParser.java" tests/*.java
 for test_file in tests/*Test.java; do

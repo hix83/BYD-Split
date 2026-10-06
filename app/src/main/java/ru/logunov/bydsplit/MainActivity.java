@@ -48,6 +48,8 @@ public final class MainActivity extends Activity {
     private static final String PACKAGE_MAX = "ru.oneme.app";
     private static final String PACKAGE_YANDEX_MUSIC = "ru.yandex.music";
     private static final String PACKAGE_YANDEX_MUSIC_ALT = "com.yandex.music";
+    /** ICCOA Carlink 1.x car-side receiver verified from the BYD build. */
+    private static final String PACKAGE_ICCOA_CARLINK = "com.ucarhu.demo";
 
     private final List<EmbeddedAppPane> activePanes =
             new CopyOnWriteArrayList<>();
@@ -87,9 +89,12 @@ public final class MainActivity extends Activity {
     private View compactCameraButton;
     private View compactMusicButton;
     private View compactMaxButton;
+    private View compactPhoneButton;
     private View compactSettingsButton;
+    private AppEntry quickPhoneApp;
     private volatile boolean resumed;
     private ParkingCameraAutomation cameraAutomation;
+    private ClusterMusicBridge clusterMusicBridge;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -103,6 +108,8 @@ public final class MainActivity extends Activity {
         steeringEventServer = new SteeringEventServer();
         steeringEventServer.start();
         cameraAutomation = new ParkingCameraAutomation(this);
+        clusterMusicBridge = new ClusterMusicBridge(this);
+        clusterMusicBridge.start();
         vehicleTelemetryController = new VehicleTelemetryController(
                 this, snapshot -> {
                     if (showingVehicleDashboard
@@ -120,14 +127,16 @@ public final class MainActivity extends Activity {
         farAppIndex = readIndex(
                 AppPreferences.KEY_FAR_APP_INDEX, farApps);
         updateCurrentEntries();
-        if (!AppPreferences.isDemoModeEnabled(this)) {
-            shellBridgeClient.bootstrap(true, success -> {
+        // Embedded displays need the shell input bridge even in demo mode.
+        // Demo mode only disables vehicle/steering integration; without the
+        // input daemon both panes still render but silently ignore touches.
+        shellBridgeClient.bootstrap(
+                !AppPreferences.isDemoModeEnabled(this), success -> {
                     if (!success) {
                         android.util.Log.w("BYD_SPLIT",
                             "Не удалось запустить ADB-помощники");
                     }
-            });
-        }
+                });
         render();
         applySystemBarsMode();
     }
@@ -151,6 +160,7 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        GithubUpdater.onResume(this);
         if (batteryDetailsView != null) batteryDetailsView.setActive(true);
         settingsVisible = false;
         applySystemBarsMode();
@@ -232,6 +242,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         cameraAutomation.stop();
+        clusterMusicBridge.close();
         ParkingCameraOverlay.close(this);
         releasePanes();
         steeringEventServer.close();
@@ -402,6 +413,7 @@ public final class MainActivity extends Activity {
         quickMusicApp = resolveQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP,
                 PACKAGE_YANDEX_MUSIC, PACKAGE_YANDEX_MUSIC_ALT);
         quickMaxApp = resolveQuickApp(AppPreferences.KEY_QUICK_MAX_APP, PACKAGE_MAX);
+        quickPhoneApp = findFirstInstalled(PACKAGE_ICCOA_CARLINK);
         compactAutoButton = addCompactButton(dock, "Авто",
                 getDrawable(R.drawable.dock_ui7_song),
                 () -> showVehicleDashboard(true), null);
@@ -447,7 +459,8 @@ public final class MainActivity extends Activity {
         TextView caption = new TextView(this);
         caption.setText("Авто".equals(label) ? "BYD SONG" : label.toUpperCase(java.util.Locale.ROOT));
         caption.setTextColor(getColor(R.color.text_primary));
-        caption.setTextSize(11);
+        // Six equal dock cells must keep the longest Russian captions intact.
+        caption.setTextSize(9.5f);
         caption.setGravity(Gravity.CENTER);
         caption.setSingleLine(true);
         FrameLayout.LayoutParams captionParams = new FrameLayout.LayoutParams(
@@ -484,6 +497,9 @@ public final class MainActivity extends Activity {
         styleCompactButton(compactMaxButton,
                 contentVisible && !showingVehicleDashboard
                         && sameComponent(driverApp, quickMaxApp));
+        styleCompactButton(compactPhoneButton,
+                contentVisible && !showingVehicleDashboard
+                        && sameComponent(driverApp, quickPhoneApp));
         styleCompactButton(compactSettingsButton, settingsVisible);
     }
 
@@ -753,7 +769,8 @@ public final class MainActivity extends Activity {
                     AppPreferences.KEY_QUICK_MAX_APP, ""))
                     || PACKAGE_MAX.equals(packageName)
                     || PACKAGE_YANDEX_MUSIC.equals(packageName)
-                    || PACKAGE_YANDEX_MUSIC_ALT.equals(packageName)) {
+                    || PACKAGE_YANDEX_MUSIC_ALT.equals(packageName)
+                    || PACKAGE_ICCOA_CARLINK.equals(packageName)) {
                 result.add(app);
             }
         }

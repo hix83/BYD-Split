@@ -21,6 +21,7 @@ final class VehicleTelemetrySnapshot {
     final Integer tireTempRrC;
     final Integer driveMode;
     final Integer workMode;
+    final Integer energyState;
     final Float bearingDegrees;
     final Float batterySocPercent;
     final Integer batteryPowerKw;
@@ -100,6 +101,37 @@ final class VehicleTelemetrySnapshot {
             Integer chargingType, Integer fuelPercent, Integer batterySohPercent,
             Integer batteryMinTempC, Integer batteryMaxTempC, Integer motorRpm,
             Integer coolantTempC, Float auxiliaryVoltage, ClimateIconState climate) {
+        this(speedKmh, tirePressFlKpa, tirePressFrKpa, tirePressRlKpa, tirePressRrKpa,
+                tireTempFlC, tireTempFrC, tireTempRlC, tireTempRrC, driveMode, workMode,
+                bearingDegrees, batterySocPercent, batteryPowerKw, engineRpm,
+                generatorPowerKw, motorPowerKw, chargeGunState, chargingType, fuelPercent,
+                batterySohPercent, batteryMinTempC, batteryMaxTempC, motorRpm, coolantTempC,
+                auxiliaryVoltage, climate, null);
+    }
+
+    VehicleTelemetrySnapshot(
+            Integer speedKmh,
+            Integer tirePressFlKpa,
+            Integer tirePressFrKpa,
+            Integer tirePressRlKpa,
+            Integer tirePressRrKpa,
+            Integer tireTempFlC,
+            Integer tireTempFrC,
+            Integer tireTempRlC,
+            Integer tireTempRrC,
+            Integer driveMode,
+            Integer workMode,
+            Float bearingDegrees,
+            Float batterySocPercent,
+            Integer batteryPowerKw,
+            Integer engineRpm,
+            Integer generatorPowerKw,
+            Integer motorPowerKw,
+            Integer chargeGunState,
+            Integer chargingType, Integer fuelPercent, Integer batterySohPercent,
+            Integer batteryMinTempC, Integer batteryMaxTempC, Integer motorRpm,
+            Integer coolantTempC, Float auxiliaryVoltage, ClimateIconState climate,
+            Integer energyState) {
         this.climate = climate;
         this.coolantTempC = coolantTempC;
         this.auxiliaryVoltage = auxiliaryVoltage;
@@ -119,6 +151,7 @@ final class VehicleTelemetrySnapshot {
         this.tireTempRrC = tireTempRrC;
         this.driveMode = driveMode;
         this.workMode = workMode;
+        this.energyState = energyState;
         this.bearingDegrees = bearingDegrees;
         this.batterySocPercent = batterySocPercent;
         this.batteryPowerKw = batteryPowerKw;
@@ -137,7 +170,7 @@ final class VehicleTelemetrySnapshot {
                 driveMode, workMode, bearing,
                 batterySocPercent, batteryPowerKw,
                 engineRpm, generatorPowerKw, motorPowerKw,
-                chargeGunState, chargingType, fuelPercent, batterySohPercent, batteryMinTempC, batteryMaxTempC, motorRpm, coolantTempC, auxiliaryVoltage, climate);
+                chargeGunState, chargingType, fuelPercent, batterySohPercent, batteryMinTempC, batteryMaxTempC, motorRpm, coolantTempC, auxiliaryVoltage, climate, energyState);
     }
 
     VehicleTelemetrySnapshot withVehicleData(VehicleTelemetrySnapshot value) {
@@ -150,7 +183,7 @@ final class VehicleTelemetrySnapshot {
                 value.batterySocPercent, value.batteryPowerKw,
                 value.engineRpm, value.generatorPowerKw,
                 value.motorPowerKw, value.chargeGunState,
-                value.chargingType, value.fuelPercent, value.batterySohPercent, value.batteryMinTempC, value.batteryMaxTempC, value.motorRpm, value.coolantTempC, value.auxiliaryVoltage, value.climate);
+                value.chargingType, value.fuelPercent, value.batterySohPercent, value.batteryMinTempC, value.batteryMaxTempC, value.motorRpm, value.coolantTempC, value.auxiliaryVoltage, value.climate, value.energyState);
     }
 
     static VehicleTelemetrySnapshot demo() {

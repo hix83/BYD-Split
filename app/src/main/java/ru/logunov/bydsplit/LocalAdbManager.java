@@ -34,6 +34,13 @@ final class LocalAdbManager {
         client = new LocalAdbClient(new LocalAdbKeyStore(context));
     }
 
+    synchronized String writeClusterMusic(String args) throws Exception {
+        String apk=context.getApplicationInfo().sourceDir;
+        if(!SAFE_APK_PATH.matcher(apk).matches()||!args.matches("[A-Za-z0-9+/= ]+"))return "ERROR";
+        client.connect();
+        return client.shell("CLASSPATH="+apk+" app_process /system/bin ru.logunov.bydsplit.ClusterMusicWriter "+args);
+    }
+
     synchronized boolean isConnected() {
         return client.isConnected();
     }
@@ -305,8 +312,10 @@ final class LocalAdbManager {
                             + "service call autoservice 7 i32 1001 i32 1128267816; "
                             + "service call autoservice 5 i32 1000 i32 1077936144; "
                             + "service call autoservice 5 i32 1000 i32 1077936156; "
-                            + "service call autoservice 5 i32 1000 i32 1077936152");
-            int[] raw = new int[26];
+                            + "service call autoservice 5 i32 1000 i32 1077936152; "
+                            + "service call autoservice 5 i32 1006 i32 873463832; "
+                            + "service call autoservice 5 i32 1006 i32 603979827");
+            int[] raw = new int[28];
             Matcher matcher = PARCEL_VALUE.matcher(output);
             int count = 0;
             while (matcher.find() && count < raw.length) {
@@ -324,19 +333,31 @@ final class LocalAdbManager {
                     decodePressure(raw[3]), decodePressure(raw[4]),
                     decodeTemperature(raw[5]), decodeTemperature(raw[6]),
                     decodeTemperature(raw[7]), decodeTemperature(raw[8]),
-                    decodeEnum(raw[9]), decodeEnum(raw[10]), null,
+                    effectiveDriveMode(raw[9], raw[27]), decodeEnum(raw[10]), null,
                     decodePercent(raw[11]), decodePower(raw[12]),
                     decodeRpm(raw[19]), null, null,
                     decodeEnum(raw[13]), decodeEnum(raw[14]),
                     decodeIntPercent(raw[15]), decodeIntPercent(raw[16]),
                     decodeBatteryTemperature(raw[17]), decodeBatteryTemperature(raw[18]),
                     decodeRpm(raw[20]), decodeCoolantTemperature(raw[21]), decodeAuxiliaryVoltage(raw[22]),
-                    ClimateIconState.decode(raw[23], raw[24], raw[25]));
+                    ClimateIconState.decode(raw[23], raw[24], raw[25]), decodeEnergyState(raw[26]));
         } catch (Exception error) {
             client.close();
             Log.w(TAG, "Cannot read vehicle telemetry", error);
             return null;
         }
+    }
+
+    private static Integer decodeEnergyState(int raw) {
+        return raw >= 0 && raw <= 33 ? raw : null;
+    }
+
+    /** Snowfield is a road-surface overlay; operation mode can still report SPORT. */
+    private static Integer effectiveDriveMode(int operationMode, int roadSurfaceMode) {
+        if (roadSurfaceMode == 2) {
+            return 4;
+        }
+        return decodeEnum(operationMode);
     }
 
     private static Integer decodeCoolantTemperature(int raw) {

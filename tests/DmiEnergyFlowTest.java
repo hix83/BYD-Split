@@ -8,6 +8,12 @@ public final class DmiEnergyFlowTest {
     private static void check(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
     }
+    private static DmiEnergyFlow energyState(int code) {
+        return new DmiEnergyFlow(new VehicleTelemetrySnapshot(
+                50, null, null, null, null, null, null, null, null,
+                null, 3, null, 50f, 0, 1500, null, null, null, null,
+                null, null, null, null, 2000, null, null, ClimateIconState.UNKNOWN, code), null);
+    }
     public static void main(String[] args) {
         DmiEnergyFlow ev = state(72, 28, 0, 0, 26, false);
         check(ev.batteryToDrive && ev.motorToWheels && !ev.engineToWheels && !ev.driveToBattery, "EV direction");
@@ -24,6 +30,16 @@ public final class DmiEnergyFlowTest {
         check(!state(90, 20, 2100, 0, 18, null).engineToWheels, "Unknown clutch must not imply parallel drive");
         DmiEnergyFlow unknown = new DmiEnergyFlow(VehicleTelemetrySnapshot.EMPTY, null);
         check(!unknown.engineToWheels && !unknown.motorToWheels && !unknown.driveToBattery && !unknown.batteryToDrive, "No fabricated flows for missing data");
-        System.out.println("8 DM-i flow checks passed");
+        DmiEnergyFlow liveEv = energyState(2);
+        check(liveEv.batteryToDrive && liveEv.motorToWheels && !liveEv.engineToGenerator, "ENERGY_STATE EV front drive");
+        DmiEnergyFlow liveRegen = energyState(5);
+        check(liveRegen.wheelsToMotor && liveRegen.driveToBattery && !liveRegen.motorToWheels, "ENERGY_STATE feedback");
+        DmiEnergyFlow liveParallel = energyState(8);
+        check(liveParallel.engineToWheels && liveParallel.motorToWheels && liveParallel.batteryToDrive, "ENERGY_STATE parallel");
+        DmiEnergyFlow liveCharge = energyState(18);
+        check(liveCharge.engineToGenerator && liveCharge.generatorToBattery && liveCharge.driveToBattery, "ENERGY_STATE stationary generation");
+        DmiEnergyFlow liveSeries = energyState(30);
+        check(liveSeries.engineToGenerator && liveSeries.motorToWheels && !liveSeries.engineToWheels, "ENERGY_STATE series");
+        System.out.println("13 DM-i flow checks passed");
     }
 }
