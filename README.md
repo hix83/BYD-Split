@@ -1,10 +1,10 @@
-> Ветка Seagull / DiLink 2: [перенос на другой ПК и текущее состояние](docs/HANDOFF-SEAGULL.md). Предварительный выпуск: `seagull-v0.9.2-alpha.1`.
+> Ветка Seagull / DiLink 2: [перенос на другой ПК и текущее состояние](docs/HANDOFF-SEAGULL.md). Предварительный выпуск: [0.9.2-alpha.4](https://github.com/hix83/BYD-Split/releases/tag/seagull-v0.9.2-alpha.4).
 
 # BYD Split
 
-> **Ветка BYD Seagull:** подготовка адаптации под Android 9, DiLink 2 и экран
-> 10,1″. Совместимость с автомобилем пока не проверена.
-> [План и настройка разработки](docs/SEAGULL.md).
+> **Ветка BYD Seagull:** адаптация под Android 9, DiLink 2 и экран 10,1″.
+> На автомобиле проверены телеметрия и встроенный Навигатор; длительные проверки продолжаются.
+> [Изменения выпуска](docs/releases/seagull-v0.9.2-alpha.4.md) · [Канал обновлений](docs/SEAGULL-UPDATES.md) · [Настройка разработки](docs/SEAGULL.md).
 > Далее сохранено описание исходной версии для Song L DM-i / DiLink 5.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)

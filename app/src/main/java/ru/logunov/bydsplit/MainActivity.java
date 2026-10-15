@@ -102,6 +102,7 @@ public final class MainActivity extends ThemeActivity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         currentActivity = new WeakReference<>(this);
         preferences = AppPreferences.get(this);
+        AdbRemoteWatchdogService.sync(this);
         applyDebugLaunchOptions(getIntent());
         repository = new AppRepository(this);
         shellBridgeClient = new ShellBridgeClient(this);
@@ -138,6 +139,15 @@ public final class MainActivity extends ThemeActivity {
                     }
                 });
         render();
+        getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(visibility -> {
+            if (Build.VERSION.SDK_INT < 30 && resumed && AppPreferences.isFullscreenEnabled(this)
+                    && (visibility & (View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION))
+                        != (View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION)) {
+                View decor = getWindow().getDecorView();
+                decor.removeCallbacks(restoreSystemBars);
+                decor.postDelayed(restoreSystemBars, 350);
+            }
+        });
         applySystemBarsMode();
     }
 
@@ -191,6 +201,10 @@ public final class MainActivity extends ThemeActivity {
         }
     }
 
+    private final Runnable restoreSystemBars = () -> {
+        if (resumed && !isFinishing() && !isDestroyed() && AppPreferences.isFullscreenEnabled(this)) applySystemBarsMode();
+    };
+
     @SuppressWarnings("deprecation")
     private void applySystemBarsMode() {
         boolean fullscreen = AppPreferences.isFullscreenEnabled(this);
@@ -230,11 +244,13 @@ public final class MainActivity extends ThemeActivity {
             return;
         }
         activity.runOnUiThread(activity::applySystemBarsMode);
+        activity.shellBridgeClient.refreshEmbeddedImmersive();
     }
 
     @Override
     protected void onPause() {
         resumed = false;
+        getWindow().getDecorView().removeCallbacks(restoreSystemBars);
         if (batteryDetailsView != null) batteryDetailsView.setActive(false);
         super.onPause();
     }
@@ -611,6 +627,7 @@ public final class MainActivity extends ThemeActivity {
         if (persist) {
             AppPreferences.setCompactTarget(
                     this, AppPreferences.COMPACT_TARGET_VEHICLE);
+            if (farEmbeddedPane != null && batteryDetailsView == null) farEmbeddedPane.resumeGuest();
         }
     }
 
@@ -655,6 +672,7 @@ public final class MainActivity extends ThemeActivity {
             if (app != null) app.setTranslationX(0);
             if (batteryDetailsView == page) {
                 batteryDetailsView = null; batteryDisplacedApp = null; batteryClosing = false;
+                if (animate && farEmbeddedPane != null) farEmbeddedPane.resumeGuest();
             }
         };
         if (!animate) { finished.run(); return; }
@@ -692,7 +710,8 @@ public final class MainActivity extends ThemeActivity {
             intent = Intent.makeMainActivity(new ComponentName(
                     "com.byd.mycar", "com.byd.mycar.StartActivity"));
         } else if (action == VehicleDashboardView.ACTION_CLIMATE) {
-            intent = new Intent(this, Di2ClimateActivity.class);
+            intent = new Intent("OPEN_AIR_CONDITIONING").setComponent(new ComponentName(
+                    "com.byd.airconditioning", "com.byd.airconditioning.mainactivity.FullScreenMainActivity"));
         } else if (action == VehicleDashboardView.ACTION_CAR_SETTINGS) {
             intent = Intent.makeMainActivity(new ComponentName(
                     "com.byd.carsettings", "com.byd.carsettings.MainActivity"));

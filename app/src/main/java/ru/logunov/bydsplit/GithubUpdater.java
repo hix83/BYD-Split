@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 final class GithubUpdater {
     static final String AUTO_KEY="github_auto_update";
-    private static final String API="https://api.github.com/repos/hix83/BYD-Split/releases/latest";
+    private static final String API="https://api.github.com/repos/hix83/BYD-Split/releases?per_page=100&page=";
     private static final String ASSET_PREFIX="https://github.com/hix83/BYD-Split/releases/download/";
     private static final ExecutorService IO=Executors.newSingleThreadExecutor();
     private static final AtomicBoolean BUSY=new AtomicBoolean();
@@ -42,33 +42,52 @@ final class GithubUpdater {
     }
     static void check(Activity activity,boolean manual){
         if(!BUSY.compareAndSet(false,true)){if(manual)message(activity,"Проверка уже выполняется");return;}
-        if(manual)message(activity,"Проверяем GitHub Releases…");
+        if(manual)message(activity,"Проверяем обновления Seagull…");
         IO.execute(()->{
             try {
-                String json=new String(fetch(API,1024*1024),StandardCharsets.UTF_8);
-                JSONObject release=new JSONObject(json);
+                JSONObject release = findLatestSeagullRelease();
                 String tag=release.getString("tag_name");
                 PackageInfo current=activity.getPackageManager().getPackageInfo(activity.getPackageName(),0);
                 AppPreferences.get(activity).edit().putLong("update_last_check",System.currentTimeMillis()).apply();
-                if(release.optBoolean("draft")||release.optBoolean("prerelease")||!UpdateVersion.newer(tag,current.versionName)) {
-                    if(manual)activity.runOnUiThread(()->message(activity,"Установлена последняя версия"));return;
+                if(!SeagullUpdateChannel.newer(tag,current.versionName)) {
+                    if(manual)activity.runOnUiThread(()->message(activity,"Установлена последняя версия Seagull"));return;
                 }
                 JSONArray assets=release.getJSONArray("assets");JSONObject apk=null;
-                for(int i=0;i<assets.length();i++){JSONObject a=assets.getJSONObject(i);if(a.getString("name").equals("BYD-Split-"+tag.replaceFirst("^v", "")+".apk")){apk=a;break;}}
+                for(int i=0;i<assets.length();i++){JSONObject a=assets.getJSONObject(i);if(a.getString("name").equals(SeagullUpdateChannel.assetName(tag))){apk=a;break;}}
                 if(apk==null)throw new IOException("APK отсутствует в релизе");
                 String url=apk.getString("browser_download_url"),digest=apk.optString("digest");
-                if(!url.startsWith(ASSET_PREFIX)||apk.getLong("size")>MAX_BYTES)throw new IOException("Некорректный APK релиза");
+                if(!url.startsWith(ASSET_PREFIX+tag+"/")||apk.getLong("size")>MAX_BYTES)throw new IOException("Некорректный APK релиза");
                 String body=release.optString("body");
                 activity.runOnUiThread(()->{
                     if(activity.isFinishing()||activity.isDestroyed())return;
                     new AlertDialog.Builder(activity).setTitle("Обновление "+tag)
-                        .setMessage(body.isEmpty()?"Доступна новая версия BYD Split":body)
+                        .setMessage(body.isEmpty()?"Доступна новая версия BYD Split · Seagull":body)
                         .setNegativeButton("Позже",null).setPositiveButton("Обновить",(d,w)->download(activity,url,digest)).show();
                 });
             }catch(Exception e){if(manual)activity.runOnUiThread(()->message(activity,"Не удалось проверить обновление: "+e.getMessage()));}
             finally{BUSY.set(false);}
         });
     }
+    private static JSONObject findLatestSeagullRelease() throws Exception {
+        JSONObject latest = null;
+        for (int page = 1; page <= 10; page++) {
+            JSONArray releases = new JSONArray(new String(fetch(API + page, 4 * 1024 * 1024), StandardCharsets.UTF_8));
+            for (int i = 0; i < releases.length(); i++) {
+                JSONObject candidate = releases.getJSONObject(i);
+                String tag = candidate.optString("tag_name");
+                if (!candidate.optBoolean("draft") && SeagullUpdateChannel.versionFromTag(tag) != null
+                        && (latest == null || SeagullUpdateChannel.newerTag(tag, latest.optString("tag_name")))) {
+                    latest = candidate;
+                }
+            }
+            if (releases.length() < 100) {
+                if (latest == null) throw new IOException("В канале Seagull пока нет выпусков");
+                return latest;
+            }
+        }
+        throw new IOException("Слишком много выпусков для проверки канала Seagull");
+    }
+
     private static void download(Activity activity,String url,String digest){
         if(!BUSY.compareAndSet(false,true))return;
         message(activity,"Загружаем обновление…");
@@ -92,7 +111,7 @@ final class GithubUpdater {
     private static void validate(Activity activity,File apk)throws Exception{
         PackageManager pm=activity.getPackageManager();int flags=Build.VERSION.SDK_INT>=28?PackageManager.GET_SIGNING_CERTIFICATES:PackageManager.GET_SIGNATURES;
         PackageInfo next=pm.getPackageArchiveInfo(apk.getAbsolutePath(),flags),current=pm.getPackageInfo(activity.getPackageName(),flags);
-        if(next==null||!activity.getPackageName().equals(next.packageName)||next.versionCode<=current.versionCode)throw new IOException("Пакет или версия APK не подходят");
+        if(next==null||!activity.getPackageName().equals(next.packageName)||!SeagullUpdateChannel.acceptsApkVersion(next.versionName)||next.versionCode<=current.versionCode)throw new IOException("Пакет или версия APK не подходят");
         Signature[] a=Build.VERSION.SDK_INT>=28?next.signingInfo.getApkContentsSigners():next.signatures;
         Signature[] b=Build.VERSION.SDK_INT>=28?current.signingInfo.getApkContentsSigners():current.signatures;
         if(a==null||b==null||a.length!=b.length)throw new IOException("Подпись APK не совпала");

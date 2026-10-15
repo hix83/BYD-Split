@@ -69,7 +69,12 @@ final class ShellBridgeClient {
     }
 
     void close() {
-        executor.shutdownNow();
+        // Drain queued display releases, including restoration of scoped bars policy.
+        executor.shutdown();
+    }
+
+    void refreshEmbeddedImmersive() {
+        executor.execute(localAdb::refreshEmbeddedImmersive);
     }
 
     void launchOnDisplay(String componentName, int displayId,
@@ -194,8 +199,12 @@ final class ShellBridgeClient {
         }
     }
 
+    void focusEmbeddedTask(String packageName, int displayId) {
+        executor.execute(() -> localAdb.focusEmbeddedTask(packageName, displayId));
+    }
+
     void releaseDisplay(int displayId) {
-        executor.execute(() -> { downTimes.remove(displayId); });
+        executor.execute(() -> { downTimes.remove(displayId); localAdb.releaseEmbeddedImmersive(displayId); });
     }
 
     private void sendOwned(int display, InputEvent event) {

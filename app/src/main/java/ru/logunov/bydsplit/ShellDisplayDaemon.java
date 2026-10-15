@@ -54,6 +54,8 @@ public final class ShellDisplayDaemon {
         final ShellEventInjector injector = new ShellEventInjector();
         final Map<Integer, VirtualDisplay> displays = new HashMap<>();
         final Map<Integer, Surface> surfaces = new HashMap<>();
+        final Map<String, Integer> namedDisplays = new HashMap<>();
+        final java.util.Set<Integer> parkedDisplays = new java.util.HashSet<>();
         final Map<Integer, Long> downTimes = new HashMap<>();
         Host(Context context, int launcherUid) throws Exception {
             this.launcherUid = launcherUid;
@@ -70,12 +72,23 @@ public final class ShellDisplayDaemon {
             try {
                 int result;
                 if (code == ShellDisplayBridge.CREATE) {
-                    if (displays.size() >= 4) throw new IllegalStateException("Too many embedded displays");
                     String name = data.readString(); int w = data.readInt(), h = data.readInt(), dpi = data.readInt();
                     dimensions(w, h, dpi);
                     Surface surface = Surface.CREATOR.createFromParcel(data);
                     VirtualDisplay display;
                     try {
+                        Integer previousId = namedDisplays.get(name);
+                        if (previousId != null) {
+                            if (!parkedDisplays.contains(previousId)) throw new IllegalStateException("Display already attached");
+                            display = displays.get(previousId);
+                            display.resize(w, h, dpi);
+                            display.setSurface(surface);
+                            Surface oldSurface = surfaces.put(previousId, surface);
+                            if (oldSurface != null) oldSurface.release();
+                            parkedDisplays.remove(previousId);
+                            reply.writeNoException(); reply.writeInt(previousId); return true;
+                        }
+                        if (displays.size() >= 4) throw new IllegalStateException("Too many embedded displays");
                         display = manager.createVirtualDisplay("BYD-Split-" + name, w, h, dpi, surface,
                                 DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC
                                 | DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
@@ -84,6 +97,7 @@ public final class ShellDisplayDaemon {
                     } catch (RuntimeException e) { surface.release(); throw e; }
                     result = display.getDisplay().getDisplayId();
                     displays.put(result, display); surfaces.put(result, surface);
+                    namedDisplays.put(name, result);
                 } else {
                     int id = data.readInt(); VirtualDisplay display = displays.get(id);
                     if (display == null) throw new IllegalArgumentException("Unknown owned display");
@@ -97,7 +111,11 @@ public final class ShellDisplayDaemon {
                             display.setSurface(surface);
                             Surface old = surfaces.put(id, surface); if (old != null) old.release(); break;
                         case ShellDisplayBridge.RELEASE:
-                            displays.remove(id); display.release(); injector.release(id); downTimes.remove(id);
+                            // Android 9 can crash ViewRootImpl.getDisplayId() in a
+                            // guest if its display disappears during task relocation.
+                            // Park the named display until this pane is rebuilt.
+                            display.setSurface(null); parkedDisplays.add(id);
+                            injector.release(id); downTimes.remove(id);
                             Surface released = surfaces.remove(id); if (released != null) released.release(); break;
                         case ShellDisplayBridge.MOTION: case ShellDisplayBridge.KEY:
                             InputEvent event = code == ShellDisplayBridge.MOTION
@@ -142,6 +160,7 @@ public final class ShellDisplayDaemon {
         }
         synchronized void close() {
             for (VirtualDisplay d : displays.values()) d.release(); displays.clear();
+            namedDisplays.clear(); parkedDisplays.clear();
             for (Surface s : surfaces.values()) if (s != null) s.release(); surfaces.clear();
         }
     }

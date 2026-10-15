@@ -85,9 +85,6 @@ final class BatteryDetailsView extends LinearLayout {
         section(content,"Климат");
         row(content,new String[]{"compressor","ac"},new String[]{"Компрессор","Кондиционер"});
         row(content,new String[]{"inside","outside"},new String[]{"Температура салона","Температура снаружи"});
-        section(content,"Шины · давление / температура");
-        row(content,new String[]{"fl","fr"},new String[]{"Переднее левое","Переднее правое"});
-        row(content,new String[]{"rl","rr"},new String[]{"Заднее левое","Заднее правое"});
         section(content,"Батарея · история");
         row(content,new String[]{"mileage","lifetime"},new String[]{"Пробег BMS","Энергия BMS"});
         row(content,new String[]{"sessionAvg","allAvg"},new String[]{"Средний SOC после зарядки","Средний SOC · наблюдения"});
@@ -121,7 +118,6 @@ final class BatteryDetailsView extends LinearLayout {
         float capacity=getContext().getSharedPreferences("tech",0).getFloat("capacity",0);
         put("rate",number(watts!=null&&capacity>0?watts/(capacity*10):null,"%/ч",2));
         put("minCell",number(b.minCellMv==null?null:b.minCellMv/1000f,"В",3));put("maxCell",number(b.maxCellMv==null?null:b.maxCellMv/1000f,"В",3));put("deltaCell",number(b.deltaMv(),"мВ",0));
-        put("fl",tyre(s.tirePressFlKpa,s.tireTempFlC));put("fr",tyre(s.tirePressFrKpa,s.tireTempFrC));put("rl",tyre(s.tirePressRlKpa,s.tireTempRlC));put("rr",tyre(s.tirePressRrKpa,s.tireTempRrC));
         put("lifetime",number(b.lifetimeKwh,"кВт·ч",1));put("sessionAvg",number(demo?null:SocHistory.average(getContext(),true),"%",1));put("allAvg",number(demo?null:SocHistory.average(getContext(),false),"%",1));
     }
     private String tyre(Integer pressure,Integer temp){return number(pressure==null?null:pressure/100f,"бар",2)+" · "+number(temp,"°C",0);}
@@ -164,7 +160,7 @@ final class BatteryDetailsView extends LinearLayout {
     }
     @Override protected void onDetachedFromWindow(){setActive(false);super.onDetachedFromWindow();}
     private String number(Number n,String unit,int decimals){return n==null?"—":String.format(Locale.forLanguageTag("ru"),"%."+decimals+"f",n.doubleValue())+" "+unit;}
-    private void put(String key,String value){values.get(key).setText(value);}
+    private void put(String key,String value){TextView field=values.get(key);if(field!=null)field.setText(value);}
     private void update(BatteryDetailsSnapshot data) {
         if(data==null){status.setText("Нет связи · показания недоступны");for(TextView v:values.values())v.setText("—");return;}
         VehicleTelemetrySnapshot s=data.vehicle;

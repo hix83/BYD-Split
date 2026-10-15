@@ -31,6 +31,14 @@ public final class InputProbeActivity extends Activity {
             }
         });
     }
+    @Override protected void onResume() {
+        super.onResume();
+        synchronized (stats) { stats.putBoolean("resumed", true); }
+    }
+    @Override protected void onPause() {
+        synchronized (stats) { stats.putBoolean("resumed", false); }
+        super.onPause();
+    }
     private static void increment(String key) { stats.putInt(key, stats.getInt(key) + 1); }
     @Override public void onBackPressed() { synchronized (stats) { increment("back"); } }
 }

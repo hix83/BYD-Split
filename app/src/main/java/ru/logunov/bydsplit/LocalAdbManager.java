@@ -24,6 +24,47 @@ final class LocalAdbManager {
     private final Context context;
     private final LocalAdbClient client;
     private volatile Thread displayHelperThread;
+    private final Map<Integer, String> immersiveDisplays = new HashMap<>();
+    private boolean recoveredImmersive;
+
+    // Persist ownership so a process crash can be cleaned up on the next start.
+    private void updateEmbeddedImmersive() throws Exception {
+        if (Build.VERSION.SDK_INT != 28) return;
+        android.content.SharedPreferences prefs = AppPreferences.get(context);
+        String current = client.shell("settings get global policy_control").trim();
+        if ("null".equals(current)) current = "";
+        String owned = prefs.getString("embedded_immersive_written", null);
+        String original = prefs.getString("embedded_immersive_original", "");
+        if (owned != null && !current.equals(owned)) {
+            // A user or another app changed the setting: relinquish ownership.
+            prefs.edit().remove("embedded_immersive_written").remove("embedded_immersive_original").commit();
+            return;
+        }
+        if (owned == null) original = current;
+        java.util.Set<String> packages = new java.util.TreeSet<>();
+        if (AppPreferences.isFullscreenEnabled(context)) packages.addAll(immersiveDisplays.values());
+        String desired = EmbeddedImmersivePolicy.withPackages(original, packages);
+        if (!current.equals(desired)) {
+            // Write the recovery record before changing the system setting.
+            prefs.edit().putString("embedded_immersive_original", original)
+                    .putString("embedded_immersive_written", desired).commit();
+            String output = client.shell(desired.isEmpty() ? "settings delete global policy_control"
+                    : "settings put global policy_control '" + desired.replace("'", "'\"'\"'") + "'");
+            if (output.contains("Exception") || output.contains("Error")) throw new java.io.IOException(output);
+        }
+        if (packages.isEmpty()) prefs.edit().remove("embedded_immersive_written")
+                .remove("embedded_immersive_original").commit();
+    }
+
+    synchronized void releaseEmbeddedImmersive(int displayId) {
+        immersiveDisplays.remove(displayId);
+        refreshEmbeddedImmersive();
+    }
+
+    synchronized void refreshEmbeddedImmersive() {
+        try { client.connect(); updateEmbeddedImmersive(); }
+        catch (Exception error) { Log.w(TAG, "Cannot update embedded immersive policy", error); }
+    }
 
     private void ensureDisplayHelper(String apk) {
         if (ShellDisplayBridge.ready() || (displayHelperThread != null && displayHelperThread.isAlive())) return;
@@ -78,7 +119,14 @@ final class LocalAdbManager {
             return false;
         }
         try {
-            if (Build.VERSION.SDK_INT == 28) ensureDisplayHelper(apk);
+            if (Build.VERSION.SDK_INT == 28) {
+                if (!recoveredImmersive) {
+                    client.connect();
+                    updateEmbeddedImmersive();
+                    recoveredImmersive = true;
+                }
+                ensureDisplayHelper(apk);
+            }
             String command = Build.VERSION.SDK_INT == 28 ? "" : daemonCommand(apk,
                     "ru.logunov.bydsplit.ShellInputDaemon",
                     "byd-split-input.log", "");
@@ -117,6 +165,11 @@ final class LocalAdbManager {
                     && moveMaxTasksToDisplay(displayId))return true;
             if (!component.matches("[A-Za-z0-9._$/]+") || !packageName.matches("[A-Za-z0-9._]+")
                     || displayId < 1 || displayId > 999) return false;
+            if (Build.VERSION.SDK_INT == 28) {
+                immersiveDisplays.put(displayId, packageName);
+                try { updateEmbeddedImmersive(); }
+                catch (Exception policyError) { Log.w(TAG, "Embedded bars policy unavailable", policyError); }
+            }
             String output = client.shell("am start --display " + displayId
                     + " -f 0x00010000 -n " + component + "; sleep 0.2");
             if (output.contains("Error:") || output.contains("Exception")) {
@@ -144,12 +197,28 @@ final class LocalAdbManager {
             // A transient entry during a crash is not a successful launch.
             tasks = client.shell("am stack list");
             boolean visible = EmbeddedTaskParser.root(tasks, packageName, displayId, true) != null;
+            // Reparenting a stack on API 28 can itself return focus to display 0.
+            // Focus the guest task explicitly, never the host: a paused guest can
+            // stop its GL renderer even though its UI overlays remain visible.
+            if (visible && Build.VERSION.SDK_INT == 28) {
+                Integer task = EmbeddedTaskParser.task(tasks, packageName, displayId);
+                if (task != null) client.shell("am task focus " + task);
+            }
             return visible;
         } catch (Exception error) {
             client.close();
             Log.e(TAG, "Cannot launch on virtual display", error);
             return false;
         }
+    }
+
+    synchronized void focusEmbeddedTask(String packageName, int displayId) {
+        if (Build.VERSION.SDK_INT != 28 || !packageName.matches("[A-Za-z0-9._]+") || displayId < 1) return;
+        try {
+            client.connect();
+            Integer task = EmbeddedTaskParser.task(client.shell("am stack list"), packageName, displayId);
+            if (task != null) client.shell("am task focus " + task);
+        } catch (Exception error) { Log.w(TAG, "Cannot resume embedded task", error); }
     }
 
     synchronized boolean moveMaxTasksToDisplay(int displayId) {
@@ -240,30 +309,57 @@ final class LocalAdbManager {
         return "Обогрев руля и сидений через Di2 SDK пока не подтверждён";
     }
 
-    synchronized JSONObject readDi2(String operation, Integer value) throws Exception {
+    private final Object batteryReadLock = new Object();
+    private long batteryReadAt;
+    private Map<String, Double> batteryValues = new HashMap<>();
+
+    private Map<String, Double> readDi2Battery() {
+        synchronized (batteryReadLock) {
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (batteryReadAt != 0 && now - batteryReadAt < 30_000) return batteryValues;
+            batteryReadAt = now;
+            batteryValues = new HashMap<>();
+            // Dedicated connection: display-helper bootstrap must not block telemetry.
+            try (LocalAdbClient reader = new LocalAdbClient(new LocalAdbKeyStore(context))) {
+                reader.connect();
+                String command = "";
+                String[] labels = {"SOH", "MIN_TEMP", "MAX_TEMP", "VOLTAGE", "MIN_CELL", "MAX_CELL"};
+                int[] tx = {5, 5, 5, 7, 7, 7};
+                int[] dev = {1014, 1014, 1014, 1001, 1014, 1014};
+                int[] fid = {1145045032, 1148190736, 1148190752, 1128267816, 1147142160, 1147142192};
+                for (int i = 0; i < labels.length; i++) {
+                    command += "r=$(service call autoservice " + tx[i] + " i32 " + dev[i]
+                            + " i32 " + fid[i] + "); echo \"" + labels[i] + "=$r\"; ";
+                }
+                batteryValues = Di2BatteryValues.parse(reader.shell(command));
+            } catch (Exception error) { Log.w(TAG, "Di2 battery supplement unavailable", error); }
+            return batteryValues;
+        }
+    }
+
+    JSONObject readDi2(String operation, Integer value) throws Exception {
         if (Build.VERSION.SDK_INT != 28) throw new IllegalStateException("Di2 requires Android 9");
         if (!operation.equals("read") && !operation.equals("climate")) {
-            if (value == null) throw new IllegalArgumentException("Missing climate value");
-            Di2VehicleSdk.command(operation, value);
-        } else if (value != null) throw new IllegalArgumentException("Unexpected value");
-        String apk = context.getApplicationInfo().sourceDir;
-        if (apk == null || !SAFE_APK_PATH.matcher(apk).matches())
-            throw new IllegalStateException("Unsafe APK path");
-        client.connect();
-        String output;
-        try {
-            output = client.shell("CLASSPATH=" + apk
-                    + " timeout 8 app_process /system/bin ru.logunov.bydsplit.Di2VehicleBridge "
-                    + operation + (value == null ? "" : " " + value));
-        } catch (Exception e) { client.close(); throw e; }
-        for (String line : output.split("\r?\n")) {
-            if (line.startsWith(Di2VehicleBridge.PREFIX)) {
-                JSONObject reply = new JSONObject(line.substring(Di2VehicleBridge.PREFIX.length()));
-                if (reply.optInt("protocol") != 1) throw new IllegalStateException("Wrong Di2 protocol");
+            if(value==null)throw new IllegalArgumentException("Missing climate value");
+            Di2VehicleSdk.command(operation,value);
+        } else if(value!=null)throw new IllegalArgumentException("Unexpected value");
+        if(operation.equals("read")) {
+            try {
+                JSONObject reply = DiPlusReader.read();
+                JSONObject values = reply.getJSONObject("values");
+                Map<String, Double> supplement = readDi2Battery();
+                for (Map.Entry<String, Double> entry : supplement.entrySet()) {
+                    if (!values.has(entry.getKey())) values.put(entry.getKey(), entry.getValue());
+                }
+                reply.put("batterySource", "autoservice Di2");
                 return reply;
             }
+            catch(Exception unavailable){
+                JSONObject fallback=Di2VehicleBridge.local(context,operation,value);
+                fallback.put("source","SDK");fallback.put("diplusError",unavailable.toString());return fallback;
+            }
         }
-        throw new IllegalStateException("Di2 helper returned no reply (timeout or start failure)");
+        return Di2VehicleBridge.local(context,operation,value);
     }
 
     synchronized String setDi2Climate(String command, int value) {
@@ -296,19 +392,19 @@ final class LocalAdbManager {
         return values;
     }
 
-    synchronized TechSnapshot readTechDetails() {
+    TechSnapshot readTechDetails() {
         try {
             Map<String, Double> values = di2Values(readDi2("read", null));
-            return new TechSnapshot(new BatteryDetailsSnapshot(Di2Snapshot.vehicle(values)), values);
+            return new TechSnapshot(Di2Snapshot.battery(values), values);
         } catch (Exception e) { Log.w(TAG, "Di2 technical data unavailable", e); return null; }
     }
 
-    synchronized BatteryDetailsSnapshot readBatteryDetails() {
-        VehicleTelemetrySnapshot vehicle = readVehicleTelemetry();
-        return vehicle == null ? null : new BatteryDetailsSnapshot(vehicle);
+    BatteryDetailsSnapshot readBatteryDetails() {
+        try { return Di2Snapshot.battery(di2Values(readDi2("read", null))); }
+        catch (Exception e) { Log.w(TAG, "Di2 battery details unavailable", e); return null; }
     }
 
-    synchronized VehicleTelemetrySnapshot readVehicleTelemetry() {
+    VehicleTelemetrySnapshot readVehicleTelemetry() {
         try { return Di2Snapshot.vehicle(di2Values(readDi2("read", null))); }
         catch (Exception e) { Log.w(TAG, "Di2 telemetry unavailable", e); return null; }
     }

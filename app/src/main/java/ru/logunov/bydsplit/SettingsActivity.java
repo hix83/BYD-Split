@@ -288,6 +288,16 @@ public final class SettingsActivity extends ThemeActivity
                         .apply());
         addWithTop(behaviorCard, autoStart, 12);
 
+        Switch adbRemote = settingsSwitch("Автозапуск DiLink Remote ADB",
+                AppPreferences.get(this).getBoolean(AdbRemoteWatchdogService.KEY, false));
+        adbRemote.setOnCheckedChangeListener((button, checked) -> {
+            AppPreferences.get(this).edit().putBoolean(AdbRemoteWatchdogService.KEY, checked).apply();
+            AdbRemoteWatchdogService.sync(this);
+        });
+        addWithTop(behaviorCard, adbRemote, 12);
+        addWithTop(behaviorCard, text("Проверяет службу ADB Remote каждые 15 секунд и открывает приложение, если она остановилась. Повторная попытка — не чаще раза в две минуты. Работает на DiLink 2; отключение останавливает контроль.",
+                14, getColor(R.color.text_secondary)), 6);
+
         Switch demoMode = settingsSwitch(
                 "Режим Android Emulator",
                 AppPreferences.isDemoModeEnabled(this));
@@ -322,7 +332,7 @@ public final class SettingsActivity extends ThemeActivity
         Button checkUpdate = actionButton("Проверить обновления");
         checkUpdate.setOnClickListener(view -> GithubUpdater.check(this, true));
         addWithTop(updateCard, checkUpdate, 10);
-        addWithTop(updateCard, text("GitHub Releases · проверка раз в сутки. Установка с сохранением настроек после подтверждения.",
+        addWithTop(updateCard, text("Канал Seagull · ветка seagull · проверка раз в сутки. Установка с сохранением настроек после подтверждения.",
                 14, getColor(R.color.text_secondary)), 6);
         LinearLayout.LayoutParams updateParams = fullWidthWrap();
         updateParams.topMargin = dp(16);

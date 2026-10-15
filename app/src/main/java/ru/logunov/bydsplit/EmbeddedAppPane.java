@@ -1255,6 +1255,11 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         }
     }
 
+    void resumeGuest() {
+        if (!released && virtualDisplay != null && entry != null)
+            shellBridgeClient.focusEmbeddedTask(entry.component.getPackageName(), virtualDisplay.getDisplayId());
+    }
+
     void release() {
         if (released) {
             return;

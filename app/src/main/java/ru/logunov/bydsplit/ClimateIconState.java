@@ -4,13 +4,24 @@ package ru.logunov.bydsplit;
 final class ClimateIconState {
     static final ClimateIconState UNKNOWN = new ClimateIconState(0, false, false, false);
     final int fanLevel;
+    final Float targetTemperatureC;
     final boolean face, feet, glass;
 
     private ClimateIconState(int fanLevel, boolean face, boolean feet, boolean glass) {
+        this(fanLevel, face, feet, glass, null);
+    }
+
+    private ClimateIconState(int fanLevel, boolean face, boolean feet, boolean glass, Float targetTemperatureC) {
+        this.targetTemperatureC = targetTemperatureC;
         this.fanLevel = fanLevel;
         this.face = face;
         this.feet = feet;
         this.glass = glass;
+    }
+
+    ClimateIconState withTargetTemperature(Float celsius) {
+        Float valid = celsius != null && Float.isFinite(celsius) && celsius >= 17 && celsius <= 33 ? celsius : null;
+        return new ClimateIconState(fanLevel, face, feet, glass, valid);
     }
 
     static ClimateIconState decode(int power, int fan, int mode) {

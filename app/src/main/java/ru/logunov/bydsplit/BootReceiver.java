@@ -23,6 +23,7 @@ public final class BootReceiver extends BroadcastReceiver {
         if (!bootCompleted && !debugTest) {
             return;
         }
+        AdbRemoteWatchdogService.sync(context);
         if (!AppPreferences.isAutoStartEnabled(context)) {
             Log.i(TAG, "Autostart disabled, ignored " + action);
             return;

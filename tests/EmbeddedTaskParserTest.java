@@ -15,7 +15,10 @@ public final class EmbeddedTaskParserTest {
                 "later Android format");
         check(EmbeddedTaskParser.root(" taskId=7: com.android.calculator2/.Calculator visible=true", "com.android.calculator2", 30, true) == null,
                 "no orphan task");
-        System.out.println("EmbeddedTaskParserTest: 7 checks passed");
+        check(EmbeddedTaskParser.task(dump, "com.android.calculator2", 30) == 7, "focus uses task id, not stack id");
+        check(EmbeddedTaskParser.task(dump, "com.android.calculator2", 3) == null, "focus must stay on requested display");
+        check(EmbeddedTaskParser.task(dump, "com.android.gallery3d", 3) == null, "hidden task must not receive focus");
+        System.out.println("EmbeddedTaskParserTest: 10 checks passed");
     }
     private static void check(boolean value, String message) { if (!value) throw new AssertionError(message); }
 }

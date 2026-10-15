@@ -55,7 +55,8 @@ final class VehicleDashboardView extends View {
     private final Bitmap motorBitmap;
     private final ActionListener actionListener;
     private final RectF[] actionBounds = {
-            new RectF(), new RectF(), new RectF(), new RectF(), new RectF()};
+            new RectF(), new RectF(), new RectF(), new RectF()};
+    private static final int[] QUICK_ACTIONS = {ACTION_CLIMATE, ACTION_CAR_SETTINGS, ACTION_HOME, ACTION_TECH_DETAILS};
     private ClimateIconRenderer climateIcon;
     private VehicleTelemetrySnapshot telemetry = VehicleTelemetrySnapshot.EMPTY;
     private int demoScenario;
@@ -158,6 +159,11 @@ final class VehicleDashboardView extends View {
                 telemetry.batteryMinTempC + "–" + telemetry.batteryMaxTempC + " °C";
         drawText(canvas, "Батарея  " + batteryTemperature,
                 width * .08f, height * .302f, width * .028f, TEXT_SECONDARY, Paint.Align.LEFT);
+        Float target = demoMode ? Float.valueOf(22f) : telemetry.climate.targetTemperatureC;
+        String climateTemperature = target == null ? "— °C" : String.format(
+                Locale.forLanguageTag("ru"), target % 1 == 0 ? "%.0f °C" : "%.1f °C", target);
+        drawText(canvas, "Климат  " + climateTemperature,
+                width * .92f, height * .265f, width * .028f, TEXT_SECONDARY, Paint.Align.RIGHT);
         String voltage = demoMode ? "13,8 В" : telemetry.auxiliaryVoltage == null ? "— В" :
                 String.format(Locale.forLanguageTag("ru"), "%.1f В", telemetry.auxiliaryVoltage);
         drawText(canvas, "Бортсеть  " + voltage,
@@ -261,14 +267,6 @@ final class VehicleDashboardView extends View {
                 batteryX, batteryY + 10, 44, TEXT_PRIMARY, Paint.Align.CENTER);
 
 
-        drawNativeTireLabel(canvas, shown.tirePressFlKpa, shown.tireTempFlC,
-                664, 881, nearX, nearY, Paint.Align.CENTER);
-        drawNativeTireLabel(canvas, shown.tirePressFrKpa, shown.tireTempFrC,
-                126, 494, farX, farY, Paint.Align.CENTER);
-        drawNativeTireLabel(canvas, shown.tirePressRlKpa, shown.tireTempRlC,
-                1045, 572, 948, 478, Paint.Align.CENTER);
-        drawNativeTireLabel(canvas, shown.tirePressRrKpa, shown.tireTempRrC,
-                620, 150, 700, 345, Paint.Align.CENTER);
         canvas.restore();
         // A compact legend belongs to the same scene; no second energy card.
         float y = Math.min(height * .865f, sceneBaseTop + 1034 * scale + height * .018f);
@@ -365,7 +363,7 @@ final class VehicleDashboardView extends View {
             paint.setColor(getContext().getColor(R.color.button));
             canvas.drawRoundRect(chip, width * 0.018f,
                     width * 0.018f, paint);
-            drawActionIcon(canvas, index, chip.centerX(),
+            drawActionIcon(canvas, QUICK_ACTIONS[index], chip.centerX(),
                     chip.centerY(), width * 0.034f);
 
         }
@@ -382,7 +380,7 @@ final class VehicleDashboardView extends View {
         }
         paint.setColor(TEXT_PRIMARY);
         int[] icons = {R.drawable.ui7_oem_car, R.drawable.ui7_climate, R.drawable.ui7_car_settings, R.drawable.ui7_home, R.drawable.ui7_tech};
-        android.graphics.drawable.Drawable icon = getContext().getDrawable(icons[action]);
+        android.graphics.drawable.Drawable icon = getContext().getDrawable(icons[action == ACTION_TECH_DETAILS ? 4 : action]);
         icon = icon.mutate();
         icon.setTint(TEXT_PRIMARY);
         if (action == ACTION_AUTO) {
@@ -425,7 +423,7 @@ final class VehicleDashboardView extends View {
                 if (actionBounds[index].contains(event.getX(), event.getY())) {
                     performClick();
                     if (actionListener != null) {
-                        actionListener.onVehicleAction(index==4?ACTION_TECH_DETAILS:index);
+                        actionListener.onVehicleAction(QUICK_ACTIONS[index]);
                     }
                     return true;
                 }

@@ -13,8 +13,14 @@ public final class EmbeddedInputInstrumentation extends Instrumentation {
     private ShellBridgeClient bridge;
     private int display;
     private long down;
+    private boolean dashboardOnly;
+    private boolean displayLifecycleOnly;
+    private boolean guestFocusOnly;
     private String paneName = "far";
     @Override public void onCreate(Bundle args) { super.onCreate(args);
+        guestFocusOnly = args != null && "true".equals(args.getString("guest_focus_only"));
+        displayLifecycleOnly = args != null && "true".equals(args.getString("display_lifecycle_only"));
+        dashboardOnly = args != null && "true".equals(args.getString("dashboard_only"));
         if (args != null) paneName = args.getString("pane", "far");
         if (!paneName.equals("far") && !paneName.equals("driver")) throw new IllegalArgumentException("pane must be far or driver");
         start(); }
@@ -23,15 +29,113 @@ public final class EmbeddedInputInstrumentation extends Instrumentation {
         try {
             if (Build.VERSION.SDK_INT != 28) throw new IllegalStateException("Run on API 28");
             Context context = getTargetContext();
+            if (dashboardOnly) {
+                boolean previousDemo = AppPreferences.isDemoModeEnabled(context);
+                AppPreferences.get(context).edit().putBoolean(AppPreferences.KEY_DEMO_MODE, false).commit();
+                try {
+                runOnMainSync(() -> {
+                    VehicleDashboardView dashboard = new VehicleDashboardView(context, action -> {});
+                    for (int width : new int[]{416, 640}) {
+                        dashboard.layout(0, 0, width, 610);
+                        android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(width, 610, android.graphics.Bitmap.Config.ARGB_8888);
+                        android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+                        dashboard.setTelemetry(VehicleTelemetrySnapshot.EMPTY);
+                        dashboard.draw(canvas);
+                        dashboard.setTelemetry(Di2Snapshot.vehicle(DiPlusValues.parse("ACTemp:28|SOC:98|Wind:5|FanLevel:4|ACStatus:1")));
+                        dashboard.draw(canvas);
+                        dashboard.setTelemetry(null);
+                        dashboard.draw(canvas);
+                        bitmap.recycle();
+                    }
+                    try {
+                        BatteryDetailsSnapshot data = new BatteryDetailsSnapshot(VehicleTelemetrySnapshot.EMPTY);
+                        for (boolean technical : new boolean[]{false, true}) {
+                            BatteryDetailsView details = new BatteryDetailsView(context, () -> {}, technical);
+                            java.lang.reflect.Method update = BatteryDetailsView.class.getDeclaredMethod(
+                                    technical ? "updateTechnical" : "update", technical ? TechSnapshot.class : BatteryDetailsSnapshot.class);
+                            update.setAccessible(true);
+                            update.invoke(details, technical ? new TechSnapshot(data, new java.util.HashMap<String, Double>()) : data);
+                            details.measure(View.MeasureSpec.makeMeasureSpec(840, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(700, View.MeasureSpec.EXACTLY));
+                            details.layout(0, 0, 840, 700);
+                            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(840, 700, android.graphics.Bitmap.Config.ARGB_8888);
+                            details.draw(new android.graphics.Canvas(bitmap));
+                            bitmap.recycle();
+                        }
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+                } finally {
+                    AppPreferences.get(context).edit().putBoolean(AppPreferences.KEY_DEMO_MODE, previousDemo).commit();
+                }
+                result.putString("stream", "PASS: dashboard empty/live/cleared telemetry at both widths, battery and technical details updates\n");
+                finish(-1, result);
+                return;
+            }
             context.startActivity(new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     .putExtra("demo_mode", true));
+            if (displayLifecycleOnly || guestFocusOnly) LocalAdbManager.get(context).startHelpers(false);
             long deadline = SystemClock.uptimeMillis() + 15000;
-            while (SystemClock.uptimeMillis() < deadline && display == 0) {
+            while (SystemClock.uptimeMillis() < deadline && ((displayLifecycleOnly || guestFocusOnly) ? !ShellDisplayBridge.ready() : display == 0)) {
                 for (Display d : ((DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE)).getDisplays())
                     if (d.getName().equals("BYD-Split-" + paneName)) display = d.getDisplayId();
                 SystemClock.sleep(50);
             }
-            check(display > 0 && ShellDisplayBridge.ready(), "shell-owned display ready");
+            check((displayLifecycleOnly || guestFocusOnly || display > 0) && ShellDisplayBridge.ready(), "shell-owned display ready");
+            if (guestFocusOnly) {
+                // Keep a real host Activity behind a different-UID guest. Returning
+                // the host to front used to pause GL renderers after the launch.
+                SystemClock.sleep(500);
+                android.media.ImageReader output = android.media.ImageReader.newInstance(800, 600, android.graphics.PixelFormat.RGBA_8888, 2);
+                LocalAdbManager manager = LocalAdbManager.get(context);
+                int id = ShellDisplayBridge.create("focus-test", 800, 600, 160, output.getSurface());
+                String originalPolicy;
+                try (LocalAdbClient reader = new LocalAdbClient(new LocalAdbKeyStore(context))) {
+                    reader.connect(); originalPolicy = reader.shell("settings get global policy_control").trim();
+                }
+                try {
+                    check(manager.launchOnDisplay("ru.logunov.bydsplit.test/ru.logunov.bydsplit.InputProbeActivity",
+                            "ru.logunov.bydsplit.test", id), "guest launched");
+                    SystemClock.sleep(1500);
+                    check(stats().getBoolean("resumed"), "guest stays resumed after startup settles");
+                    manager.startMainActivity();
+                    SystemClock.sleep(400);
+                    check(!stats().getBoolean("resumed"), "opening host page pauses guest on API28");
+                    manager.focusEmbeddedTask("ru.logunov.bydsplit.test", id);
+                    SystemClock.sleep(400);
+                    check(stats().getBoolean("resumed"), "returning from host page resumes guest");
+                    try (LocalAdbClient reader = new LocalAdbClient(new LocalAdbKeyStore(context))) {
+                        reader.connect();
+                        check(reader.shell("settings get global policy_control").contains("ru.logunov.bydsplit.test"),
+                                "immersive policy includes the guest");
+                    }
+                    result.putString("stream", "PASS: guest stays RESUMED; scoped immersive policy applied and restored\n");
+                } finally {
+                    manager.releaseEmbeddedImmersive(id);
+                    try (LocalAdbClient reader = new LocalAdbClient(new LocalAdbKeyStore(context))) {
+                        reader.connect();
+                        check(originalPolicy.equals(reader.shell("settings get global policy_control").trim()),
+                                "original immersive setting restored after release");
+                    }
+                    ShellDisplayBridge.call(ShellDisplayBridge.RELEASE, parcel -> parcel.writeInt(id));
+                    output.close();
+                }
+                finish(-1, result); return;
+            }
+            if (displayLifecycleOnly) {
+                android.media.ImageReader output = android.media.ImageReader.newInstance(320, 240, android.graphics.PixelFormat.RGBA_8888, 2);
+                int originalId = -1;
+                try {
+                    for (int iteration = 0; iteration < 5; iteration++) {
+                        int id = ShellDisplayBridge.create("lifecycle-test", 320 + iteration * 16, 240, 160, output.getSurface());
+                        if (originalId == -1) originalId = id;
+                        check(id == originalId, "same display id after pane rebuild");
+                        ShellDisplayBridge.call(ShellDisplayBridge.RELEASE, parcel -> parcel.writeInt(id));
+                        check(((DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE)).getDisplay(id) != null,
+                                "parked display stays valid for guest ViewRootImpl");
+                    }
+                } finally { output.close(); }
+                result.putString("stream", "PASS: five pane release/create cycles preserve guest display identity\n");
+                finish(-1, result); return;
+            }
             check(LocalAdbManager.get(context).launchOnDisplay(
                     "ru.logunov.bydsplit.test/ru.logunov.bydsplit.InputProbeActivity", "ru.logunov.bydsplit.test", display),
                     "test Activity launched on the secondary display");
