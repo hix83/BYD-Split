@@ -188,8 +188,10 @@ final class VehicleTelemetrySnapshot {
 
     static VehicleTelemetrySnapshot demo() {
         return new VehicleTelemetrySnapshot(
-                72, 240, 240, 230, 230,
-                31, 32, 29, 30, 3, 3, 308f,
-                68f, 26, 1820, 18, 24, 1, null);
+                52, 240, 240, 240, 240,
+                26, 26, 26, 26, 3, 1, 308f,
+                68f, 18, null, null, 18, 1, null,
+                null, 98, 24, 26, 2450, null, 13.8f,
+                ClimateIconState.decode(1, 4, 2));
     }
 }

@@ -32,7 +32,7 @@ final class BatteryDetailsView extends LinearLayout {
         setBackground(bg(0xff191f27)); setClipToOutline(true);
         setClickable(true);
         LinearLayout header = new LinearLayout(context); header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = label(technical?"Техника · Song L DM-i":"Состояние батареи",22,text);
+        TextView title = label(technical?"Техника · Seagull EV":"Состояние батареи",26,text);
         header.addView(title,new LinearLayout.LayoutParams(0,dp(42),1));
         TextView back = label("‹  Назад",16,0xff77b7ff); back.setGravity(Gravity.CENTER);
         back.setContentDescription("Вернуться к приложению"); back.setBackground(bg(0xff29333f));
@@ -61,22 +61,20 @@ final class BatteryDetailsView extends LinearLayout {
         }
     }
     private void buildTechnical(LinearLayout content) {
-        section(content,"Гибридная система DM-i");
-        row(content,new String[]{"engineRpm","coolant","fuel"},new String[]{"ДВС · об/мин","ОЖ двигателя","Топливо в баке"});
-        row(content,new String[]{"work","drive","generator"},new String[]{"Режим установки","Режим движения","Генератор · мощность"});
+        section(content,"Электропривод");
+        row(content,new String[]{"drive","frontRpm"},new String[]{"Режим движения","Электромотор · об/мин"});
         section(content,"Батарея · сейчас");
         row(content,new String[]{"soh","soc","avgTemp"},new String[]{"SOH","SOC","Температура · средняя"});
-        row(content,new String[]{"hv","power","batteryWatts"},new String[]{"Напряжение HV","Мощность привода","Мощность батареи"});
+        row(content,new String[]{"hv","power","batteryWatts"},new String[]{"Напряжение HV","Мощность батареи","Мощность BMS"});
         row(content,new String[]{"voltage","insulation","rate"},new String[]{"Бортсеть","Изоляция HV","Изменение SOC / час"});
         TextView capacity=label("Ёмкость батареи для расчёта %/ч · настроить",13,0xff77b7ff);
         capacity.setPadding(0,dp(10),0,dp(6));capacity.setOnClickListener(v->editCapacity());content.addView(capacity);
         section(content,"Лимиты BMS и ячейки");
         row(content,new String[]{"chargeLimit","dischargeLimit"},new String[]{"Макс. мощность заряда","Макс. мощность разряда"});
         row(content,new String[]{"minCell","maxCell","deltaCell"},new String[]{"Ячейка · минимум","Ячейка · максимум","Разброс"});
-        section(content,"Электромоторы и инверторы");
-        row(content,new String[]{"frontTemp","frontInv","frontRpm"},new String[]{"Передний мотор","Передний инвертор","Передний · об/мин"});
-        row(content,new String[]{"rearTemp","rearInv","rearRpm"},new String[]{"Задний мотор","Задний инвертор","Задний · об/мин"});
-        TextView motorsNote=label("Температуры моторов/инверторов и задний привод: адреса BYDMate пока не подтверждены на Song L, показания не выводятся.",12,muted);
+        section(content,"Электромотор и инвертор");
+        row(content,new String[]{"frontTemp","frontInv"},new String[]{"Температура мотора","Температура инвертора"});
+        TextView motorsNote=label("Источники показаний DiLink 2 требуют проверки на автомобиле. Недоступные значения обозначены прочерком.",14,muted);
         motorsNote.setPadding(0,dp(8),0,dp(4));content.addView(motorsNote);
         row(content,new String[]{"accelerator","brake"},new String[]{"Педаль газа","Педаль тормоза"});
         section(content,"Климат");
@@ -88,7 +86,7 @@ final class BatteryDetailsView extends LinearLayout {
         section(content,"Батарея · история");
         row(content,new String[]{"mileage","lifetime"},new String[]{"Пробег BMS","Энергия BMS"});
         row(content,new String[]{"sessionAvg","allAvg"},new String[]{"Средний SOC после зарядки","Средний SOC · наблюдения"});
-        TextView note=label("—: нет достоверного показания. Задний электромотор может отсутствовать в комплектации. Средняя температура — середина минимума и максимума. Средний SOC собирается нашим приложением раз в минуту, пока оно получает телеметрию; история BYDMate не переносится. %/ч: плюс — расход, минус — заряд. Режим HEV сам по себе не подтверждает механическую связь ДВС с колёсами.",13,muted);
+        TextView note=label("—: нет достоверного показания. Средняя температура — середина минимума и максимума. Средний SOC собирается приложением раз в минуту при получении телеметрии. %/ч: плюс — расход, минус — заряд.",14,muted);
         note.setPadding(0,dp(14),0,dp(12));content.addView(note);
     }
     private void editCapacity() {
@@ -109,11 +107,8 @@ final class BatteryDetailsView extends LinearLayout {
             put(key,number(data.values.get(key),unit,key.equals("insulation")?2:key.endsWith("Limit")?1:0));
         }
         Double ac=data.values.get("ac");put("ac",ac==null?"—":ac==1?"Включён":"Выключен");
-        put("engineRpm",number(s.engineRpm,"об/мин",0));put("coolant",number(s.coolantTempC,"°C",0));put("fuel",number(s.fuelPercent,"%",0));
-        String[] modes={"STOP","EV","EV MAX","HEV","ДВС","KEEP"};
-        put("work",s.workMode==null?"—":s.workMode>=0&&s.workMode<modes.length?modes[s.workMode]:"Код "+s.workMode);
         put("drive",s.driveMode==null?"—":s.driveMode==1?"ECO":s.driveMode==2?"SPORT":s.driveMode==4?"SNOWFIELD":s.driveMode==0||s.driveMode==3?"NORMAL":"Код "+s.driveMode);
-        put("generator",number(s.generatorPowerKw,"кВт",0));
+        put("frontRpm",number(s.motorRpm,"об/мин",0));
         put("soc",number(s.batterySocPercent,"%",0));put("soh",number(s.batterySohPercent,"%",0));
         put("avgTemp",number(s.batteryMinTempC!=null&&s.batteryMaxTempC!=null?(s.batteryMinTempC+s.batteryMaxTempC)/2f:null,"°C",1));
         put("power",number(s.batteryPowerKw,"кВт",0));put("voltage",number(s.auxiliaryVoltage,"В",1));
@@ -134,8 +129,8 @@ final class BatteryDetailsView extends LinearLayout {
         for(int i=0;i<keys.length;i++) {
             LinearLayout card=new LinearLayout(getContext());card.setOrientation(VERTICAL);
             card.setPadding(dp(12),dp(8),dp(10),dp(8));card.setBackground(bg(0xff252f3a));
-            card.addView(label(titles[i],12,muted));
-            TextView value=label("—",20,text);value.setPadding(0,dp(4),0,0);card.addView(value);values.put(keys[i],value);
+            card.addView(label(titles[i],16,muted));
+            TextView value=label("—",26,text);value.setPadding(0,dp(4),0,0);card.addView(value);values.put(keys[i],value);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.topMargin=dp(6);if(i>0)lp.leftMargin=dp(10);row.addView(card,lp);
         }
         target.addView(row);

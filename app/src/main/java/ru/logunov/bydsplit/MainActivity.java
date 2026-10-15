@@ -375,10 +375,10 @@ public final class MainActivity extends Activity {
         splitRoot.removeAllViews();
         LinearLayout.LayoutParams compactParams =
                 new LinearLayout.LayoutParams(
-                        0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+                        0, ViewGroup.LayoutParams.MATCH_PARENT, 1.2f);
         LinearLayout.LayoutParams mainParams =
                 new LinearLayout.LayoutParams(
-                        0, ViewGroup.LayoutParams.MATCH_PARENT, 2f);
+                        0, ViewGroup.LayoutParams.MATCH_PARENT, 1.8f);
         LinearLayout.LayoutParams dividerParams =
                 new LinearLayout.LayoutParams(
                         dp(10), ViewGroup.LayoutParams.MATCH_PARENT);
@@ -457,10 +457,10 @@ public final class MainActivity extends Activity {
         iconParams.topMargin = dp(7);
         button.addView(image, iconParams);
         TextView caption = new TextView(this);
-        caption.setText("Авто".equals(label) ? "BYD SONG" : label.toUpperCase(java.util.Locale.ROOT));
+        caption.setText("Авто".equals(label) ? "SEAGULL" : label.toUpperCase(java.util.Locale.ROOT));
         caption.setTextColor(getColor(R.color.text_primary));
-        // Six equal dock cells must keep the longest Russian captions intact.
-        caption.setTextSize(9.5f);
+        // Five dock cells with readable captions on the 10.1-inch profile.
+        caption.setTextSize(13f);
         caption.setGravity(Gravity.CENTER);
         caption.setSingleLine(true);
         FrameLayout.LayoutParams captionParams = new FrameLayout.LayoutParams(
