@@ -39,6 +39,19 @@ final class NativeEnergySprites {
         canvas.drawBitmap(frames[sequence][frame], x, y, paint);
     }
 
+    void drawElectric(Canvas canvas, Paint paint, boolean traction, boolean regeneration) {
+        if (traction) {
+            draw(canvas, paint, 3, 264, 550);
+            draw(canvas, paint, 5, 264, 550);
+            draw(canvas, paint, 6, 264, 550);
+        }
+        if (regeneration) {
+            draw(canvas, paint, 4, 264, 550);
+            draw(canvas, paint, 7, 264, 550);
+            draw(canvas, paint, 8, 264, 550);
+        }
+    }
+
     void draw(Canvas canvas, Paint paint, DmiEnergyFlow state) {
         if (state.engineToGenerator && !state.generatorToBattery) draw(canvas, paint, 0, 328, 642);
         if (state.generatorToBattery) draw(canvas, paint, 1, 328, 580);

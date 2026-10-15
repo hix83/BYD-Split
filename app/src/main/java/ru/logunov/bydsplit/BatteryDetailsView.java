@@ -32,7 +32,7 @@ final class BatteryDetailsView extends LinearLayout {
         setBackground(bg(0xff191f27)); setClipToOutline(true);
         setClickable(true);
         LinearLayout header = new LinearLayout(context); header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = label(technical?"Техника · Seagull EV":"Состояние батареи",26,text);
+        TextView title = label(technical?"Техника · Seagull EV":"Состояние батареи",22,text);
         header.addView(title,new LinearLayout.LayoutParams(0,dp(42),1));
         TextView back = label("‹  Назад",16,0xff77b7ff); back.setGravity(Gravity.CENTER);
         back.setContentDescription("Вернуться к приложению"); back.setBackground(bg(0xff29333f));
@@ -129,8 +129,8 @@ final class BatteryDetailsView extends LinearLayout {
         for(int i=0;i<keys.length;i++) {
             LinearLayout card=new LinearLayout(getContext());card.setOrientation(VERTICAL);
             card.setPadding(dp(12),dp(8),dp(10),dp(8));card.setBackground(bg(0xff252f3a));
-            card.addView(label(titles[i],16,muted));
-            TextView value=label("—",26,text);value.setPadding(0,dp(4),0,0);card.addView(value);values.put(keys[i],value);
+            card.addView(label(titles[i],12,muted));
+            TextView value=label("—",20,text);value.setPadding(0,dp(4),0,0);card.addView(value);values.put(keys[i],value);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.topMargin=dp(6);if(i>0)lp.leftMargin=dp(10);row.addView(card,lp);
         }
         target.addView(row);
