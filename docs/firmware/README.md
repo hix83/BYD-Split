@@ -14,8 +14,37 @@ CarSettingsProvider и SystemSettings. Декомпиляция JADX 1.5.6 на�
 заявление о полной точности декомпиляции всего APK.
 
 `system/build.prop`: `ro.build.version.sdk=28`, `ro.sf.lcd_density=160`.
-Плотность нашего эмулятора совпадает с этим значением прошивки; фактический
-`wm density` автомобиля ещё нужно сверить на случай override.
+Дополнительная проверка `vendor/build.prop` обнаружила другое значение
+`ro.sf.lcd_density=480`. Поэтому по отдельному build.prop нельзя утверждать
+эффективную плотность автомобиля: нужны `getprop ro.sf.lcd_density` и
+`wm density` на самом устройстве. Плотность эмулятора 160 пока рабочая.
+
+### Проверка предположения 1366×768
+
+Подтверждения 1366×768 для Seagull 10,1″ в открытых источниках не найдено.
+На BYD TIS это число относится к рекомендованному разрешению монитора
+компьютера для сервисного сайта, а не к дисплею автомобиля.
+Региональный сайт [BYD Ecuador](https://bydauto.ec/project/seagull/) описывает
+экран 10,1″ как FHD, но это не подтверждает комплектацию Di2 владельца.
+
+В `dtbo.img` из предоставленной Di2 OTA, FDT по смещению `0x40`, найдены:
+
+```text
+fragment@6/__overlay__/focaltech@38: focaltech,display-coords = <0 0 1280 720>
+fragment@6/__overlay__/hxchipset_ts@49: himax,panel-coords = <0 1280 0 720>
+fragment@6/__overlay__/hxchipset_ts@49: himax,display-coords = <0 1280 0 720>
+fragment@6/__overlay__/nvt519xx@14: novatek,display-coords = <0 0 1280 720>
+fragment@6/__overlay__/nvt51917@01: novatek,display-coords = <0 0 1280 720>
+fragment@9/__overlay__: tpd-resolution = <720 1280>
+```
+
+Это прямое свидетельство конфигурации координат тачскрина 1280×720 в OTA,
+но не окончательное доказательство разрешения активной матрицы конкретного
+автомобиля: нужны выбранный драйвер и runtime-конфигурация дисплея.
+Разрешение эмулятора 1920×1080 остаётся предварительным и в рамках этой
+проверки не менялось. Для подтверждения: `adb -s SERIAL shell wm size`,
+`adb -s SERIAL shell dumpsys display` (проверить основной дисплей,
+физический режим и возможный override).
 
 В [di2-sdk-usage.json](di2-sdk-usage.json) перечислены 20 SDK-классов
 `android.hardware.bydauto.*` и файлы штатного CarSetting, которые их
