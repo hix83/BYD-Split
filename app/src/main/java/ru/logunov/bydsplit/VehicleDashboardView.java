@@ -230,8 +230,8 @@ final class VehicleDashboardView extends View {
         String label = demoMode ? "ДЕМО · " + SCENARIOS[demoScenario] + "  ›" : "Состояние автомобиля";
         drawText(canvas, label, width * .5f, height * .225f, width * .029f,
                 TEXT_PRIMARY, Paint.Align.CENTER);
-        // Native Energy screen uses this 1170 × 1034 isometric SUV asset.
-        // Keep the body, battery and powertrain in the same projection.
+        // Owner-selected Di5 CROSS body, normalized to the existing scene bounds.
+        // Preserve the isometric layout, battery and electric powertrain.
         float scale = Math.min(width / 1170f, height * .61f / 1034f);
         float left = (width - 1170f * scale) / 2;
         float sceneBaseTop = height * .275f;
@@ -268,7 +268,7 @@ final class VehicleDashboardView extends View {
         drawNativeTireLabel(canvas, shown.tirePressRlKpa, shown.tireTempRlC,
                 1045, 572, 948, 478, Paint.Align.CENTER);
         drawNativeTireLabel(canvas, shown.tirePressRrKpa, shown.tireTempRrC,
-                620, 150, 670, 345, Paint.Align.CENTER);
+                620, 150, 700, 345, Paint.Align.CENTER);
         canvas.restore();
         // A compact legend belongs to the same scene; no second energy card.
         float y = Math.min(height * .865f, sceneBaseTop + 1034 * scale + height * .018f);

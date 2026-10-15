@@ -49,8 +49,9 @@
   },
   {
     "night": false,
-    "source_file": "drawable-xhdpi\\newenergy_flow_car_img_suv.webp",
-    "sha256": "092e49b1454a9bfeb784d7050eb72157c896c860e72332ce9b1a09aa4c3aa9b6"
+    "source_file": "drawable-xhdpi/newenergy_flow_car_img_cross.webp",
+    "sha256": "1dd810e7657dd88d2a86a5afb5e8af045c46e7d48d4c74e5e629bc460ee3253e",
+    "target_file": "drawable-nodpi/ui7_dmi_body.webp"
   },
   {
     "night": false,
@@ -107,8 +108,9 @@
   },
   {
     "night": true,
-    "source_file": "drawable-night-xhdpi\\newenergy_flow_car_img_suv.webp",
-    "sha256": "32813a247881ecfa6336e9067d89ccb43bd1ca746858c025e7938ce290cb56e8"
+    "source_file": "drawable-night-xhdpi/newenergy_flow_car_img_cross.webp",
+    "sha256": "1dd810e7657dd88d2a86a5afb5e8af045c46e7d48d4c74e5e629bc460ee3253e",
+    "target_file": "drawable-night-nodpi/ui7_dmi_body.webp"
   },
   {
     "night": true,
@@ -117,12 +119,14 @@
   },
   {
     "night": false,
-    "source_file": "drawable-xhdpi/newenergy_flow_car_img_suv_shadow.webp",
-    "sha256": "96f2e4b8a443468751bd5053fb54d0dd808d29e897a87e4ff8c8fc16f2aebd63"
+    "source_file": "drawable-xhdpi/newenergy_flow_car_img_cross_shadow.webp",
+    "sha256": "f090471478b27d1a6e8b7ce4cc8ac8e6ddcd5333f728c9b57072f5b81d3f7f9a",
+    "target_file": "drawable-nodpi/di5_car_shadow.webp"
   },
   {
     "night": true,
-    "source_file": "drawable-night-xhdpi/newenergy_flow_car_img_suv_shadow.webp",
-    "sha256": "97f3e77b033b85b8144c2edb0133da5dbda566a578e108cbce3b6b140fafcbd9"
+    "source_file": "drawable-night-xhdpi/newenergy_flow_car_img_cross_shadow.webp",
+    "sha256": "c6ea7e03505e7e55120e3eec63403874a22372c3c988c09ec47bd3a3cad0eeda",
+    "target_file": "drawable-night-nodpi/di5_car_shadow.webp"
   }
 ]
