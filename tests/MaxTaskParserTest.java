@@ -9,6 +9,9 @@ public class MaxTaskParserTest {
   if(!MaxTaskParser.rootsToMove(dump,2).equals(Arrays.asList(4,6)))throw new AssertionError();
   if(!MaxTaskParser.hasMaxOnDisplay(dump,2)||MaxTaskParser.hasMaxOnDisplay(dump,1))throw new AssertionError();
   if(!MaxTaskParser.rootsToMove("taskId=7: ru.oneme.app/Main",2).isEmpty())throw new AssertionError();
+  String di2=dump.replace("RootTask id=", "Stack id=");
+  if(!MaxTaskParser.rootsToMove(di2,2).equals(Arrays.asList(4,6))
+    ||!MaxTaskParser.hasMaxOnDisplay(di2,2))throw new AssertionError("Android 9 stack format");
   System.out.println("MAX task routing parser checks passed");
  }
 }

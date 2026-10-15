@@ -24,6 +24,8 @@
         android:resizeableActivity="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.BYDSplit">
+        <provider android:name=".ShellDisplayProvider" android:authorities="${applicationId}.display"
+            android:exported="true" />
         <provider android:name=".UpdateApkProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true" />
         <activity
             android:name=".MainActivity"
@@ -37,6 +39,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".Di2ClimateActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.BYDSplit.SettingsDialog" />
         <activity
             android:name=".SettingsActivity"
             android:exported="false"

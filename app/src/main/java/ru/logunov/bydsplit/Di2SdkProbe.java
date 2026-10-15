@@ -22,6 +22,7 @@ public final class Di2SdkProbe {
         "android.hardware.bydauto.radar.BYDAutoRadarDevice",
         "android.hardware.bydauto.charging.BYDAutoChargingDevice",
         "android.hardware.bydauto.statistic.BYDAutoStatisticDevice",
+        "android.hardware.bydauto.speed.BYDAutoSpeedDevice",
         "android.hardware.bydauto.energy.BYDAutoEnergyDevice",
         "android.hardware.bydauto.tyre.BYDAutoTyreDevice",
         "android.hardware.bydauto.ac.BYDAutoAcDevice",

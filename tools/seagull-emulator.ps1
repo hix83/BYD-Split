@@ -3,6 +3,7 @@ param(
     [string]$JavaHome = $env:JAVA_HOME,
     [string]$AvdName = 'BYD_Seagull_DiLink2_API28',
     [ValidateRange(5554, 5682)][int]$Port = 5560,
+    [ValidateSet('auto', 'host', 'swiftshader_indirect')][string]$GpuMode = 'swiftshader_indirect',
     [switch]$SetupOnly,
     [switch]$InstallApp
 )
@@ -58,7 +59,7 @@ if ($state -eq 'device') {
 } else {
     $logDir = Join-Path $projectRoot 'tmp/seagull-emulator'
     New-Item -ItemType Directory -Force $logDir | Out-Null
-    Start-Process -FilePath $emulator -ArgumentList @('-avd', $AvdName, '-port', $Port, '-no-snapshot', '-no-boot-anim') -WindowStyle Hidden -RedirectStandardOutput "$logDir/stdout.log" -RedirectStandardError "$logDir/stderr.log" | Out-Null
+    Start-Process -FilePath $emulator -ArgumentList @('-avd', $AvdName, '-port', $Port, '-no-snapshot', '-no-boot-anim', '-gpu', $GpuMode, '-feature', 'GLESDynamicVersion') -WindowStyle Hidden -RedirectStandardOutput "$logDir/stdout.log" -RedirectStandardError "$logDir/stderr.log" | Out-Null
 }
 $deadline = (Get-Date).AddMinutes(3)
 do {
@@ -71,6 +72,10 @@ do {
 & $adb -s $serial shell settings put system user_rotation 0
 & $adb -s $serial shell wm size
 & $adb -s $serial shell wm density
+# AOSP's emulator adbd uses the emulator transport rather than a guest TCP
+# listener. Route the launcher's localhost:5555 to this AVD's host ADB port.
+& $adb -s $serial reverse tcp:5555 "tcp:$($Port + 1)"
+if ($LASTEXITCODE -ne 0) { throw 'Cannot configure local ADB transport for the launcher.' }
 if ($InstallApp) {
     $apk = Join-Path $projectRoot 'app/build/outputs/apk/debug/app-debug.apk'
     if (!(Test-Path $apk)) { throw 'Build assembleDebug first.' }

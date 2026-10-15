@@ -567,8 +567,8 @@ final class VehicleDashboardView extends View {
         paint.setShader(null);
         paint.setStyle(Paint.Style.FILL);
         paint.setTextAlign(align);
-        // Dynasty pad body-4 is 12sp; keep telemetry legible in the 1/3 pane.
-        paint.setTextSize(Math.max(size, 12f * getResources().getDisplayMetrics().scaledDensity));
+        // Modest increase for the 10.1-inch panel; keep the original scene anchors.
+        paint.setTextSize(Math.max(size * 1.12f, 14f * getResources().getDisplayMetrics().scaledDensity));
         paint.setColor(color);
         paint.setTypeface(ui7Typeface);
         canvas.drawText(value, x, y, paint);

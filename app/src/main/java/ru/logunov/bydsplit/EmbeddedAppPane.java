@@ -10,8 +10,6 @@ import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.drawable.GradientDrawable;
-import android.hardware.display.DisplayManager;
-import android.hardware.display.VirtualDisplay;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -41,8 +39,6 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private static final long DOUBLE_CLICK_WINDOW_MS = 550;
     private static final long DELETE_HOLD_MS = 2000;
     private static final long DELETE_SHRINK_MS = 1500;
-    // Hidden in the public SDK, but supported by Android 12's VirtualDisplay.
-    private static final int VIRTUAL_DISPLAY_FLAG_SUPPORTS_TOUCH = 1 << 6;
 
     private AppEntry entry;
     private final String paneName;
@@ -75,7 +71,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 }
             };
     private final Runnable deleteHoldRunnable = this::beginDeleteMode;
-    private VirtualDisplay virtualDisplay;
+    private EmbeddedDisplay virtualDisplay;
+    private int displayCreateAttempts;
     private ImageView transitionSnapshot;
     private Bitmap transitionBitmap;
     private ImageView transitionIncoming;
@@ -94,6 +91,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private float touchStartY;
     private float revealStartY;
     private boolean deleteHoldCandidate;
+    private MotionEvent bufferedDeleteDown;
     private boolean deleteMode;
     private boolean deleteCardReady;
     private float deleteTouchStartX;
@@ -268,7 +266,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             createDisplayAndLaunch();
             return;
         }
-        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        int displayId = virtualDisplay.getDisplayId();
         if (direction == 0 || getWidth() <= 0) {
             launchSwitchedApp(
                     entry.component.flattenToString(),
@@ -303,7 +301,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             }
             return;
         }
-        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        int displayId = virtualDisplay.getDisplayId();
         deletedTaskRemoved = false;
         deleteReplacementReady = false;
         if (nextEntry != null) {
@@ -345,7 +343,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 result -> {
                     if (generation != appSwitchGeneration
                             || virtualDisplay == null
-                            || virtualDisplay.getDisplay().getDisplayId()
+                            || virtualDisplay.getDisplayId()
                             != displayId) {
                         snapshot.recycle();
                         return;
@@ -645,7 +643,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         interactiveOffset = 0f;
         interactiveOriginalComponent = entry.component.flattenToString();
         interactiveTargetComponent = target.component.flattenToString();
-        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        int displayId = virtualDisplay.getDisplayId();
         int generation = ++appSwitchGeneration;
         Bitmap currentBitmap = Bitmap.createBitmap(
                 Math.max(1, surfaceView.getWidth()),
@@ -699,7 +697,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 && interactiveGesture
                 && interactiveDirection == direction
                 && virtualDisplay != null
-                && virtualDisplay.getDisplay().getDisplayId() == displayId;
+                && virtualDisplay.getDisplayId() == displayId;
     }
 
     private void updateInteractiveOffset(float rawOffset) {
@@ -789,7 +787,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         if (generation != appSwitchGeneration || virtualDisplay == null) {
             return;
         }
-        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        int displayId = virtualDisplay.getDisplayId();
         String component = interactiveTargetComponent;
         shellBridgeClient.launchOnDisplay(
                 component,
@@ -813,7 +811,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private void cacheCommittedFrameAndFinish(
             String component, int displayId, int generation) {
         if (generation != appSwitchGeneration || virtualDisplay == null
-                || virtualDisplay.getDisplay().getDisplayId() != displayId) {
+                || virtualDisplay.getDisplayId() != displayId) {
             return;
         }
         Bitmap displayed = Bitmap.createBitmap(
@@ -850,12 +848,14 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     }
 
     private void scheduleDeleteHold(MotionEvent event) {
+        if (bufferedDeleteDown != null) { bufferedDeleteDown.recycle(); bufferedDeleteDown = null; }
         deleteHoldCandidate = isDeleteHoldArea(event.getX(), event.getY());
         deleteTouchStartX = event.getX();
         deleteTouchStartY = event.getY();
         if (!deleteHoldCandidate) {
             return;
         }
+        bufferedDeleteDown = MotionEvent.obtain(event);
         postDelayed(deleteHoldRunnable, DELETE_HOLD_MS);
     }
 
@@ -867,6 +867,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     }
 
     private void cancelDeleteHold() {
+        if (bufferedDeleteDown != null) { bufferedDeleteDown.recycle(); bufferedDeleteDown = null; }
         deleteHoldCandidate = false;
         removeCallbacks(deleteHoldRunnable);
     }
@@ -1250,7 +1251,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             // VirtualDisplay and its task alive; only detach video output.
             virtualDisplay.setSurface(null);
             Log.i(TAG, paneName + " surface detached from display "
-                    + virtualDisplay.getDisplay().getDisplayId());
+                    + virtualDisplay.getDisplayId());
         }
     }
 
@@ -1262,19 +1263,20 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         voiceGestureGeneration++;
         appSwitchGeneration++;
         voiceState = VoiceState.IDLE;
-        removeCallbacks(deleteHoldRunnable);
+        cancelDeleteHold();
         pageIndicator.animate().cancel();
         clearTransitionSnapshot();
         cancelDeleteMode(false);
         resetInteractiveState();
         frameCache.evictAll();
         if (virtualDisplay != null) {
+            shellBridgeClient.releaseDisplay(virtualDisplay.getDisplayId());
             virtualDisplay.release();
             virtualDisplay = null;
         }
     }
 
-    int embeddedDisplayId() { return virtualDisplay==null?-1:virtualDisplay.getDisplay().getDisplayId(); }
+    int embeddedDisplayId() { return virtualDisplay==null?-1:virtualDisplay.getDisplayId(); }
 
     boolean isMaxPane() {
         return "ru.oneme.app".equals(entry.component.getPackageName());
@@ -1285,7 +1287,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 || interactiveGesture) {
             return;
         }
-        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        int displayId = virtualDisplay.getDisplayId();
         int startX = Math.max(0, getWidth() - dp(24));
         int y = Math.max(0, getHeight() - dp(24));
         int holdX = Math.max(0, startX - dp(16));
@@ -1358,7 +1360,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 || !canHandleSteeringPulse(longPress)) {
             return;
         }
-        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        int displayId = virtualDisplay.getDisplayId();
         int startX = Math.max(0, getWidth() - dp(24));
         int y = Math.max(0, getHeight() - dp(24));
 
@@ -1408,7 +1410,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 if (generation != voiceGestureGeneration
                         || voiceState != VoiceState.CONFIRMING_SEND
                         || virtualDisplay == null
-                        || virtualDisplay.getDisplay().getDisplayId()
+                        || virtualDisplay.getDisplayId()
                         != displayId) {
                     return;
                 }
@@ -1442,7 +1444,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         postDelayed(() -> {
             if (voiceState == expectedState
                     && virtualDisplay != null
-                    && virtualDisplay.getDisplay().getDisplayId() == displayId) {
+                    && virtualDisplay.getDisplayId() == displayId) {
                 shellBridgeClient.injectSingleFingerMotion(
                         displayId, MotionEvent.ACTION_UP, x, y);
                 voiceState = nextState;
@@ -1453,7 +1455,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private void finishPulseLock(int generation, int displayId,
                                  int x, int y) {
         if (generation != voiceGestureGeneration || virtualDisplay == null
-                || virtualDisplay.getDisplay().getDisplayId() != displayId
+                || virtualDisplay.getDisplayId() != displayId
                 || voiceState != VoiceState.RECORDING) {
             return;
         }
@@ -1466,7 +1468,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                                       int action, int x, int y,
                                       boolean beginHeartbeat) {
         if (generation != voiceGestureGeneration || virtualDisplay == null
-                || virtualDisplay.getDisplay().getDisplayId() != displayId
+                || virtualDisplay.getDisplayId() != displayId
                 || voiceState != VoiceState.RECORDING) {
             return;
         }
@@ -1481,29 +1483,29 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
 
     @SuppressLint("WrongConstant")
     private void createDisplayAndLaunch() {
-        if (virtualDisplay != null || getWidth() <= 0 || getHeight() <= 0
+        if (released || virtualDisplay != null || getWidth() <= 0 || getHeight() <= 0
                 || !surfaceView.getHolder().getSurface().isValid()) {
             return;
         }
-        DisplayManager manager = (DisplayManager)
-                getContext().getSystemService(Context.DISPLAY_SERVICE);
-        int density = getResources().getDisplayMetrics().densityDpi;
-        Surface surface = surfaceView.getHolder().getSurface();
-        virtualDisplay = manager.createVirtualDisplay(
-                "BYD-Split-" + paneName,
-                getWidth(),
-                getHeight(),
-                density,
-                surface,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
-                        | DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
-                        | VIRTUAL_DISPLAY_FLAG_SUPPORTS_TOUCH);
+        if (android.os.Build.VERSION.SDK_INT == 28 && !ShellDisplayBridge.ready()) {
+            if (++displayCreateAttempts <= 40) postDelayed(this::createDisplayAndLaunch, 200);
+            else showFailure("Нет связи с ADB-помощником экрана. Проверьте подключение ADB.");
+            return;
+        }
+        try {
+            virtualDisplay = EmbeddedDisplay.create(getContext(), paneName, getWidth(), getHeight(),
+                    getResources().getDisplayMetrics().densityDpi, surfaceView.getHolder().getSurface());
+        } catch (Exception e) {
+            Log.e(TAG, "Cannot create embedded display", e);
+            showFailure("Не удалось создать встроенный экран");
+            return;
+        }
         if (virtualDisplay == null) {
             showFailure("Не удалось создать встроенный экран");
             return;
         }
 
-        int displayId = virtualDisplay.getDisplay().getDisplayId();
+        int displayId = virtualDisplay.getDisplayId();
         String launchedComponent = entry.component.flattenToString();
         shellBridgeClient.launchOnDisplay(
                 launchedComponent,
@@ -1538,7 +1540,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 getResources().getDisplayMetrics().densityDpi);
         virtualDisplay.setSurface(surface);
         Log.i(TAG, paneName + " surface attached to existing display "
-                + virtualDisplay.getDisplay().getDisplayId());
+                + virtualDisplay.getDisplayId());
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -1634,8 +1636,12 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         if (virtualDisplay == null) {
             return;
         }
+        if (bufferedDeleteDown != null) {
+            sendMotion(bufferedDeleteDown);
+            return;
+        }
         shellBridgeClient.injectSingleFingerMotion(
-                virtualDisplay.getDisplay().getDisplayId(),
+                virtualDisplay.getDisplayId(),
                 MotionEvent.ACTION_DOWN,
                 Math.round(deleteTouchStartX),
                 Math.round(deleteTouchStartY));
@@ -1643,7 +1649,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
 
     private void sendMotion(MotionEvent event) {
         shellBridgeClient.injectMotionEvent(
-                virtualDisplay.getDisplay().getDisplayId(),
+                virtualDisplay.getDisplayId(),
                 event);
     }
 

@@ -2,6 +2,10 @@ package ru.logunov.bydsplit;
 
 import android.content.Context;
 import android.os.SystemClock;
+import android.os.Build;
+import android.view.KeyEvent;
+import android.view.InputEvent;
+import android.view.InputDevice;
 import android.util.Log;
 import android.view.MotionEvent;
 
@@ -33,6 +37,7 @@ final class ShellBridgeClient {
     private final AtomicReference<String> latestMove = new AtomicReference<>();
     private final AtomicBoolean moveDrainScheduled = new AtomicBoolean();
     private final LocalAdbManager localAdb;
+    private final java.util.Map<Integer, Long> downTimes = new java.util.HashMap<>();
 
     ShellBridgeClient(Context context) {
         localAdb = LocalAdbManager.get(context);
@@ -104,7 +109,16 @@ final class ShellBridgeClient {
         if (displayId < 1 || displayId > 999) {
             return;
         }
-        executor.execute(() -> localAdb.injectBack(displayId));
+        if (Build.VERSION.SDK_INT == 28) {
+            executor.execute(() -> {
+                long now = SystemClock.uptimeMillis();
+                for (int action : new int[]{KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP}) {
+                    sendOwned(displayId, new KeyEvent(now, SystemClock.uptimeMillis(), action,
+                            KeyEvent.KEYCODE_BACK, 0, 0, -1, 0, KeyEvent.FLAG_FROM_SYSTEM,
+                            InputDevice.SOURCE_KEYBOARD));
+                }
+            });
+        } else executor.execute(() -> localAdb.injectBack(displayId));
     }
 
     void injectSingleFingerMotion(int displayId, int action, int x, int y) {
@@ -113,6 +127,18 @@ final class ShellBridgeClient {
                 && action != MotionEvent.ACTION_MOVE
                 && action != MotionEvent.ACTION_UP
                 && action != MotionEvent.ACTION_CANCEL)) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT == 28) {
+            executor.execute(() -> {
+                long now = SystemClock.uptimeMillis();
+                if (action == MotionEvent.ACTION_DOWN) downTimes.put(displayId, now);
+                long down = downTimes.containsKey(displayId) ? downTimes.get(displayId) : now;
+                MotionEvent event = MotionEvent.obtain(down, now, action, x, y, 0);
+                event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+                sendOwned(displayId, event);
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) downTimes.remove(displayId);
+            });
             return;
         }
         String command = "BYD_FAST_MULTI_V1 " + TOKEN + " " + displayId
@@ -124,6 +150,11 @@ final class ShellBridgeClient {
     void injectMotionEvent(int displayId, MotionEvent event) {
         if (displayId < 1 || displayId > 999
                 || event.getPointerCount() < 1 || event.getPointerCount() > 10) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT == 28) {
+            MotionEvent copy = MotionEvent.obtain(event);
+            executor.execute(() -> sendOwned(displayId, copy));
             return;
         }
         StringBuilder command = new StringBuilder("BYD_FAST_MULTI_V1 ")
@@ -161,6 +192,17 @@ final class ShellBridgeClient {
                 executor.execute(this::drainLatestMoves);
             }
         }
+    }
+
+    void releaseDisplay(int displayId) {
+        executor.execute(() -> { downTimes.remove(displayId); });
+    }
+
+    private void sendOwned(int display, InputEvent event) {
+        try {
+            if (!ShellDisplayBridge.input(display, event)) Log.e(TAG, "Shell display rejected input for " + display);
+        } catch (Exception e) { Log.e(TAG, "Shell display input failed for " + display, e); }
+        finally { if (event instanceof MotionEvent) ((MotionEvent) event).recycle(); }
     }
 
     private boolean sendCommand(String command, int port) {

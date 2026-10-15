@@ -95,6 +95,13 @@ final class LocalAdbClient implements Closeable {
         return runService("shell,v2,raw:" + command + "\0", true);
     }
 
+    /** Dedicated connection only: a foreground helper owns this shell for its lifetime. */
+    synchronized String persistentShell(String command) throws Exception {
+        connect();
+        socket.setSoTimeout(0);
+        return runService("shell:" + command + "\0", false);
+    }
+
     private String runService(String serviceName, boolean shellV2)
             throws Exception {
         connect();

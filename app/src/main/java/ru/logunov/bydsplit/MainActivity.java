@@ -415,7 +415,7 @@ public final class MainActivity extends ThemeActivity {
         quickMaxApp = resolveQuickApp(AppPreferences.KEY_QUICK_MAX_APP, PACKAGE_MAX);
         quickPhoneApp = findFirstInstalled(PACKAGE_ICCOA_CARLINK);
         compactAutoButton = addCompactButton(dock, "Авто",
-                getDrawable(R.drawable.dock_ui7_song),
+                getDrawable(R.drawable.dock_ui7_seagull),
                 () -> showVehicleDashboard(true), null);
         compactCameraButton = addCompactButton(dock, "Камеры",
                 getDrawable(R.drawable.dock_ui7_camera),
@@ -457,10 +457,10 @@ public final class MainActivity extends ThemeActivity {
         iconParams.topMargin = dp(7);
         button.addView(image, iconParams);
         TextView caption = new TextView(this);
-        caption.setText("Авто".equals(label) ? "BYD SEAGULL" : label.toUpperCase(java.util.Locale.ROOT));
+        caption.setText("Авто".equals(label) ? "ЧАЙКА" : label.toUpperCase(java.util.Locale.ROOT));
         caption.setTextColor(getColor(R.color.text_primary));
-        // Six equal dock cells must keep the longest Russian captions intact.
-        caption.setTextSize(9.5f);
+        // Five dock cells retain readable captions at 1366x768 / mdpi.
+        caption.setTextSize(12f);
         caption.setGravity(Gravity.CENTER);
         caption.setSingleLine(true);
         FrameLayout.LayoutParams captionParams = new FrameLayout.LayoutParams(
@@ -692,15 +692,7 @@ public final class MainActivity extends ThemeActivity {
             intent = Intent.makeMainActivity(new ComponentName(
                     "com.byd.mycar", "com.byd.mycar.StartActivity"));
         } else if (action == VehicleDashboardView.ACTION_CLIMATE) {
-            // Match the OEM navigation bar's climate launch contract.
-            intent = new Intent("OPEN_AIR_CONDITIONING_FUNCTION");
-            intent.addCategory(Intent.CATEGORY_DEFAULT);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            intent.putExtra("OPEN_AIR_CONDITIONING_FRAGMENT_ID", 1000);
-            intent.putExtra("from", "Navbar");
-            intent.setComponent(new ComponentName(
-                    "com.byd.airconditioning",
-                    "com.byd.airconditioning.mainactivity.FullScreenMainActivity"));
+            intent = new Intent(this, Di2ClimateActivity.class);
         } else if (action == VehicleDashboardView.ACTION_CAR_SETTINGS) {
             intent = Intent.makeMainActivity(new ComponentName(
                     "com.byd.carsettings", "com.byd.carsettings.MainActivity"));
@@ -1028,7 +1020,7 @@ public final class MainActivity extends ThemeActivity {
         TextView label = new TextView(this);
         label.setText(app.label);
         label.setTextColor(getColor(R.color.text_primary));
-        label.setTextSize(12);
+        label.setTextSize(14);
         label.setGravity(Gravity.CENTER);
         label.setMaxLines(2);
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(

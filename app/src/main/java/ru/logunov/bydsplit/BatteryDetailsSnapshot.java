@@ -6,6 +6,11 @@ final class BatteryDetailsSnapshot {
     final Integer minCellMv, maxCellMv;
     final Float lifetimeKwh, sessionKwh;
     final Integer bmsState;
+    BatteryDetailsSnapshot(VehicleTelemetrySnapshot vehicle) {
+        this.vehicle = vehicle;
+        minCellMv = null; maxCellMv = null;
+        lifetimeKwh = null; sessionKwh = null; bmsState = null;
+    }
     BatteryDetailsSnapshot(VehicleTelemetrySnapshot vehicle, int[] raw) {
         this.vehicle = vehicle;
         Integer min = cell(raw[0]), max = cell(raw[1]);

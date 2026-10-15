@@ -4,6 +4,12 @@ import java.util.*;
 final class TechSnapshot {
     final BatteryDetailsSnapshot battery;
     final Map<String,Double> values=new HashMap<>();
+    TechSnapshot(BatteryDetailsSnapshot battery, Map<String,Double> readings) {
+        this.battery = battery;
+        // Di2 SDK odometer is already km. Climate power is a 0/1 state.
+        if (readings.containsKey("mileage")) values.put("mileage", readings.get("mileage"));
+        if (readings.containsKey("power")) values.put("ac", readings.get("power"));
+    }
     // key, device, FID, transaction, scale, minimum, maximum
     static final Object[][] FIELDS={
         {"hv",1009,1145045000,5,1.,0.,1000.},

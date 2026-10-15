@@ -1,3 +1,5 @@
+> Ветка Seagull / DiLink 2: [перенос на другой ПК и текущее состояние](docs/HANDOFF-SEAGULL.md). Предварительный выпуск: `seagull-v0.9.2-alpha.1`.
+
 # BYD Split
 
 > **Ветка BYD Seagull:** подготовка адаптации под Android 9, DiLink 2 и экран

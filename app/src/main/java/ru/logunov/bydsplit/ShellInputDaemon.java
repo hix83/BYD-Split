@@ -9,7 +9,6 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -31,20 +30,13 @@ public final class ShellInputDaemon {
 
     @SuppressLint("BlockedPrivateApi")
     public static void main(String[] args) throws Exception {
-        Class<?> inputManagerClass = Class.forName(
-                "android.hardware.input.InputManager");
-        Method getInstance = inputManagerClass.getDeclaredMethod("getInstance");
-        Object inputManager = getInstance.invoke(null);
-        Method inject = inputManagerClass.getMethod(
-                "injectInputEvent", android.view.InputEvent.class, int.class);
-        Method setDisplayId = android.view.InputEvent.class.getDeclaredMethod(
-                "setDisplayId", int.class);
+        ShellEventInjector injector = new ShellEventInjector();
 
         try (ServerSocket server = new ServerSocket(
                 PORT, 8, InetAddress.getByName("127.0.0.1"))) {
             while (true) {
                 try (Socket socket = server.accept()) {
-                    handle(socket, inputManager, inject, setDisplayId);
+                    handle(socket, injector);
                 } catch (Exception ignored) {
                     // A malformed event must not stop input for both panes.
                 }
@@ -52,8 +44,7 @@ public final class ShellInputDaemon {
         }
     }
 
-    private static void handle(Socket socket, Object manager, Method inject,
-                               Method setDisplayId) throws Exception {
+    private static void handle(Socket socket, ShellEventInjector injector) throws Exception {
         BufferedReader reader = new BufferedReader(new InputStreamReader(
                 socket.getInputStream(), StandardCharsets.UTF_8));
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
@@ -74,7 +65,7 @@ public final class ShellInputDaemon {
         }
 
         if ("BYD_FAST_MULTI_V1".equals(parts[0])) {
-            injectMulti(parts, manager, inject, setDisplayId, writer);
+            injectMulti(parts, injector, writer);
             return;
         }
         if (!"BYD_FAST_MOTION_V1".equals(parts[0]) || parts.length != 6) {
@@ -97,10 +88,9 @@ public final class ShellInputDaemon {
         MotionEvent event = MotionEvent.obtain(
                 downTime, now, action, x, y, 0);
         event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        setDisplayId.invoke(event, displayId);
         boolean injected;
         try {
-            injected = (Boolean) inject.invoke(manager, event, 0);
+            injected = injector.inject(event, displayId, 0);
         } finally {
             event.recycle();
         }
@@ -112,8 +102,8 @@ public final class ShellInputDaemon {
         writer.flush();
     }
 
-    private static void injectMulti(String[] parts, Object manager, Method inject,
-                                    Method setDisplayId, BufferedWriter writer)
+    private static void injectMulti(String[] parts, ShellEventInjector injector,
+                                    BufferedWriter writer)
             throws Exception {
         int displayId = Integer.parseInt(parts[2]);
         int actionMasked = Integer.parseInt(parts[3]);
@@ -173,10 +163,9 @@ public final class ShellInputDaemon {
                 0,
                 InputDevice.SOURCE_TOUCHSCREEN,
                 0);
-        setDisplayId.invoke(event, displayId);
         boolean injected;
         try {
-            injected = (Boolean) inject.invoke(manager, event, 0);
+            injected = injector.inject(event, displayId, 0);
         } finally {
             event.recycle();
         }
