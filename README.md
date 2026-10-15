@@ -1,5 +1,10 @@
 # BYD Split
 
+> **Ветка BYD Seagull:** подготовка адаптации под Android 9, DiLink 2 и экран
+> 10,8″. Совместимость с автомобилем пока не проверена.
+> [План и настройка разработки](docs/SEAGULL.md).
+> Далее сохранено описание исходной версии для Song L DM-i / DiLink 5.
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Android CI](https://github.com/hix83/BYD-Split/actions/workflows/android.yml/badge.svg)](https://github.com/hix83/BYD-Split/actions/workflows/android.yml)
 
