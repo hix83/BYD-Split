@@ -32,7 +32,7 @@ import java.util.List;
 import java.lang.ref.WeakReference;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public final class MainActivity extends Activity {
+public final class MainActivity extends ThemeActivity {
     private static final class CompactButtonVisual {
         final ImageView tile;
         final View indicator;
@@ -408,7 +408,7 @@ public final class MainActivity extends Activity {
         dock.setOrientation(LinearLayout.HORIZONTAL);
         dock.setGravity(Gravity.CENTER);
         dock.setPadding(0, dp(5), 0, dp(4));
-        dock.setBackground(roundedBackground(0xFF1D252E, 12));
+        dock.setBackground(roundedBackground(getColor(R.color.surface_light), 12));
 
         quickMusicApp = resolveQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP,
                 PACKAGE_YANDEX_MUSIC, PACKAGE_YANDEX_MUSIC_ALT);
@@ -511,7 +511,7 @@ public final class MainActivity extends Activity {
                 visual.tile.setAlpha(1f);
                 visual.indicator.animate().cancel();
                 visual.indicator.setBackground(roundedBackground(
-                        active ? 0xFF2682DF : Color.TRANSPARENT, 3));
+                        active ? getColor(R.color.accent) : Color.TRANSPARENT, 3));
                 visual.indicator.setAlpha(active ? 1f : 0.22f);
                 visual.indicator.setElevation(0f);
             }
@@ -937,7 +937,7 @@ public final class MainActivity extends Activity {
                                     String preferenceKey, boolean driverPane) {
         FrameLayout pane = new FrameLayout(this);
         pane.setBackground(roundedBackground(
-                driverPane ? Color.rgb(24, 31, 40) : Color.rgb(20, 26, 34), 15));
+                getColor(R.color.surface_light), 15));
         pane.setPadding(dp(12), dp(12), dp(12), dp(12));
 
         LinearLayout content = new LinearLayout(this);
@@ -1027,7 +1027,7 @@ public final class MainActivity extends Activity {
 
         TextView label = new TextView(this);
         label.setText(app.label);
-        label.setTextColor(Color.WHITE);
+        label.setTextColor(getColor(R.color.text_primary));
         label.setTextSize(12);
         label.setGravity(Gravity.CENTER);
         label.setMaxLines(2);

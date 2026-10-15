@@ -28,12 +28,12 @@ final class VehicleDashboardView extends View {
     interface ActionListener {
         void onVehicleAction(int action);
     }
-    private static final int TEXT_PRIMARY = 0xFFDAE1EB;
-    private static final int TEXT_SECONDARY = 0xFF99A4AF;
-    private static final int BLUE = 0xFF2682DF;
+    private final int TEXT_PRIMARY;
+    private final int TEXT_SECONDARY;
+    private final int BLUE;
     private static final int ENERGY_BLUE = 0xFF55B8FF;
-    private static final int HEALTHY = 0xFF55C98A;
-    private static final int AMBER = 0xFFF0A95B;
+    private final int HEALTHY;
+    private final int AMBER;
     private static final long FLOW_FRAME_INTERVAL_MS = 80L;
 
     private final android.graphics.Typeface ui7Typeface;
@@ -48,6 +48,7 @@ final class VehicleDashboardView extends View {
     private final float[] flowPosition = new float[2];
     private final float[] flowTangent = new float[2];
     private final Bitmap vehicleBitmap;
+    private final Bitmap vehicleShadow;
     private final Bitmap[] nativeBattery = new Bitmap[21];
     private final NativeEnergySprites nativeFlows;
     private final Bitmap driveActiveBitmap;
@@ -71,12 +72,18 @@ final class VehicleDashboardView extends View {
 
     VehicleDashboardView(Context context, ActionListener actionListener) {
         super(context);
+        TEXT_PRIMARY = context.getColor(R.color.text_primary);
+        TEXT_SECONDARY = context.getColor(R.color.text_secondary);
+        BLUE = context.getColor(R.color.accent);
+        HEALTHY = context.getColor(R.color.success);
+        AMBER = context.getColor(R.color.warning);
         ui7Typeface = context.getResources().getFont(R.font.ui7_regular);
         nativeFlows = new NativeEnergySprites(getResources());
         this.actionListener = actionListener;
         demoMode = AppPreferences.isDemoModeEnabled(context);
         vehicleBitmap = BitmapFactory.decodeResource(
                 getResources(), R.drawable.ui7_dmi_body);
+        vehicleShadow = BitmapFactory.decodeResource(getResources(), R.drawable.di5_car_shadow);
         int[] batteryIds = {R.drawable.ui7_dmi_battery_0,R.drawable.ui7_dmi_battery_1,R.drawable.ui7_dmi_battery_2,R.drawable.ui7_dmi_battery_3,R.drawable.ui7_dmi_battery_4,R.drawable.ui7_dmi_battery_5,R.drawable.ui7_dmi_battery_6,R.drawable.ui7_dmi_battery_7,R.drawable.ui7_dmi_battery_8,R.drawable.ui7_dmi_battery_9,R.drawable.ui7_dmi_battery_10,R.drawable.ui7_dmi_battery_11,R.drawable.ui7_dmi_battery_12,R.drawable.ui7_dmi_battery_13,R.drawable.ui7_dmi_battery_14,R.drawable.ui7_dmi_battery_15,R.drawable.ui7_dmi_battery_16,R.drawable.ui7_dmi_battery_17,R.drawable.ui7_dmi_battery_18,R.drawable.ui7_dmi_battery_19,R.drawable.ui7_dmi_battery_20};
         for (int i = 0; i < batteryIds.length; i++) nativeBattery[i] = loadBitmap(batteryIds[i]);
         driveActiveBitmap = loadBitmap(R.drawable.ui7_dmi_drive_active);
@@ -120,7 +127,7 @@ final class VehicleDashboardView extends View {
     private void drawBackground(Canvas canvas, float width, float height) {
         paint.setShader(new LinearGradient(
                 0, 0, width, height,
-                new int[]{0xFF1D252E, 0xFF191F27, 0xFF15181F},
+                new int[]{getContext().getColor(R.color.surface_light), getContext().getColor(R.color.surface_light), getContext().getColor(R.color.background)},
                 new float[]{0f, 0.53f, 1f}, Shader.TileMode.CLAMP));
         canvas.drawRoundRect(new RectF(0, 0, width, height),
                 width * 0.035f, width * 0.035f, paint);
@@ -128,7 +135,7 @@ final class VehicleDashboardView extends View {
 
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(Math.max(1f, width * 0.0015f));
-        paint.setColor(0x24B0B0B0);
+        paint.setColor(getContext().getColor(R.color.divider));
         canvas.drawRoundRect(new RectF(1, 1, width - 1, height - 1),
                 width * 0.035f, width * 0.035f, paint);
         paint.setStyle(Paint.Style.FILL);
@@ -180,11 +187,11 @@ final class VehicleDashboardView extends View {
         float heading = bearing == null ? 0f : bearing;
 
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(0xFF222B34);
+        paint.setColor(getContext().getColor(R.color.card));
         canvas.drawCircle(centerX, centerY, radius, paint);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(width * .003f);
-        paint.setColor(0xFF46515C);
+        paint.setColor(getContext().getColor(R.color.divider));
         canvas.drawCircle(centerX, centerY, radius, paint);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeWidth(width * .005f);
@@ -201,7 +208,7 @@ final class VehicleDashboardView extends View {
             drawText(canvas, points[index], x, y, width * .027f,
                     index == 0 ? BLUE : TEXT_PRIMARY, Paint.Align.CENTER);
         }
-        paint.setColor(Color.WHITE);
+        paint.setColor(TEXT_PRIMARY);
         path.reset();
         path.moveTo(centerX, centerY - radius * 1.16f);
         path.lineTo(centerX - radius * .16f, centerY - radius * .83f);
@@ -232,7 +239,8 @@ final class VehicleDashboardView extends View {
         canvas.save();
         canvas.translate(left, top);
         canvas.scale(scale, scale);
-        paint.setAlpha(155);
+        paint.setAlpha(255);
+        canvas.drawBitmap(vehicleShadow, null, new RectF(0, 0, 1170, 1034), paint);
         canvas.drawBitmap(vehicleBitmap, null, new RectF(0, 0, 1170, 1034), paint);
         paint.setAlpha(255);
 
@@ -354,7 +362,7 @@ final class VehicleDashboardView extends View {
             float chipLeft = left + index * (chipWidth + gap);
             RectF chip = actionBounds[index];
             chip.set(chipLeft, top, chipLeft + chipWidth, bottom);
-            paint.setColor(0xFF262D33);
+            paint.setColor(getContext().getColor(R.color.button));
             canvas.drawRoundRect(chip, width * 0.018f,
                     width * 0.018f, paint);
             drawActionIcon(canvas, index, chip.centerX(),
@@ -376,13 +384,13 @@ final class VehicleDashboardView extends View {
         int[] icons = {R.drawable.ui7_oem_car, R.drawable.ui7_climate, R.drawable.ui7_car_settings, R.drawable.ui7_home, R.drawable.ui7_tech};
         android.graphics.drawable.Drawable icon = getContext().getDrawable(icons[action]);
         icon = icon.mutate();
-        icon.setTint(Color.WHITE);
+        icon.setTint(TEXT_PRIMARY);
         if (action == ACTION_AUTO) {
             // OEM default PNG peaks at alpha 152; white tint alone retains that dimness.
             icon.setColorFilter(new android.graphics.ColorMatrixColorFilter(new float[]{
-                    0, 0, 0, 0, 255,
-                    0, 0, 0, 0, 255,
-                    0, 0, 0, 0, 255,
+                    0, 0, 0, 0, Color.red(TEXT_PRIMARY),
+                    0, 0, 0, 0, Color.green(TEXT_PRIMARY),
+                    0, 0, 0, 0, Color.blue(TEXT_PRIMARY),
                     0, 0, 0, 255f / 152f, 0}));
         }
         float opticalScale = action == ACTION_CLIMATE ? 1.30f

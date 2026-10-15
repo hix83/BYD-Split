@@ -26,7 +26,7 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class SettingsActivity extends Activity
+public final class SettingsActivity extends ThemeActivity
         implements SteeringEventServer.KeyCaptureListener {
     private Button oneTwoButton;
     private Button twoOneButton;
@@ -151,7 +151,7 @@ public final class SettingsActivity extends Activity
         header.addView(back, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(52)));
 
-        TextView title = text("Настройки BYD Split", 28, Color.WHITE);
+        TextView title = text("Настройки BYD Split", 28, getColor(R.color.text_primary));
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         titleParams.setMarginStart(dp(24));
@@ -222,6 +222,30 @@ public final class SettingsActivity extends Activity
         LinearLayout.LayoutParams steeringParams = fullWidthWrap();
         steeringParams.topMargin = dp(16);
         root.addView(steeringCard, steeringParams);
+
+        LinearLayout themeCard = card();
+        themeCard.addView(sectionTitle("Оформление"));
+        TextView themeHelp = text("Авто следует дневной/ночной теме автомобиля. Можно выбрать тему только для лаунчера.",
+                15, getColor(R.color.text_secondary));
+        addWithTop(themeCard, themeHelp, 8);
+        LinearLayout themeActions = horizontalActions();
+        String[] themeModes = {ThemePolicy.AUTO, ThemePolicy.DAY, ThemePolicy.NIGHT};
+        String[] themeLabels = {"Как в автомобиле", "Дневная", "Ночная"};
+        String selectedTheme = AppPreferences.get(this).getString(ThemeManager.KEY, ThemePolicy.AUTO);
+        for (int i = 0; i < themeModes.length; i++) {
+            final String mode = themeModes[i];
+            Button button = actionButton(themeLabels[i]);
+            button.setSelected(mode.equals(selectedTheme));
+            if (mode.equals(selectedTheme)) button.setTextColor(getColor(R.color.accent));
+            button.setOnClickListener(v -> {
+                AppPreferences.get(this).edit().putString(ThemeManager.KEY, mode).apply();
+                recreate();
+            });
+            themeActions.addView(button, weightedButtonParams());
+        }
+        addWithTop(themeCard, themeActions, 12);
+        LinearLayout.LayoutParams themeParams = fullWidthWrap(); themeParams.topMargin = dp(16);
+        root.addView(themeCard, themeParams);
 
         LinearLayout behaviorCard = card();
         behaviorCard.addView(sectionTitle("Поведение"));
@@ -384,7 +408,7 @@ public final class SettingsActivity extends Activity
             TextView label = text(place.name + "  ·  "
                     + Math.round(place.radiusMeters) + " м\n"
                     + String.format(java.util.Locale.US, "%.6f, %.6f",
-                    place.latitude, place.longitude), 15, Color.WHITE);
+                    place.latitude, place.longitude), 15, getColor(R.color.text_primary));
             row.addView(label, new LinearLayout.LayoutParams(0, dp(58), 1f));
             Button edit = actionButton("На карте");
             edit.setOnClickListener(view -> PlaceMapDialog.show(this, place,
@@ -463,7 +487,7 @@ public final class SettingsActivity extends Activity
     private View pageHeader(String titleValue, String description) {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.addView(text(titleValue, 27, Color.WHITE));
+        header.addView(text(titleValue, 27, getColor(R.color.text_primary)));
         addWithTop(header, text(description, 15, getColor(R.color.text_secondary)), 6);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -476,7 +500,7 @@ public final class SettingsActivity extends Activity
         EditText input = new EditText(this);
         input.setHint(hint);
         input.setText(value);
-        input.setTextColor(Color.WHITE);
+        input.setTextColor(getColor(R.color.text_primary));
         input.setHintTextColor(getColor(R.color.text_secondary));
         input.setSingleLine(true);
         input.setPadding(dp(14), 0, dp(14), 0);
@@ -627,7 +651,7 @@ public final class SettingsActivity extends Activity
     }
 
     private TextView sectionTitle(String value) {
-        return text(value, 21, Color.WHITE);
+        return text(value, 21, getColor(R.color.text_primary));
     }
 
     private TextView text(String value, int size, int color) {
@@ -642,7 +666,7 @@ public final class SettingsActivity extends Activity
     private Button actionButton(String label) {
         Button button = new Button(this);
         button.setText(label);
-        button.setTextColor(Color.WHITE);
+        button.setTextColor(getColor(R.color.text_primary));
         button.setTextSize(14);
         button.setAllCaps(false);
         button.setGravity(Gravity.CENTER);
@@ -654,7 +678,7 @@ public final class SettingsActivity extends Activity
     private Switch settingsSwitch(String label, boolean checked) {
         Switch view = new Switch(this);
         view.setText(label);
-        view.setTextColor(Color.WHITE);
+        view.setTextColor(getColor(R.color.text_primary));
         view.setTextSize(16);
         view.setChecked(checked);
         view.setGravity(Gravity.CENTER_VERTICAL);

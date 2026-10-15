@@ -1,0 +1,12 @@
+<resources>
+    <color name="background">#ff111b23</color>
+    <color name="surface_light">#171b23</color>
+    <color name="accent">#ff00aceb</color>
+    <color name="button">#406a8497</color>
+    <color name="text_primary">#ffdae1eb</color>
+    <color name="text_secondary">#b3dae1eb</color>
+    <color name="card">#ff141a22</color>
+    <color name="divider">#12ffffff</color>
+    <color name="success">#55c98a</color>
+    <color name="warning">#f0a95b</color>
+</resources>

@@ -14,3 +14,7 @@ photo_*.jpg
 /tmp/
 *.incomplete
 *.stderr
+
+# Owner-supplied OTA firmware archives (local analysis only)
+/Di2*.zip
+/Di5*.zip

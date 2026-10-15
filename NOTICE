@@ -12,3 +12,7 @@ Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
 These adapted components are licensed under PolyForm Noncommercial License 1.0.0,
 not Apache 2.0. Terms: https://polyformproject.org/licenses/noncommercial/1.0.0/
 Full license included in app/src/main/assets/BYDMate-LICENSE.txt and in APK assets.
+
+Factory DiLink image assets imported from the owner's Di5 OTA remain BYD assets.
+Source paths and hashes: docs/firmware/di5-resource-map.json.
+Their inclusion does not relicense these assets under Apache 2.0.

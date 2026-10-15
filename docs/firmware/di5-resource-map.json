@@ -1,0 +1,128 @@
+[
+  {
+    "night": false,
+    "target": "background",
+    "source": "common_activity_background_color",
+    "value": "#fff3f8fd"
+  },
+  {
+    "night": false,
+    "target": "surface_light",
+    "source": "newenergy_background_color",
+    "value": "#fff3f8fd"
+  },
+  {
+    "night": false,
+    "target": "accent",
+    "source": "common_uilib_selected_focus_color",
+    "value": "#ff00aceb"
+  },
+  {
+    "night": false,
+    "target": "button",
+    "source": "byd_widget_color_button_gray_bg_solid_ui5_ocean",
+    "value": "#266a8497"
+  },
+  {
+    "night": false,
+    "target": "text_primary",
+    "source": "common_uilib_5_dialog_content_text_color",
+    "value": "#ff262d33"
+  },
+  {
+    "night": false,
+    "target": "text_secondary",
+    "source": "common_uilib_5_dialog_content_sub_text_color",
+    "value": "#b3262d33"
+  },
+  {
+    "night": false,
+    "target": "card",
+    "source": "common_uilib_dipilot_card_color",
+    "value": "#e0f7fcff"
+  },
+  {
+    "night": false,
+    "target": "divider",
+    "source": "common_uilib_divider",
+    "value": "#121f2326"
+  },
+  {
+    "night": false,
+    "source_file": "drawable-xhdpi\\newenergy_flow_car_img_suv.webp",
+    "sha256": "092e49b1454a9bfeb784d7050eb72157c896c860e72332ce9b1a09aa4c3aa9b6"
+  },
+  {
+    "night": false,
+    "source_file": "drawable-xhdpi\\common_back.png",
+    "sha256": "d479c74824ea1a203e245c865566c531c9adad174678bb0bd0decc8dfe1db2a5"
+  },
+  {
+    "night": true,
+    "target": "background",
+    "source": "common_activity_background_color",
+    "value": "#ff111b23"
+  },
+  {
+    "night": true,
+    "target": "surface_light",
+    "source": "newenergy_background_color",
+    "value": "#171b23"
+  },
+  {
+    "night": true,
+    "target": "accent",
+    "source": "common_uilib_selected_focus_color",
+    "value": "#ff00aceb"
+  },
+  {
+    "night": true,
+    "target": "button",
+    "source": "byd_widget_color_button_gray_bg_solid_ui5_ocean",
+    "value": "#406a8497"
+  },
+  {
+    "night": true,
+    "target": "text_primary",
+    "source": "common_uilib_5_dialog_content_text_color",
+    "value": "#ffdae1eb"
+  },
+  {
+    "night": true,
+    "target": "text_secondary",
+    "source": "common_uilib_5_dialog_content_sub_text_color",
+    "value": "#b3dae1eb"
+  },
+  {
+    "night": true,
+    "target": "card",
+    "source": "common_uilib_dipilot_card_color",
+    "value": "#ff141a22"
+  },
+  {
+    "night": true,
+    "target": "divider",
+    "source": "common_uilib_divider",
+    "value": "#12ffffff"
+  },
+  {
+    "night": true,
+    "source_file": "drawable-night-xhdpi\\newenergy_flow_car_img_suv.webp",
+    "sha256": "32813a247881ecfa6336e9067d89ccb43bd1ca746858c025e7938ce290cb56e8"
+  },
+  {
+    "night": true,
+    "source_file": "drawable-night-xhdpi\\common_back.png",
+    "sha256": "c17eba06ef32c35787fb71bf5f5f575f62371c5d4bc614c1ebeb6dbe7649e4ea"
+  },
+  {
+    "night": false,
+    "source_file": "drawable-xhdpi/newenergy_flow_car_img_suv_shadow.webp",
+    "sha256": "96f2e4b8a443468751bd5053fb54d0dd808d29e897a87e4ff8c8fc16f2aebd63"
+  },
+  {
+    "night": true,
+    "source_file": "drawable-night-xhdpi/newenergy_flow_car_img_suv_shadow.webp",
+    "sha256": "97f3e77b033b85b8144c2edb0133da5dbda566a578e108cbce3b6b140fafcbd9"
+  }
+]

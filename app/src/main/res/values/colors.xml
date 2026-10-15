@@ -1,11 +1,12 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#15181F</color>
-    <color name="surface_light">#1D252E</color>
-    <color name="accent">#2682DF</color>
-    <color name="success">#55C98A</color>
-    <color name="warning">#F0A95B</color>
-    <color name="button">#262D33</color>
-    <color name="text_primary">#DAE1EB</color>
-    <color name="text_secondary">#99A4AF</color>
+    <color name="background">#fff3f8fd</color>
+    <color name="surface_light">#fff3f8fd</color>
+    <color name="accent">#ff00aceb</color>
+    <color name="button">#266a8497</color>
+    <color name="text_primary">#ff262d33</color>
+    <color name="text_secondary">#b3262d33</color>
+    <color name="card">#e0f7fcff</color>
+    <color name="divider">#121f2326</color>
+    <color name="success">#238344</color>
+    <color name="warning">#9e5b16</color>
 </resources>

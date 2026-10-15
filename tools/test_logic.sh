@@ -10,7 +10,8 @@ source_dir=app/src/main/java/ru/logunov/bydsplit
   "$source_dir/BatteryDetailsSnapshot.java" "$source_dir/TechSnapshot.java" \
   "$source_dir/ClusterTrackText.java" "$source_dir/UpdateVersion.java" \
   "$source_dir/DmiEnergyFlow.java" "$source_dir/TemperatureRules.java" \
-  "$source_dir/MaxCallClassifier.java" "$source_dir/MaxTaskParser.java" tests/*.java
+  "$source_dir/MaxCallClassifier.java" "$source_dir/MaxTaskParser.java" \
+  "$source_dir/ThemePolicy.java" tests/*.java
 for test_file in tests/*Test.java; do
   test_class=$(basename "$test_file" .java)
   "${java_bin}java" -cp "$test_classes" "ru.logunov.bydsplit.$test_class"
