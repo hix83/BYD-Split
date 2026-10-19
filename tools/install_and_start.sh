@@ -2,8 +2,8 @@
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-serial="${1:-10.14.32.18:5555}"
-apk="$project_dir/app/build/outputs/apk/debug/app-debug.apk"
+serial="${1:?Usage: tools/install_and_start.sh SERIAL}"
+apk="$project_dir/app/build/outputs/apk/release/app-release.apk"
 
 cd "$project_dir"
 
@@ -34,9 +34,10 @@ if ! adb -s "$serial" get-state 2>/dev/null | grep -q '^device$'; then
 fi
 
 if [ "${BYD_SPLIT_SKIP_BUILD:-0}" != "1" ] || [ ! -f "$apk" ]; then
-    ./gradlew assembleDebug
+    ./gradlew assembleRelease
 fi
 
+"$project_dir/tools/verify_release_apk.sh" "$apk"
 adb -s "$serial" install -r "$apk"
 "$project_dir/tools/start_helpers.sh" "$serial"
 adb -s "$serial" shell am start \

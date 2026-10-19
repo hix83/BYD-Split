@@ -21,3 +21,6 @@ photo_*.jpg
 # Owner-supplied OTA firmware archives (local analysis only)
 /Di2*.zip
 /Di5*.zip
+
+# Generated signed publication assets
+/dist/

@@ -32,7 +32,7 @@ Song L DM-i на Seagull без проверки. Seagull — электромо
 `main` автоматически. Сохранять происхождение переносимых коммитов (`-x`).
 
 Сохраняются исходные applicationId и механизм обновления.
-Текущий предварительный выпуск: 0.9.2-seagull-alpha.4, versionCode 40.
+Текущий предварительный выпуск: 0.9.2-seagull-alpha.5, versionCode 41.
 Seagull публикуется как prerelease, без замены latest стабильного Song.
 Канал обновлений Seagull изолирован тегами seagull-v*: APK BYD-Split-Seagull-*.apk.
 Сборки выпусков делать из ветки seagull и подписывать тем же ключом, что
@@ -64,3 +64,9 @@ README.md — пользовательское описание Seagull. Не д
 разработки — docs/DEVELOPMENT.md, передача контекста — docs/HANDOFF-SEAGULL.md.
 Не использовать скриншоты Song/DM-i для Seagull. Не представлять изменения
 рабочей ветки как уже опубликованные в alpha.4.
+
+Для будущих публикаций и установки на тестовый стенд использовать постоянный
+релизный сертификат signing/seagull-release-cert.sha256 и release APK.
+Подготовка: tools/build_release.sh; публикация: tools/publish_release.sh.
+Не загружать в Releases CI debug APK, не перезаписывать alpha.4 новым ключом.
+Перед сборкой сверять origin/seagull: на другом ПК могут быть новые доработки.

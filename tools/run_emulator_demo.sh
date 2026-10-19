@@ -5,7 +5,7 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 serial="${1:-emulator-5554}"
 avd="${BYD_SPLIT_AVD:-BYD_AUTO_Dilink5.0_virtual}"
 emulator_bin="${ANDROID_HOME:-$HOME/Library/Android/sdk}/emulator/emulator"
-apk="$project_dir/app/build/outputs/apk/debug/app-debug.apk"
+apk="$project_dir/app/build/outputs/apk/release/app-release.apk"
 
 cd "$project_dir"
 
@@ -32,7 +32,8 @@ if ! adb -s "$serial" get-state >/dev/null 2>&1; then
     done
 fi
 
-./gradlew assembleDebug
+./gradlew assembleRelease
+"$project_dir/tools/verify_release_apk.sh" "$apk"
 adb -s "$serial" install -r "$apk"
 "$project_dir/tools/start_helpers.sh" "$serial" emulator
 adb -s "$serial" shell am start \

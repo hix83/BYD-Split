@@ -77,8 +77,20 @@ do {
 & $adb -s $serial reverse tcp:5555 "tcp:$($Port + 1)"
 if ($LASTEXITCODE -ne 0) { throw 'Cannot configure local ADB transport for the launcher.' }
 if ($InstallApp) {
-    $apk = Join-Path $projectRoot 'app/build/outputs/apk/debug/app-debug.apk'
-    if (!(Test-Path $apk)) { throw 'Build assembleDebug first.' }
+    $apk = Join-Path $projectRoot 'app/build/outputs/apk/release/app-release.apk'
+    if (!(Test-Path $apk)) { throw 'Build assembleRelease with the Seagull release key first.' }
+    $signer = Join-Path $SdkRoot 'build-tools/35.0.0/apksigner.bat'
+    $aapt = Join-Path $SdkRoot 'build-tools/35.0.0/aapt.exe'
+    $expected = (Get-Content (Join-Path $projectRoot 'signing/seagull-release-cert.sha256') -Raw).Trim()
+    $certificates = & $signer verify --print-certs $apk
+    if ($LASTEXITCODE -ne 0 -or $certificates -notcontains "Signer #1 certificate SHA-256 digest: $expected") {
+        throw 'Seagull release certificate mismatch.'
+    }
+    $badging = & $aapt dump badging $apk
+    if ($LASTEXITCODE -ne 0 -or ($badging -match '^application-debuggable') -or
+            $badging[0] -notmatch "name='ru.logunov.bydsplit'.*versionName='[0-9]+\.[0-9]+\.[0-9]+-seagull(-[a-z]+\.[0-9]+)?'") {
+        throw 'Not a Seagull release APK.'
+    }
     & $adb -s $serial install -r -g $apk
     if ($LASTEXITCODE -ne 0) { throw 'APK installation failed.' }
     & $adb -s $serial shell am start -n ru.logunov.bydsplit/.MainActivity --ez demo_mode true
