@@ -8,6 +8,9 @@
 *.jks
 *.keystore
 keystore.properties
+*.p12
+*.pfx
+/signing-private/
 photo_*.jpg
 
 # Local firmware extraction, personal captures and incomplete device backups

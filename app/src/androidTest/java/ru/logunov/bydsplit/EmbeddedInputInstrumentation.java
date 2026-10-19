@@ -14,10 +14,12 @@ public final class EmbeddedInputInstrumentation extends Instrumentation {
     private int display;
     private long down;
     private boolean dashboardOnly;
+    private boolean settingsOnly;
     private boolean displayLifecycleOnly;
     private boolean guestFocusOnly;
     private String paneName = "far";
     @Override public void onCreate(Bundle args) { super.onCreate(args);
+        settingsOnly = args != null && "true".equals(args.getString("settings_only"));
         guestFocusOnly = args != null && "true".equals(args.getString("guest_focus_only"));
         displayLifecycleOnly = args != null && "true".equals(args.getString("display_lifecycle_only"));
         dashboardOnly = args != null && "true".equals(args.getString("dashboard_only"));
@@ -29,6 +31,11 @@ public final class EmbeddedInputInstrumentation extends Instrumentation {
         try {
             if (Build.VERSION.SDK_INT != 28) throw new IllegalStateException("Run on API 28");
             Context context = getTargetContext();
+            if (settingsOnly) {
+                testSettingsPanel(context);
+                result.putString("stream", "PASS: settings panel sections, layout swap, retained guest view and Back restoration\n");
+                finish(-1, result); return;
+            }
             if (dashboardOnly) {
                 boolean previousDemo = AppPreferences.isDemoModeEnabled(context);
                 AppPreferences.get(context).edit().putBoolean(AppPreferences.KEY_DEMO_MODE, false).commit();
@@ -193,6 +200,60 @@ public final class EmbeddedInputInstrumentation extends Instrumentation {
             result.putString("stream", "FAIL: " + android.util.Log.getStackTraceString(e)); finish(0, result);
         } finally { if (bridge != null) bridge.close(); }
     }
+    private static Object field(Object owner, Class<?> type, String name) {
+        try { java.lang.reflect.Field f = type.getDeclaredField(name); f.setAccessible(true); return f.get(owner); }
+        catch (Exception e) { throw new IllegalStateException(e); }
+    }
+    private void testSettingsPanel(Context context) {
+        context.startActivity(new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra("open_settings", true));
+        MainActivity[] activity = {null}; SettingsView[] page = {null};
+        long deadline = SystemClock.uptimeMillis() + 15000;
+        while (page[0] == null && SystemClock.uptimeMillis() < deadline) {
+            runOnMainSync(() -> {
+                activity[0] = (MainActivity) ((java.lang.ref.WeakReference<?>) field(null, MainActivity.class, "currentActivity")).get();
+                if (activity[0] != null) page[0] = (SettingsView) field(activity[0], MainActivity.class, "settingsView");
+            });
+            if (page[0] == null) SystemClock.sleep(50);
+        }
+        check(page[0] != null, "settings opened inside launcher");
+        View[] guest = {null};
+        runOnMainSync(() -> {
+            MainActivity host = activity[0]; SettingsView settings = page[0];
+            guest[0] = (View) field(host, MainActivity.class, "farEmbeddedPane");
+            check(settings.getParent() == field(host, MainActivity.class, "farSlot"), "settings belongs to app panel");
+            check(settings.getContext() == host, "settings uses the launcher Activity");
+            android.widget.LinearLayout navigation = (android.widget.LinearLayout) field(settings, SettingsView.class, "navigation");
+            check(navigation.getChildCount() == 7, "all settings sections accessible");
+            for (int i = 0; i < 7; i++) {
+                navigation.getChildAt(i).performClick();
+                check(((android.widget.FrameLayout) field(settings, SettingsView.class, "pageHost")).getChildCount() == 1,
+                        "section content exists: " + i);
+            }
+            boolean original = AppPreferences.isCompactPaneOnLeft(host);
+            try {
+                java.lang.reflect.Method swap = SettingsView.class.getDeclaredMethod("setCompactPaneOnLeft", boolean.class);
+                swap.setAccessible(true);
+                try {
+                    swap.invoke(settings, !original);
+                    check(settings.getParent() == field(host, MainActivity.class, "farSlot"), "settings survives layout swap");
+                    check(guest[0] == field(host, MainActivity.class, "farEmbeddedPane"), "layout swap retains guest view");
+                } finally { swap.invoke(settings, original); }
+            } catch (Exception e) { throw new IllegalStateException(e); }
+            host.onBackPressed();
+        });
+        SystemClock.sleep(450);
+        runOnMainSync(() -> {
+            MainActivity host = activity[0];
+            check(field(host, MainActivity.class, "settingsView") == null, "Back closes settings");
+            check(!host.isFinishing(), "Back does not finish launcher");
+            if (guest[0] != null) {
+                check(guest[0].getParent() == field(host, MainActivity.class, "farSlot"), "original guest remains in panel");
+                check(guest[0].getTranslationX() == 0, "original guest translation restored");
+            }
+        });
+    }
+
     private Bundle stats() { return getTargetContext().getContentResolver().call(uri, "snapshot", null, null); }
     private void await(String key, int count) {
         long deadline = SystemClock.uptimeMillis() + 5000;

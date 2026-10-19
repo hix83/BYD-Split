@@ -73,6 +73,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private final Runnable deleteHoldRunnable = this::beginDeleteMode;
     private EmbeddedDisplay virtualDisplay;
     private int displayCreateAttempts;
+    private boolean startupPending;
+    private boolean needsAdbRecovery;
     private ImageView transitionSnapshot;
     private Bitmap transitionBitmap;
     private ImageView transitionIncoming;
@@ -1510,12 +1512,42 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             return;
         }
 
+        launchAfterAdbRecovery();
+    }
+
+    /** Only resume a waiting/failed pane. Healthy guests and their surfaces stay untouched. */
+    void recoverAfterAdbReady() {
+        if (released || startupPending || !isAttachedToWindow()
+                || !surfaceView.getHolder().getSurface().isValid()) return;
+        if (virtualDisplay != null && android.os.Build.VERSION.SDK_INT == 28) {
+            android.hardware.display.DisplayManager displays = (android.hardware.display.DisplayManager)
+                    getContext().getSystemService(Context.DISPLAY_SERVICE);
+            if (displays.getDisplay(virtualDisplay.getDisplayId()) == null) {
+                // The old helper died and Android removed its displays.
+                virtualDisplay = null;
+            }
+        }
+        if (virtualDisplay == null) {
+            displayCreateAttempts = 0;
+            createDisplayAndLaunch();
+        } else if (needsAdbRecovery) {
+            launchAfterAdbRecovery();
+        }
+    }
+
+    private void launchAfterAdbRecovery() {
         int displayId = virtualDisplay.getDisplayId();
+        int generation = appSwitchGeneration;
         String launchedComponent = entry.component.flattenToString();
+        startupPending = true;
         shellBridgeClient.launchOnDisplay(
                 launchedComponent,
                 displayId,
                 success -> post(() -> {
+                    startupPending = false;
+                    if (released || generation != appSwitchGeneration || virtualDisplay == null
+                            || virtualDisplay.getDisplayId() != displayId) return;
+                    needsAdbRecovery = !success;
                     if (success) {
                         Log.i(TAG, entry.component + " -> display " + displayId);
                         postDelayed(() ->
@@ -1659,6 +1691,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     }
 
     private void showFailure(String message) {
+        needsAdbRecovery = true;
         Toast.makeText(getContext(), message, Toast.LENGTH_LONG).show();
     }
 

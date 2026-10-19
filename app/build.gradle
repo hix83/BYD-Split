@@ -2,6 +2,47 @@ plugins {
     id 'com.android.application'
 }
 
+// Secrets stay outside Git; the same private directory can be copied between PCs.
+def signingPath = System.getenv('BYD_SIGNING_PROPERTIES')
+def signingFile = signingPath ? rootProject.file(signingPath) :
+        (rootProject.file('keystore.properties').isFile() ? rootProject.file('keystore.properties') :
+                new File(System.getProperty('user.home'), '.byd-split/signing/keystore.properties'))
+if (signingPath && !signingFile.isFile()) {
+    throw new GradleException('BYD_SIGNING_PROPERTIES points to a missing file.')
+}
+def sharedSigning = new Properties()
+def sharedStore = null
+if (signingFile.isFile()) {
+    signingFile.withInputStream { sharedSigning.load(it) }
+    ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].each { key ->
+        if (!sharedSigning.getProperty(key)?.trim()) throw new GradleException("Missing signing property: ${key}")
+    }
+    def path = new File(sharedSigning.getProperty('storeFile'))
+    sharedStore = path.isAbsolute() ? path : new File(signingFile.parentFile, path.path)
+    if (!sharedStore.isFile()) throw new GradleException('Shared Seagull keystore does not exist.')
+    try {
+        def store = java.security.KeyStore.getInstance(sharedSigning.getProperty('storeType', 'PKCS12'))
+        sharedStore.withInputStream { store.load(it, sharedSigning.getProperty('storePassword').toCharArray()) }
+        def alias = sharedSigning.getProperty('keyAlias')
+        if (!store.isKeyEntry(alias)) throw new GradleException('Signing alias must contain a private key.')
+        def certificate = store.getCertificate(alias)
+        def fingerprint = java.security.MessageDigest.getInstance('SHA-256').digest(certificate.encoded).encodeHex().toString()
+        def knownSigners = [
+                // Dedicated release key, created on 19 October 2026.
+                '2212fb7e72390b5119205bc78228060714ff110f10dbfdd4030281d41d7d7b2c',
+                // Legacy Mac key: permits compatible maintenance of existing alpha.4 installs.
+                '63442ad5ab88b867970e1d7480aa2e849ec46f63b20c61b2da837aa43d715d10'
+        ]
+        if (!knownSigners.contains(fingerprint)) {
+            throw new GradleException('Signing certificate is not a recognized Seagull release key.')
+        }
+    } catch (GradleException error) {
+        throw error
+    } catch (Exception error) {
+        throw new GradleException('Cannot read Seagull signing key. Check the keystore type, alias and password.')
+    }
+}
+
 android {
     namespace 'ru.logunov.bydsplit'
     compileSdk 35
@@ -15,8 +56,24 @@ android {
         testInstrumentationRunner 'ru.logunov.bydsplit.EmbeddedInputInstrumentation'
     }
 
+    signingConfigs {
+        if (sharedStore != null) {
+            sharedSeagull {
+                storeFile sharedStore
+                storeType sharedSigning.getProperty('storeType', 'PKCS12')
+                storePassword sharedSigning.getProperty('storePassword')
+                keyAlias sharedSigning.getProperty('keyAlias')
+                keyPassword sharedSigning.getProperty('keyPassword')
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (sharedStore != null) signingConfig signingConfigs.sharedSeagull
+        }
         release {
+            if (sharedStore != null) signingConfig signingConfigs.sharedSeagull
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
@@ -25,5 +82,12 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+    doFirst {
+        if (sharedStore == null) throw new GradleException(
+                'Release signing key is not configured. See docs/SEAGULL-SIGNING.md. No unsigned release will be built.')
     }
 }

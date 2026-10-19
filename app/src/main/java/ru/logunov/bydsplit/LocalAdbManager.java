@@ -112,6 +112,20 @@ final class LocalAdbManager {
         }
     }
 
+    synchronized boolean ensureHelpers(boolean includeSteering, boolean helpersHealthy) {
+        try {
+            // Socket.isConnected alone also returns true after the peer has disappeared.
+            if (!"BYD_ADB_READY".equals(client.shell("echo BYD_ADB_READY").trim())) {
+                client.close();
+                return false;
+            }
+            return helpersHealthy || startHelpers(includeSteering);
+        } catch (Exception error) {
+            client.close();
+            return false;
+        }
+    }
+
     synchronized boolean startHelpers(boolean includeSteering) {
         String apk = context.getApplicationInfo().sourceDir;
         if (apk == null || !SAFE_APK_PATH.matcher(apk).matches()) {

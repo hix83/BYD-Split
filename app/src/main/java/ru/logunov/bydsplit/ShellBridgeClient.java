@@ -37,6 +37,9 @@ final class ShellBridgeClient {
     private final AtomicReference<String> latestMove = new AtomicReference<>();
     private final AtomicBoolean moveDrainScheduled = new AtomicBoolean();
     private final LocalAdbManager localAdb;
+    private final java.util.concurrent.ScheduledExecutorService recoveryExecutor =
+            Executors.newSingleThreadScheduledExecutor();
+    private AdbHelperRecovery recovery;
     private final java.util.Map<Integer, Long> downTimes = new java.util.HashMap<>();
 
     ShellBridgeClient(Context context) {
@@ -46,6 +49,20 @@ final class ShellBridgeClient {
     void bootstrap(boolean includeSteering, Consumer<Boolean> callback) {
         executor.execute(() -> callback.accept(
                 localAdb.startHelpers(includeSteering)));
+    }
+
+    void watchHelpers(boolean includeSteering, Consumer<Boolean> status) {
+        if (recovery != null) return;
+        recovery = new AdbHelperRecovery(
+                (task, delay) -> recoveryExecutor.schedule(task, delay, java.util.concurrent.TimeUnit.MILLISECONDS),
+                () -> {
+                    boolean inputReady = Build.VERSION.SDK_INT == 28 ? ShellDisplayBridge.ready()
+                            : sendCommand("BYD_FAST_PING_V1 " + TOKEN, FAST_INPUT_PORT);
+                    boolean steeringReady = !includeSteering
+                            || sendCommand("BYD_STEERING_PING_V1 " + TOKEN, 37530);
+                    return localAdb.ensureHelpers(includeSteering, inputReady && steeringReady);
+                }, () -> {}, status);
+        recovery.start();
     }
 
     void restartHelpers(Consumer<Boolean> callback) {
@@ -69,6 +86,8 @@ final class ShellBridgeClient {
     }
 
     void close() {
+        if (recovery != null) recovery.close();
+        recoveryExecutor.shutdown();
         // Drain queued display releases, including restoration of scoped bars policy.
         executor.shutdown();
     }

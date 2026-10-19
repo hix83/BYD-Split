@@ -34,6 +34,10 @@ final class VehicleDashboardView extends View {
     private static final int ENERGY_BLUE = 0xFF55B8FF;
     private final int HEALTHY;
     private final int AMBER;
+    private boolean adbConnected;
+    private long adbConnectedAt;
+    private static final long ADB_LABEL_HOLD_MS = 3000;
+    private static final long ADB_LABEL_FADE_MS = 600;
     private static final long FLOW_FRAME_INTERVAL_MS = 80L;
 
     private final android.graphics.Typeface ui7Typeface;
@@ -102,6 +106,15 @@ final class VehicleDashboardView extends View {
         invalidate();
     }
 
+    void setAdbConnected(boolean connected) {
+        setContentDescription("Состояние BYD Seagull: скорость, направление, батарея. "
+                + (connected ? "Связь с ADB установлена" : "Связь с ADB не установлена"));
+        if (adbConnected == connected) return;
+        adbConnected = connected;
+        adbConnectedAt = connected ? SystemClock.uptimeMillis() : 0;
+        invalidate();
+    }
+
     @Override
     protected void onDetachedFromWindow() {
         removeCallbacks(animationTick);
@@ -121,6 +134,7 @@ final class VehicleDashboardView extends View {
         drawBackground(canvas, width, height);
         drawHeader(canvas, width, height);
         drawVehicle(canvas, width, height);
+        drawAdbStatus(canvas, width, height);
 
         drawQuickActions(canvas, width, height);
     }
@@ -168,6 +182,58 @@ final class VehicleDashboardView extends View {
                 String.format(Locale.forLanguageTag("ru"), "%.1f В", telemetry.auxiliaryVoltage);
         drawText(canvas, "Бортсеть  " + voltage,
                 width * .92f, height * .302f, width * .028f, TEXT_SECONDARY, Paint.Align.RIGHT);
+    }
+
+    private void drawAdbStatus(Canvas canvas, float width, float height) {
+        float density = getResources().getDisplayMetrics().density;
+        float size = 18f * density;
+        float left = width * .08f;
+        float baseline = height * .35f;
+        float top = baseline - size * .85f;
+        paint.setShader(null);
+        paint.setColor(adbConnected ? HEALTHY : 0xFFFFC107);
+        path.reset();
+        if (adbConnected) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(2.6f * density);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            path.moveTo(left + size * .12f, top + size * .52f);
+            path.lineTo(left + size * .40f, top + size * .80f);
+            path.lineTo(left + size * .92f, top + size * .18f);
+        } else {
+            paint.setStyle(Paint.Style.FILL);
+            path.moveTo(left + size * .5f, top);
+            path.lineTo(left + size, top + size);
+            path.lineTo(left, top + size);
+            path.close();
+        }
+        canvas.drawPath(path, paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        if (!adbConnected) {
+            paint.setColor(0xFF262D33);
+            paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(size * .75f);
+            canvas.drawText("!", left + size * .5f, top + size * .88f, paint);
+        }
+        float labelOpacity = 1f;
+        if (adbConnected) {
+            long elapsed = SystemClock.uptimeMillis() - adbConnectedAt;
+            if (elapsed < ADB_LABEL_HOLD_MS) {
+                postInvalidateDelayed(ADB_LABEL_HOLD_MS - elapsed);
+            } else {
+                labelOpacity = Math.max(0f, 1f - (elapsed - ADB_LABEL_HOLD_MS) / (float) ADB_LABEL_FADE_MS);
+                if (labelOpacity > 0f) postInvalidateOnAnimation();
+            }
+        }
+        if (labelOpacity > 0f) {
+            int labelColor = (TEXT_SECONDARY & 0x00FFFFFF)
+                    | (Math.round(Color.alpha(TEXT_SECONDARY) * labelOpacity) << 24);
+            drawText(canvas, adbConnected ? "Связь с ADB установлена" : "Связь с ADB не установлена",
+                    left + size + 7f * density, baseline, width * .028f, labelColor, Paint.Align.LEFT);
+        }
     }
 
     private void drawModeStatus(Canvas canvas, float width, float height) {

@@ -81,7 +81,11 @@ public final class MainActivity extends ThemeActivity {
     private EmbeddedAppPane farEmbeddedPane;
     private boolean showingVehicleDashboard;
     private boolean settingsVisible;
+    private SettingsView settingsView;
+    private View settingsDisplacedApp;
+    private boolean settingsClosing;
     private VehicleDashboardView vehicleDashboardView;
+    private boolean adbConnected;
     private VehicleTelemetryController vehicleTelemetryController;
     private AppEntry quickMusicApp;
     private AppEntry quickMaxApp;
@@ -131,14 +135,23 @@ public final class MainActivity extends ThemeActivity {
         // Embedded displays need the shell input bridge even in demo mode.
         // Demo mode only disables vehicle/steering integration; without the
         // input daemon both panes still render but silently ignore touches.
-        shellBridgeClient.bootstrap(
-                !AppPreferences.isDemoModeEnabled(this), success -> {
-                    if (!success) {
-                        android.util.Log.w("BYD_SPLIT",
-                            "Не удалось запустить ADB-помощники");
+        shellBridgeClient.watchHelpers(
+                !AppPreferences.isDemoModeEnabled(this), connected -> runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    adbConnected = connected;
+                    if (vehicleDashboardView != null) vehicleDashboardView.setAdbConnected(connected);
+                    if (!connected) return;
+                    for (EmbeddedAppPane pane : new ArrayList<>(activePanes)) {
+                        pane.recoverAfterAdbReady();
                     }
-                });
+                }));
         render();
+        if (getIntent().getBooleanExtra("open_settings", false)
+                || preferences.getBoolean("settings_reopen_after_theme", false)) {
+            getIntent().removeExtra("open_settings");
+            preferences.edit().remove("settings_reopen_after_theme").apply();
+            openSettings();
+        }
         getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(visibility -> {
             if (Build.VERSION.SDK_INT < 30 && resumed && AppPreferences.isFullscreenEnabled(this)
                     && (visibility & (View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION))
@@ -155,6 +168,10 @@ public final class MainActivity extends ThemeActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (intent.getBooleanExtra("open_settings", false)) {
+            intent.removeExtra("open_settings");
+            if (settingsView == null) openSettings();
+        }
         if((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0
                 && intent.getBooleanExtra("debug_max_call_route",false)) {
             intent.removeExtra("debug_max_call_route");
@@ -172,7 +189,7 @@ public final class MainActivity extends ThemeActivity {
         resumed = true;
         GithubUpdater.onResume(this);
         if (batteryDetailsView != null) batteryDetailsView.setActive(true);
-        settingsVisible = false;
+        settingsVisible = settingsView != null;
         applySystemBarsMode();
         updateCompactDockSelection();
         if (showingVehicleDashboard) {
@@ -611,6 +628,7 @@ public final class MainActivity extends ThemeActivity {
         driverSlot.removeAllViews();
         vehicleDashboardView = new VehicleDashboardView(
                 this, this::handleVehicleAction);
+        vehicleDashboardView.setAdbConnected(adbConnected);
         driverSlot.addView(vehicleDashboardView,
                 new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -627,7 +645,7 @@ public final class MainActivity extends ThemeActivity {
         if (persist) {
             AppPreferences.setCompactTarget(
                     this, AppPreferences.COMPACT_TARGET_VEHICLE);
-            if (farEmbeddedPane != null && batteryDetailsView == null) farEmbeddedPane.resumeGuest();
+            if (farEmbeddedPane != null && batteryDetailsView == null && settingsView == null) farEmbeddedPane.resumeGuest();
         }
     }
 
@@ -642,6 +660,7 @@ public final class MainActivity extends ThemeActivity {
     private void openBatteryDetails() { openVehicleDetails(false); }
 
     private void openVehicleDetails(boolean technical) {
+        closeSettings(false);
         if (farSlot == null || batteryDetailsView != null) return;
         hidePicker();
         batteryDisplacedApp = farSlot.getChildCount() > 0 ? farSlot.getChildAt(0) : null;
@@ -693,6 +712,7 @@ public final class MainActivity extends ThemeActivity {
                 return;
             }
         }
+        if (settingsView != null) { closeSettings(true); return; }
         if (batteryDetailsView != null) { closeBatteryDetails(true); return; }
         super.onBackPressed();
     }
@@ -1383,6 +1403,7 @@ public final class MainActivity extends ThemeActivity {
     }
 
     private void releasePanes() {
+        closeSettings(false);
         closeBatteryDetails(false);
         for (EmbeddedAppPane pane : activePanes) {
             pane.release();
@@ -1393,9 +1414,51 @@ public final class MainActivity extends ThemeActivity {
     }
 
     private void openSettings() {
+        if (settingsView != null) { closeSettings(true); return; }
+        if (farSlot == null) return;
+        closeBatteryDetails(false);
+        hidePicker();
+        settingsDisplacedApp = farSlot.getChildCount() > 0 ? farSlot.getChildAt(0) : null;
+        SettingsView page = new SettingsView(this, () -> closeSettings(true));
+        settingsView = page;
+        farSlot.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        float width = Math.max(1, farSlot.getWidth());
+        page.setTranslationX(-width);
+        if (settingsDisplacedApp != null) settingsDisplacedApp.animate()
+                .translationX(width).setDuration(300).setInterpolator(new DecelerateInterpolator()).start();
+        page.animate().translationX(0).setDuration(300).setInterpolator(new DecelerateInterpolator()).start();
         settingsVisible = true;
         updateCompactDockSelection();
-        startActivity(new Intent(this, SettingsActivity.class));
+    }
+
+    private void closeSettings(boolean animate) {
+        if (settingsView == null || (settingsClosing && animate)) return;
+        settingsClosing = true;
+        SettingsView page = settingsView;
+        View app = settingsDisplacedApp;
+        page.close();
+        page.animate().cancel();
+        if (app != null) app.animate().cancel();
+        Runnable finished = () -> {
+            if (page.getParent() instanceof ViewGroup) ((ViewGroup) page.getParent()).removeView(page);
+            if (app != null) app.setTranslationX(0);
+            if (settingsView == page) {
+                settingsView = null;
+                settingsDisplacedApp = null;
+                settingsClosing = false;
+                settingsVisible = false;
+                if (animate && page.demoModeChanged() && !isDestroyed()) {
+                    cameraAutomation.start();
+                    if (showingVehicleDashboard) showVehicleDashboard(false);
+                }
+                updateCompactDockSelection();
+                if (animate && farEmbeddedPane != null) farEmbeddedPane.resumeGuest();
+            }
+        };
+        if (!animate) { finished.run(); return; }
+        if (app != null) app.animate().translationX(0).setDuration(300).start();
+        page.animate().translationX(-Math.max(1, farSlot.getWidth())).setDuration(300)
+                .withEndAction(finished).start();
     }
 
     private boolean applyDebugLaunchOptions(Intent intent) {

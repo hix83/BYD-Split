@@ -58,7 +58,7 @@
             android:name=".SettingsActivity"
             android:exported="false"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.BYDSplit.SettingsDialog" />
+            android:theme="@style/Theme.BYDSplit" />
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
