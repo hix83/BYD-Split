@@ -15,7 +15,7 @@ final class ClimateIconRenderer {
                 R.drawable.ui7_climate_fan_5, R.drawable.ui7_climate_fan_6,
                 R.drawable.ui7_climate_fan_7};
         parts = new Drawable[ids.length];
-        for (int i = 0; i < ids.length; i++) parts[i] = context.getDrawable(ids[i]).mutate();
+        for (int i = 0; i < ids.length; i++) { parts[i] = context.getDrawable(ids[i]).mutate(); parts[i].setTint(ThemePalette.text(context)); }
     }
 
     void draw(Canvas canvas, int x, int y, int radius, ClimateIconState state) {

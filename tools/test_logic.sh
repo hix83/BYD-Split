@@ -6,9 +6,10 @@ trap 'rm -rf "$test_classes"' EXIT
 java_bin="${JAVA_HOME:+$JAVA_HOME/bin/}"
 source_dir=app/src/main/java/ru/logunov/bydsplit
 "${java_bin}javac" -d "$test_classes" \
-  "$source_dir/VehicleTelemetrySnapshot.java" "$source_dir/ClimateIconState.java" \
+  "$source_dir/ComfortRequests.java" "$source_dir/ComfortState.java" "$source_dir/VehicleTelemetrySnapshot.java" "$source_dir/ClimateIconState.java" \
   "$source_dir/BatteryDetailsSnapshot.java" "$source_dir/TechSnapshot.java" \
   "$source_dir/ClusterTrackText.java" "$source_dir/UpdateVersion.java" \
+  "$source_dir/StatisticsSensorDecoder.java" "$source_dir/HvBatteryPower.java" "$source_dir/BatteryPriceHistory.java" "$source_dir/TripEnergyCounter.java" "$source_dir/TripFuelCounter.java" "$source_dir/TripAccumulator.java" "$source_dir/FuelLedger.java" \
   "$source_dir/DmiEnergyFlow.java" "$source_dir/TemperatureRules.java" \
   "$source_dir/MaxCallClassifier.java" "$source_dir/MaxTaskParser.java" tests/*.java
 for test_file in tests/*Test.java; do

@@ -8,6 +8,7 @@ public class TechSnapshotTest {
   check(s.values.get("batteryWatts")==-1000);check(s.values.get("insulation")==3.5);check(Math.abs(s.values.get("chargeLimit")-23.1)<.0001);check(!s.values.containsKey("frontTemp"));check(!s.values.containsKey("rearRpm"));
   raw[1]=Float.floatToIntBits(Float.NaN);s=new TechSnapshot(null,raw);check(!s.values.containsKey("batteryWatts"));
   raw[1]=Float.floatToIntBits(3000);s=new TechSnapshot(null,raw);check(!s.values.containsKey("current"));
+  raw[1]=Float.floatToIntBits(-1f);s=new TechSnapshot(null,raw);check(!s.values.containsKey("current"));check(!s.values.containsKey("batteryWatts"));
   System.out.println("Tech decoding checks passed");
  }
  static void check(boolean b){if(!b)throw new AssertionError();}

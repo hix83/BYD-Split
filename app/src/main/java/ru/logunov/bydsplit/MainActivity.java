@@ -75,6 +75,23 @@ public final class MainActivity extends Activity {
     private FrameLayout driverSlot;
     private FrameLayout farSlot;
     private BatteryDetailsView batteryDetailsView;
+    private View internalPage;
+    private String internalPageName = "";
+    private SettingsView settingsView;
+
+    @Override protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(ThemeMode.wrap(base));
+    }
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putString("internal_page", internalPageName);
+        if (settingsView != null) state.putInt("settings_section", settingsView.selectedPage());
+        if (internalPage instanceof StatisticsView) {
+            state.putInt("statistics_tab", ((StatisticsView) internalPage).selectedTab());
+            state.putInt("statistics_period", ((StatisticsView) internalPage).selectedPeriod());
+        }
+        super.onSaveInstanceState(state);
+    }
+
     private View batteryDisplacedApp;
     private boolean batteryClosing;
     private EmbeddedAppPane driverEmbeddedPane;
@@ -139,6 +156,22 @@ public final class MainActivity extends Activity {
                 });
         render();
         applySystemBarsMode();
+        StatisticsService.sync(this);
+        if (savedInstanceState != null) {
+            String page = savedInstanceState.getString("internal_page", "");
+            if (page.equals("settings")) openSettings(savedInstanceState.getInt("settings_section",0));
+            else if (page.equals("statistics")) openStatistics(savedInstanceState.getInt("statistics_tab",0), savedInstanceState.getInt("statistics_period",30));
+            else if (page.equals("climate") || page.equals("seats")) openComfort(page.equals("seats"));
+            else if (page.equals("tech") || page.equals("battery")) openVehicleDetails(page.equals("tech"));
+        }
+        openRequestedPage(getIntent());
+    }
+
+    private void openRequestedPage(Intent intent) {
+        if (intent.getBooleanExtra("open_settings", false)) { intent.removeExtra("open_settings"); openSettings(); }
+        if (intent.getBooleanExtra("open_climate", false)) { intent.removeExtra("open_climate"); openComfort(false); }
+        if (intent.getBooleanExtra("open_seats", false)) { intent.removeExtra("open_seats"); openComfort(true); }
+        if (intent.getBooleanExtra("open_statistics", false)) { intent.removeExtra("open_statistics"); openStatistics(); }
     }
 
     @Override
@@ -153,7 +186,9 @@ public final class MainActivity extends Activity {
         if (applyDebugLaunchOptions(intent)) {
             pickingKey = null;
             render();
+            StatisticsService.sync(this);
         }
+        openRequestedPage(intent);
     }
 
     @Override
@@ -162,7 +197,8 @@ public final class MainActivity extends Activity {
         resumed = true;
         GithubUpdater.onResume(this);
         if (batteryDetailsView != null) batteryDetailsView.setActive(true);
-        settingsVisible = false;
+        if (internalPage instanceof ComfortView) ((ComfortView)internalPage).setActive(true);
+        settingsVisible = settingsView != null;
         applySystemBarsMode();
         updateCompactDockSelection();
         if (showingVehicleDashboard) {
@@ -236,6 +272,7 @@ public final class MainActivity extends Activity {
     protected void onPause() {
         resumed = false;
         if (batteryDetailsView != null) batteryDetailsView.setActive(false);
+        if (internalPage instanceof ComfortView) ((ComfortView)internalPage).setActive(false);
         super.onPause();
     }
 
@@ -408,7 +445,7 @@ public final class MainActivity extends Activity {
         dock.setOrientation(LinearLayout.HORIZONTAL);
         dock.setGravity(Gravity.CENTER);
         dock.setPadding(0, dp(5), 0, dp(4));
-        dock.setBackground(roundedBackground(0xFF1D252E, 12));
+        dock.setBackground(roundedBackground(ThemePalette.color(this, 0xFF1D252E, 0xfff8f9fb), 12));
 
         quickMusicApp = resolveQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP,
                 PACKAGE_YANDEX_MUSIC, PACKAGE_YANDEX_MUSIC_ALT);
@@ -430,7 +467,7 @@ public final class MainActivity extends Activity {
                 () -> chooseQuickApp(AppPreferences.KEY_QUICK_MAX_APP));
         compactSettingsButton = addCompactButton(dock, "Настройки",
                 getDrawable(R.drawable.dock_ui7_settings),
-                this::openSettings, null);
+                this::toggleSettings, null);
         updateCompactDockSelection();
         return dock;
     }
@@ -451,6 +488,7 @@ public final class MainActivity extends Activity {
 
         ImageView image = new ImageView(this);
         image.setImageDrawable(icon);
+        image.setImageTintList(android.content.res.ColorStateList.valueOf(ThemePalette.text(this)));
         image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
                 dp(40), dp(40), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
@@ -625,11 +663,29 @@ public final class MainActivity extends Activity {
     private void openBatteryDetails() { openVehicleDetails(false); }
 
     private void openVehicleDetails(boolean technical) {
-        if (farSlot == null || batteryDetailsView != null) return;
-        hidePicker();
-        batteryDisplacedApp = farSlot.getChildCount() > 0 ? farSlot.getChildAt(0) : null;
-        BatteryDetailsView page = new BatteryDetailsView(this, () -> closeBatteryDetails(true), technical);
+        closeInternalPage(false);
+        BatteryDetailsView page = new BatteryDetailsView(this, () -> closeInternalPage(true), technical);
+        openInternalPage(page, technical ? "tech" : "battery");
         batteryDetailsView = page;
+        page.setActive(resumed);
+    }
+
+    private void openComfort(boolean seats) {
+        ComfortView page = new ComfortView(this, seats, () -> closeInternalPage(true), () -> {
+            if (internalPage instanceof ComfortView)
+                internalPageName = ((ComfortView) internalPage).seatsPage() ? "seats" : "climate";
+        });
+        openInternalPage(page, seats ? "seats" : "climate");
+        page.setActive(resumed);
+    }
+
+    private void openInternalPage(View page, String name) {
+        if (farSlot == null) return;
+        closeInternalPage(false);
+        hidePicker();
+        internalPage = page;
+        internalPageName = name;
+        batteryDisplacedApp = farSlot.getChildCount() > 0 ? farSlot.getChildAt(0) : null;
         farSlot.addView(page, new FrameLayout.LayoutParams(-1, -1));
         float width = Math.max(1, farSlot.getWidth());
         page.setTranslationX(-width);
@@ -638,23 +694,27 @@ public final class MainActivity extends Activity {
                     .setInterpolator(new DecelerateInterpolator()).start();
         page.animate().translationX(0).setDuration(300)
                 .setInterpolator(new DecelerateInterpolator()).start();
-        page.setActive(resumed);
+        settingsVisible = name.equals("settings");
+        updateCompactDockSelection();
     }
 
-    private void closeBatteryDetails(boolean animate) {
-        if (batteryDetailsView == null) return;
+    private void closeInternalPage(boolean animate) {
+        if (internalPage == null) return;
         if (batteryClosing && animate) return;
         batteryClosing = true;
-        BatteryDetailsView page = batteryDetailsView;
+        View page = internalPage;
         View app = batteryDisplacedApp;
-        page.setActive(false);
+        if (batteryDetailsView != null) batteryDetailsView.setActive(false);
+        if (internalPage instanceof ComfortView) ((ComfortView)internalPage).setActive(false);
         page.animate().cancel();
         if (app != null) app.animate().cancel();
         Runnable finished = () -> {
             if (page.getParent() instanceof ViewGroup) ((ViewGroup) page.getParent()).removeView(page);
             if (app != null) app.setTranslationX(0);
-            if (batteryDetailsView == page) {
+            if (internalPage == page) {
+                internalPage = null; internalPageName = ""; settingsView = null;
                 batteryDetailsView = null; batteryDisplacedApp = null; batteryClosing = false;
+                settingsVisible = false; updateCompactDockSelection();
             }
         };
         if (!animate) { finished.run(); return; }
@@ -675,32 +735,28 @@ public final class MainActivity extends Activity {
                 return;
             }
         }
-        if (batteryDetailsView != null) { closeBatteryDetails(true); return; }
+        if (internalPage != null) { closeInternalPage(true); return; }
         super.onBackPressed();
     }
 
     private void handleVehicleAction(int action) {
+        if (action == VehicleDashboardView.ACTION_STATISTICS) { toggleInternalPage("statistics", this::openStatistics); return; }
         if (action == VehicleDashboardView.ACTION_BATTERY_DETAILS || action == VehicleDashboardView.ACTION_TECH_DETAILS) {
             boolean technical=action==VehicleDashboardView.ACTION_TECH_DETAILS;
             if (batteryDetailsView == null) openVehicleDetails(technical);
-            else if(batteryDetailsView.technical!=technical) { closeBatteryDetails(false);openVehicleDetails(technical); }
-            else closeBatteryDetails(true);
+            else if(batteryDetailsView.technical!=technical) { closeInternalPage(false);openVehicleDetails(technical); }
+            else closeInternalPage(true);
             return;
         }
         Intent intent;
         if (action == VehicleDashboardView.ACTION_AUTO) {
             intent = Intent.makeMainActivity(new ComponentName(
                     "com.byd.mycar", "com.byd.mycar.StartActivity"));
-        } else if (action == VehicleDashboardView.ACTION_CLIMATE) {
-            // Match the OEM navigation bar's climate launch contract.
-            intent = new Intent("OPEN_AIR_CONDITIONING_FUNCTION");
-            intent.addCategory(Intent.CATEGORY_DEFAULT);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            intent.putExtra("OPEN_AIR_CONDITIONING_FRAGMENT_ID", 1000);
-            intent.putExtra("from", "Navbar");
-            intent.setComponent(new ComponentName(
-                    "com.byd.airconditioning",
-                    "com.byd.airconditioning.mainactivity.FullScreenMainActivity"));
+        } else if (action == VehicleDashboardView.ACTION_CLIMATE
+                || action == VehicleDashboardView.ACTION_SEATS) {
+            boolean seats = action == VehicleDashboardView.ACTION_SEATS;
+            toggleInternalPage(seats ? "seats" : "climate", () -> openComfort(seats));
+            return;
         } else if (action == VehicleDashboardView.ACTION_CAR_SETTINGS) {
             intent = Intent.makeMainActivity(new ComponentName(
                     "com.byd.carsettings", "com.byd.carsettings.MainActivity"));
@@ -937,7 +993,7 @@ public final class MainActivity extends Activity {
                                     String preferenceKey, boolean driverPane) {
         FrameLayout pane = new FrameLayout(this);
         pane.setBackground(roundedBackground(
-                driverPane ? Color.rgb(24, 31, 40) : Color.rgb(20, 26, 34), 15));
+                driverPane ? ThemePalette.color(this, 0xff181f28, 0xfff8f9fb) : ThemePalette.color(this, 0xff141a22, 0xfff4f6f8), 15));
         pane.setPadding(dp(12), dp(12), dp(12), dp(12));
 
         LinearLayout content = new LinearLayout(this);
@@ -958,7 +1014,7 @@ public final class MainActivity extends Activity {
         settings.setTextColor(getColor(R.color.accent));
         settings.setTextSize(24);
         settings.setGravity(Gravity.CENTER);
-        settings.setOnClickListener(view -> openSettings());
+        settings.setOnClickListener(view -> toggleSettings());
         header.addView(settings, new LinearLayout.LayoutParams(dp(56), dp(44)));
 
         if (currentEntry != null) {
@@ -1027,7 +1083,7 @@ public final class MainActivity extends Activity {
 
         TextView label = new TextView(this);
         label.setText(app.label);
-        label.setTextColor(Color.WHITE);
+        label.setTextColor(ThemePalette.text(this));
         label.setTextSize(12);
         label.setGravity(Gravity.CENTER);
         label.setMaxLines(2);
@@ -1244,7 +1300,7 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshPane(String preferenceKey) {
-        if (KEY_FAR_APP.equals(preferenceKey)) closeBatteryDetails(false);
+        if (KEY_FAR_APP.equals(preferenceKey)) closeInternalPage(false);
         boolean driverPane = KEY_DRIVER_APP.equals(preferenceKey);
         FrameLayout slot = driverPane ? driverSlot : farSlot;
         if (slot == null) {
@@ -1372,7 +1428,7 @@ public final class MainActivity extends Activity {
     }
 
     private void releasePanes() {
-        closeBatteryDetails(false);
+        closeInternalPage(false);
         for (EmbeddedAppPane pane : activePanes) {
             pane.release();
         }
@@ -1381,10 +1437,45 @@ public final class MainActivity extends Activity {
         farEmbeddedPane = null;
     }
 
-    private void openSettings() {
-        settingsVisible = true;
-        updateCompactDockSelection();
-        startActivity(new Intent(this, SettingsActivity.class));
+    private void toggleInternalPage(String name, Runnable open) {
+        if (internalPage != null && internalPageName.equals(name)) closeInternalPage(true);
+        else open.run();
+    }
+    private void toggleSettings() { toggleInternalPage("settings", this::openSettings); }
+
+    private void openSettings() { openSettings(0); }
+    private void openSettings(int section) {
+        closeInternalPage(false);
+        SettingsView page = new SettingsView(this, () -> closeInternalPage(true), section);
+        openInternalPage(page, "settings");
+        settingsView = page;
+    }
+    private void openStatistics() { openStatistics(0,30); }
+    private void openStatistics(int tab,int period) {
+        openInternalPage(new StatisticsView(this, () -> closeInternalPage(true), tab, period), "statistics");
+    }
+    static void openStatisticsFromSettings() {
+        MainActivity activity = currentActivity.get();
+        if (activity != null) activity.openStatistics();
+    }
+    static void openTripSettings() {
+        MainActivity activity = currentActivity.get();
+        if (activity != null) activity.openSettings(6);
+    }
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != 482 || result != RESULT_OK || data == null || data.getData() == null) return;
+        Uri destination = data.getData();
+        new Thread(() -> {
+            try (StatisticsStore store = new StatisticsStore(this);
+                 java.io.OutputStream stream = getContentResolver().openOutputStream(destination, "wt");
+                 java.io.Writer writer = new java.io.OutputStreamWriter(stream, java.nio.charset.StandardCharsets.UTF_8)) {
+                store.exportCsv(writer);
+                runOnUiThread(() -> Toast.makeText(this,"Журнал экспортирован",Toast.LENGTH_SHORT).show());
+            } catch (Exception error) {
+                runOnUiThread(() -> Toast.makeText(this,"Не удалось экспортировать журнал",Toast.LENGTH_LONG).show());
+            }
+        }, "statistics-export").start();
     }
 
     private boolean applyDebugLaunchOptions(Intent intent) {
@@ -1392,6 +1483,9 @@ public final class MainActivity extends Activity {
             return false;
         }
         boolean changed = false;
+        if(intent.getBooleanExtra("debug_automation_banner",false)){
+            intent.removeExtra("debug_automation_banner");AutomationBanner.show(this,"Проверка уведомления");
+        }
         if (intent.hasExtra("demo_mode")) {
             boolean enabled = intent.getBooleanExtra("demo_mode", false);
             AppPreferences.get(this).edit()

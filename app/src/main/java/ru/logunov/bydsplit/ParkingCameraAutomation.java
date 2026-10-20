@@ -22,6 +22,19 @@ final class ParkingCameraAutomation implements LocationListener {
     private ScheduledExecutorService worker;
     private volatile Location location;
     private boolean gps;
+    private long lastTick;
+    private long screenOffAt;
+    private volatile boolean newSession;
+    private boolean receiverRegistered;
+    private final android.content.BroadcastReceiver wakeReceiver=new android.content.BroadcastReceiver(){
+        @Override public void onReceive(Context c,android.content.Intent intent){
+            if(android.content.Intent.ACTION_SCREEN_OFF.equals(intent.getAction()))screenOffAt=SystemClock.elapsedRealtime();
+            else if(android.content.Intent.ACTION_SCREEN_ON.equals(intent.getAction())&&screenOffAt>0){
+                if(SystemClock.elapsedRealtime()-screenOffAt>5*60_000L)newSession=true;
+                screenOffAt=0;
+            }
+        }
+    };
     private static final String[] ACTIONS={"Руль","Подогрев водителя","Подогрев пассажира","Вентиляция водителя","Вентиляция пассажира","Камера"};
     ParkingCameraAutomation(Context context) {
         this.context=context.getApplicationContext();
@@ -34,6 +47,13 @@ final class ParkingCameraAutomation implements LocationListener {
     }
     void start() {
         if(AppPreferences.isDemoModeEnabled(context)) { stop(); return; }
+        if(!receiverRegistered){
+            android.content.IntentFilter filter=new android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_ON);
+            filter.addAction(android.content.Intent.ACTION_SCREEN_OFF);
+            if(android.os.Build.VERSION.SDK_INT>=33)context.registerReceiver(wakeReceiver,filter,Context.RECEIVER_NOT_EXPORTED);
+            else context.registerReceiver(wakeReceiver,filter);
+            receiverRegistered=true;
+        }
         if(worker==null) {
             worker=Executors.newSingleThreadScheduledExecutor();
             worker.scheduleWithFixedDelay(this::tick,0,3,TimeUnit.SECONDS);
@@ -44,6 +64,7 @@ final class ParkingCameraAutomation implements LocationListener {
         }
     }
     void stop() {
+        if(receiverRegistered){context.unregisterReceiver(wakeReceiver);receiverRegistered=false;}
         if(gps)locationManager.removeUpdates(this);
         gps=false;
         if(worker!=null)worker.shutdownNow();
@@ -52,6 +73,9 @@ final class ParkingCameraAutomation implements LocationListener {
     private void tick() {
         try {
             if(AppPreferences.isDemoModeEnabled(context))return;
+            long now=SystemClock.elapsedRealtime();
+            if(newSession || (lastTick>0 && now-lastTick>5*60_000L)){engine.newSession();newSession=false;}
+            lastTick=now;
             List<TemperatureRules.Rule> rules=AutomationStore.load(context);
             Float[] temperatures=LocalAdbManager.get(context).readAutomationTemperatures();
             Map<String,Boolean> zones=new HashMap<>();
@@ -71,7 +95,7 @@ final class ParkingCameraAutomation implements LocationListener {
                 String error=LocalAdbManager.get(context).applyComfortRule(action,level);
                 AutomationJournal.add(ACTIONS[action]+" · "+(error==null?"подтверждено, уровень "+level:error));
                 if(error!=null)throw new IllegalStateException(error);
-            })) AutomationJournal.add("Проверено правило · "+rule);
+            })) {AutomationJournal.add("Выполнено правило · "+rule);AutomationBanner.show(context,rule); }
         } catch(Exception error) { android.util.Log.w("BYD_RULES","Rule evaluation failed",error); }
         finally {
             android.content.SharedPreferences.Editor saved=context.getSharedPreferences("automation_pending_off",0).edit().clear();

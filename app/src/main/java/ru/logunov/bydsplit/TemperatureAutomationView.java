@@ -27,17 +27,17 @@ final class TemperatureAutomationView extends LinearLayout {
     @Override protected void onDetachedFromWindow(){removeCallbacks(timerTick);if(testDialog!=null)testDialog.dismiss();super.onDetachedFromWindow();}
     private final Map<String,Boolean> demoPlaces = new HashMap<>();
     TemperatureAutomationView(Context c) {
-        super(new android.view.ContextThemeWrapper(c, android.R.style.Theme_Material_NoActionBar)); setOrientation(VERTICAL);
+        super(new android.view.ContextThemeWrapper(c, ThemePalette.dialogTheme(c))); setOrientation(VERTICAL);
         owner = c;
         body = column(); addView(body,new LinearLayout.LayoutParams(-1,-1)); load(); render();
     }
     private LinearLayout column() { LinearLayout v=new LinearLayout(getContext());v.setOrientation(LinearLayout.VERTICAL);v.setPadding(18,12,18,12);return v; }
-    private TextView text(String s,int size) { TextView t=new TextView(getContext());t.setText(s);t.setTextSize(size);t.setTextColor(0xFFDAE1EB);t.setPadding(0,8,0,8);t.setTypeface(getResources().getFont(R.font.ui7_regular));return t; }
-    private Button button(String s,Runnable r) { Button b=new Button(getContext());b.setText(s);b.setAllCaps(false);b.setTextColor(Color.WHITE);android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(0xFF262D33);bg.setCornerRadius(18);b.setBackground(bg);b.setPadding(18,12,18,12);b.setOnClickListener(v->r.run());return b; }
+    private TextView text(String s,int size) { TextView t=new TextView(getContext());t.setText(s);t.setTextSize(size);t.setTextColor(ThemePalette.color(getContext(), 0xFFDAE1EB, 0xff26313c));t.setPadding(0,8,0,8);t.setTypeface(getResources().getFont(R.font.ui7_regular));return t; }
+    private Button button(String s,Runnable r) { Button b=new Button(getContext());b.setText(s);b.setAllCaps(false);b.setTextColor(ThemePalette.text(getContext()));android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(ThemePalette.color(getContext(), 0xFF262D33, 0xffe2e6eb));bg.setCornerRadius(18);b.setBackground(bg);b.setPadding(18,12,18,12);b.setOnClickListener(v->r.run());return b; }
     private ImageButton iconButton(String label,int resource,Runnable action){
         ImageButton b=new ImageButton(getContext());b.setImageResource(resource);b.setContentDescription(label);b.setTooltipText(label);
         b.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(0xFF262D33);bg.setCornerRadius(18);b.setBackground(bg);
+        android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(ThemePalette.color(getContext(), 0xFF262D33, 0xffe2e6eb));bg.setCornerRadius(18);b.setBackground(bg);
         b.setOnClickListener(v->action.run());return b;
     }
     private void render() {
@@ -52,7 +52,7 @@ final class TemperatureAutomationView extends LinearLayout {
         LinearLayout.LayoutParams listParams=new LinearLayout.LayoutParams(-1,0,1f);listParams.topMargin=12;body.addView(ruleScroll,listParams);
         for (TemperatureRules.Rule r : new ArrayList<>(rules)) {
             LinearLayout card=column();
-            android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(0xFF1D252E);bg.setCornerRadius(20);card.setBackground(bg);
+            android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(ThemePalette.color(getContext(), 0xFF1D252E, 0xfff8f9fb));bg.setCornerRadius(20);card.setBackground(bg);
             LinearLayout header=new LinearLayout(getContext());header.setGravity(android.view.Gravity.CENTER_VERTICAL);
             boolean hasPlace=false,hasTemperature=r.conditions.isEmpty();for(TemperatureRules.Condition condition:r.conditions){hasPlace|=condition.placeKey!=null;hasTemperature|=condition.placeKey==null;}
             for(int kind=0;kind<2;kind++)if(kind==0?hasTemperature:hasPlace){ImageView icon=new ImageView(getContext());icon.setImageResource(kind==0?R.drawable.rule_temperature:R.drawable.rule_place);icon.setContentDescription(kind==0?"Температура":"Геозона");header.addView(icon,new LinearLayout.LayoutParams(48,48));}
@@ -61,7 +61,7 @@ final class TemperatureAutomationView extends LinearLayout {
             LinearLayout.LayoutParams editParams=new LinearLayout.LayoutParams(160,64);editParams.leftMargin=12;header.addView(edit,editParams);
             ImageButton delete=iconButton("Удалить",R.drawable.rule_delete,()->new AlertDialog.Builder(getContext()).setMessage("Удалить правило «"+r.name+"»?").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->{rules.remove(r);save();engine.reset();render();}).show());
             LinearLayout.LayoutParams deleteParams=new LinearLayout.LayoutParams(145,64);deleteParams.leftMargin=12;header.addView(delete,deleteParams);
-            Switch toggle=new Switch(getContext());toggle.setContentDescription("Активность правила "+r.name);toggle.setText(r.enabled?"Включено":"Выключено");toggle.setTextColor(Color.WHITE);toggle.setChecked(r.enabled);
+            Switch toggle=new Switch(getContext());toggle.setContentDescription("Активность правила "+r.name);toggle.setText(r.enabled?"Включено":"Выключено");toggle.setTextColor(ThemePalette.text(getContext()));toggle.setChecked(r.enabled);
             toggle.setOnCheckedChangeListener((v,on)->{r.enabled=on;toggle.setText(on?"Включено":"Выключено");save();engine.reset();});
             LinearLayout.LayoutParams toggleParams=new LinearLayout.LayoutParams(230,64);toggleParams.leftMargin=20;header.addView(toggle,toggleParams);card.addView(header);
             LinearLayout.LayoutParams cardParams=new LinearLayout.LayoutParams(-1,-2);cardParams.topMargin=12;ruleList.addView(card,cardParams);
@@ -76,7 +76,7 @@ final class TemperatureAutomationView extends LinearLayout {
         body.addView(button("Журнал автомобиля",()->new AlertDialog.Builder(getContext()).setTitle("Срабатывания · текущий запуск").setMessage(AutomationJournal.text()).setPositiveButton("Закрыть",null).show()));
         body.addView(text("Симуляция · команды автомобилю не отправляются",16));
         for(CameraPlace place:AppPreferences.getCameraPlaces(getContext())){
-            Switch inside=new Switch(getContext());inside.setText("Внутри места · "+place.name);inside.setTextColor(Color.WHITE);
+            Switch inside=new Switch(getContext());inside.setText("Внутри места · "+place.name);inside.setTextColor(ThemePalette.text(getContext()));
             String key=AutomationStore.key(place);demoPlaces.putIfAbsent(key,false);inside.setChecked(Boolean.TRUE.equals(demoPlaces.get(key)));
             inside.setOnCheckedChangeListener((v,on)->{demoPlaces.put(key,on);evaluate();});body.addView(inside);
         }
@@ -92,7 +92,7 @@ final class TemperatureAutomationView extends LinearLayout {
         updateResult(Collections.emptyList());
         testDialog=new AlertDialog.Builder(getContext()).setTitle("Проверка правил").setView(scroll).setPositiveButton("Закрыть",null).create();
         testDialog.setOnDismissListener(d->{testing=false;engine.reset();result=null;testDialog=null;});
-        testDialog.show();testDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xFF15181F));
+        testDialog.show();testDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(ThemePalette.color(getContext(), 0xFF15181F, 0xffedeff2)));
     }
     private static String levelLabel(int level){return level==0?"Выключить":"Уровень "+level;}
     private void evaluate(){testing=true;List<String> fired=engine.evaluate(rules,(float)temperature,(float)cabinTemperature,demoPlaces,android.os.SystemClock.elapsedRealtime()+demoTimeOffset,(a,l)->{state[a]=a==5?1:l;if(l>0&&a>0&&a<5){int other=a<=2?a+2:a-2;state[other]=0;}});updateResult(fired);}
@@ -108,7 +108,7 @@ final class TemperatureAutomationView extends LinearLayout {
         LinearLayout conditions=column();form.addView(conditions);
         List<Spinner> comparisons=new ArrayList<>();List<EditText> thresholds=new ArrayList<>();List<String> placeKeys=new ArrayList<>();List<Boolean> cabinFlags=new ArrayList<>();
         java.util.function.Consumer<TemperatureRules.Condition> addCondition=c->{
-            LinearLayout row=column();row.setBackgroundColor(0xFF1D252E);
+            LinearLayout row=column();row.setBackgroundColor(ThemePalette.color(getContext(), 0xFF1D252E, 0xfff8f9fb));
             row.addView(text(c.placeKey==null?(c.cabin?"Температура в салоне":"Наружная температура"):"Внутри места · "+c.placeKey.split("\\|")[0],17));
             Spinner compare=spinner(new String[]{"Не выше (≤)","Не ниже (≥)"},c.below?0:1);
             EditText threshold=new EditText(getContext());threshold.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_SIGNED|InputType.TYPE_NUMBER_FLAG_DECIMAL);threshold.setText(String.valueOf(c.threshold));
@@ -125,8 +125,8 @@ final class TemperatureAutomationView extends LinearLayout {
         List<Integer> actionIds=new ArrayList<>();List<Spinner> levels=new ArrayList<>();List<EditText> durations=new ArrayList<>();
         java.util.function.BiConsumer<Integer,Integer> addAction=(id,level)->{
             if(actionIds.contains(id)){Toast.makeText(getContext(),"Это действие уже добавлено",Toast.LENGTH_SHORT).show();return;}
-            LinearLayout row=column();row.setBackgroundColor(0xFF1D252E);TextView label=text(ACTIONS[id],17);
-            android.graphics.drawable.Drawable icon=getContext().getDrawable(id==5?R.drawable.ui7_camera:id==0?R.drawable.ui7_steering_heat:R.drawable.ui7_climate);icon.setTint(Color.WHITE);icon.setBounds(0,0,38,38);label.setCompoundDrawables(icon,null,null,null);label.setCompoundDrawablePadding(12);row.addView(label);
+            LinearLayout row=column();row.setBackgroundColor(ThemePalette.color(getContext(), 0xFF1D252E, 0xfff8f9fb));TextView label=text(ACTIONS[id],17);
+            android.graphics.drawable.Drawable icon=getContext().getDrawable(id==5?R.drawable.ui7_camera:id==0?R.drawable.ui7_steering_heat:R.drawable.ui7_climate);icon.setTint(ThemePalette.text(getContext()));icon.setBounds(0,0,38,38);label.setCompoundDrawables(icon,null,null,null);label.setCompoundDrawablePadding(12);row.addView(label);
             Spinner value=spinner(id==5?new String[]{"Открыть"}:id==0?new String[]{"Выключить","Включить"}:new String[]{"Выключить","Уровень 1","Уровень 2","Уровень 3"},id==5?0:level);row.addView(value);actionIds.add(id);levels.add(value);
             EditText minutes=new EditText(getContext());minutes.setInputType(InputType.TYPE_CLASS_NUMBER);minutes.setHint("Минуты, 0 — без таймера");minutes.setText(String.valueOf(existing!=null?existing.durationMinutes[id]:id<=2?10:0));durations.add(minutes);
             if(id<5){row.addView(text("Выключить через, мин · 0 — без таймера",14));row.addView(minutes);}
@@ -149,7 +149,7 @@ final class TemperatureAutomationView extends LinearLayout {
             int[] timeouts=new int[6];for(int i=0;i<durations.size();i++){if(actionIds.get(i)==5)continue;try{int m=Integer.parseInt(durations.get(i).getText().toString());if(m<0||m>120)throw new NumberFormatException();timeouts[actionIds.get(i)]=m;}catch(NumberFormatException e){durations.get(i).setError("От 0 до 120 минут");return;}}
             TemperatureRules.Rule r=existing==null?new TemperatureRules.Rule():existing;r.name=title;r.conditions=parsed;r.all=logic.getSelectedItemPosition()==0;r.levels=selected;r.startupOnly=execution.getSelectedItemPosition()==1;r.durationMinutes=timeouts;
             if(existing==null){r.id=UUID.randomUUID().toString();rules.add(r);}save();engine.reset();render();dialog.dismiss();
-        }));dialog.show();dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xFF15181F));dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+        }));dialog.show();dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(ThemePalette.color(getContext(), 0xFF15181F, 0xffedeff2)));dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
     }
     private void save(){AutomationStore.save(getContext(),rules);}
     private void load(){rules.addAll(AutomationStore.load(getContext()));}

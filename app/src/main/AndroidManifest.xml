@@ -9,6 +9,10 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -24,6 +28,9 @@
         android:resizeableActivity="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.BYDSplit">
+        <service android:name=".StatisticsService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Local vehicle telemetry and trip journal over authorized in-car ADB" />
+        </service>
         <provider android:name=".UpdateApkProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true" />
         <activity
             android:name=".MainActivity"
@@ -41,7 +48,7 @@
             android:name=".SettingsActivity"
             android:exported="false"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.BYDSplit.SettingsDialog" />
+            android:theme="@style/Theme.BYDSplit" />
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"

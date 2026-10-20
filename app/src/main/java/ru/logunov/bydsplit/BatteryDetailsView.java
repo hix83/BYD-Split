@@ -19,7 +19,7 @@ final class BatteryDetailsView extends LinearLayout {
     private boolean active;
     private final boolean demo;
     final boolean technical;
-    private final int text = Color.rgb(226,232,238), muted = Color.rgb(151,164,177);
+    private final int text = getContext().getColor(R.color.text_primary), muted = getContext().getColor(R.color.text_secondary);
 
     BatteryDetailsView(Context context, Runnable close) {
         this(context,close,false);
@@ -29,13 +29,13 @@ final class BatteryDetailsView extends LinearLayout {
         this.technical=technical;
         demo = AppPreferences.isDemoModeEnabled(context);
         setOrientation(VERTICAL); setPadding(dp(20),dp(14),dp(20),dp(14));
-        setBackground(bg(0xff191f27)); setClipToOutline(true);
+        setBackground(bg(ThemePalette.color(getContext(), 0xff191f27, 0xfff4f6f8))); setClipToOutline(true);
         setClickable(true);
         LinearLayout header = new LinearLayout(context); header.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = label(technical?"Техника · Song L DM-i":"Состояние батареи",22,text);
         header.addView(title,new LinearLayout.LayoutParams(0,dp(42),1));
-        TextView back = label("‹  Назад",16,0xff77b7ff); back.setGravity(Gravity.CENTER);
-        back.setContentDescription("Вернуться к приложению"); back.setBackground(bg(0xff29333f));
+        TextView back = label("‹  Назад",16,ThemePalette.color(getContext(), 0xff77b7ff, 0xff236abd)); back.setGravity(Gravity.CENTER);
+        back.setContentDescription("Вернуться к приложению"); back.setBackground(bg(ThemePalette.color(getContext(), 0xff29333f, 0xffe2e6eb)));
         back.setOnClickListener(v -> close.run()); header.addView(back,new LinearLayout.LayoutParams(dp(114),dp(42)));
         addView(header);
         status=label("Получение показаний…",13,muted); addView(status);
@@ -68,7 +68,7 @@ final class BatteryDetailsView extends LinearLayout {
         row(content,new String[]{"soh","soc","avgTemp"},new String[]{"SOH","SOC","Температура · средняя"});
         row(content,new String[]{"hv","power","batteryWatts"},new String[]{"Напряжение HV","Мощность привода","Мощность батареи"});
         row(content,new String[]{"voltage","insulation","rate"},new String[]{"Бортсеть","Изоляция HV","Изменение SOC / час"});
-        TextView capacity=label("Ёмкость батареи для расчёта %/ч · настроить",13,0xff77b7ff);
+        TextView capacity=label("Ёмкость батареи для расчёта %/ч · настроить",13,ThemePalette.color(getContext(), 0xff77b7ff, 0xff236abd));
         capacity.setPadding(0,dp(10),0,dp(6));capacity.setOnClickListener(v->editCapacity());content.addView(capacity);
         section(content,"Лимиты BMS и ячейки");
         row(content,new String[]{"chargeLimit","dischargeLimit"},new String[]{"Макс. мощность заряда","Макс. мощность разряда"});
@@ -133,7 +133,7 @@ final class BatteryDetailsView extends LinearLayout {
         LinearLayout row=new LinearLayout(getContext());
         for(int i=0;i<keys.length;i++) {
             LinearLayout card=new LinearLayout(getContext());card.setOrientation(VERTICAL);
-            card.setPadding(dp(12),dp(8),dp(10),dp(8));card.setBackground(bg(0xff252f3a));
+            card.setPadding(dp(12),dp(8),dp(10),dp(8));card.setBackground(bg(ThemePalette.color(getContext(), 0xff252f3a, 0xffe8ecf0)));
             card.addView(label(titles[i],12,muted));
             TextView value=label("—",20,text);value.setPadding(0,dp(4),0,0);card.addView(value);values.put(keys[i],value);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.topMargin=dp(6);if(i>0)lp.leftMargin=dp(10);row.addView(card,lp);
@@ -184,7 +184,7 @@ final class BatteryDetailsView extends LinearLayout {
     }
     private final class TemperatureChart extends View {
         final ArrayList<float[]> samples=new ArrayList<>(); final Paint p=new Paint(3);
-        TemperatureChart(Context c){super(c);setBackground(bg(0xff202a35));setContentDescription("График минимальной и максимальной температуры батареи за время просмотра");}
+        TemperatureChart(Context c){super(c);setBackground(bg(ThemePalette.color(getContext(), 0xff202a35, 0xffe8ecf0)));setContentDescription("График минимальной и максимальной температуры батареи за время просмотра");}
         void add(Integer min,Integer max){if(min==null||max==null)return;samples.add(new float[]{SystemClock.elapsedRealtime()/1000f,min,max});if(samples.size()>120)samples.remove(0);invalidate();}
         @Override protected void onDraw(Canvas c){
             super.onDraw(c);p.setTypeface(getResources().getFont(R.font.ui7_regular));p.setTextSize(dp(12));p.setColor(muted);
@@ -193,7 +193,7 @@ final class BatteryDetailsView extends LinearLayout {
             float lo=200,hi=-100;for(float[] a:samples){lo=Math.min(lo,a[1]);hi=Math.max(hi,a[2]);}lo-=1;hi+=1;
             float left=dp(55),right=getWidth()-dp(18),top=dp(38),bottom=getHeight()-dp(26);
             c.drawText(Math.round(hi)+"°",dp(14),top+dp(4),p);c.drawText(Math.round(lo)+"°",dp(14),bottom,p);
-            p.setColor(0xff3b4754);p.setStrokeWidth(dp(1));c.drawLine(left,bottom,right,bottom,p);
+            p.setColor(ThemePalette.color(getContext(), 0xff3b4754, 0xffb6c0ca));p.setStrokeWidth(dp(1));c.drawLine(left,bottom,right,bottom,p);
             float first=samples.get(0)[0],span=Math.max(1,samples.get(samples.size()-1)[0]-first);
             for(int k=1;k<=2;k++){p.setColor(k==1?0xff649cf3:0xff55cfb2);p.setStrokeWidth(dp(2));for(int i=1;i<samples.size();i++){float[] a=samples.get(i-1),b=samples.get(i);c.drawLine(left+(a[0]-first)/span*(right-left),bottom-(a[k]-lo)/(hi-lo)*(bottom-top),left+(b[0]-first)/span*(right-left),bottom-(b[k]-lo)/(hi-lo)*(bottom-top),p);}}
             p.setColor(muted);c.drawText(Math.round(span)+" с наблюдения",left,getHeight()-dp(7),p);

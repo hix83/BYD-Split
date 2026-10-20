@@ -33,6 +33,7 @@ final class TechSnapshot {
             // (-40/-36 C at +22 ambient). Keep their slots, but do not present them as sensors.
             String key=(String)f[0];
             if(key.equals("frontTemp")||key.equals("rearTemp")||key.equals("frontInv")||key.equals("rearInv")||key.equals("rearRpm"))continue;
+            if(key.equals("current")&&HvBatteryPower.current(raw[i])==null)continue;
             if(raw[i]==0xffff||raw[i]==0x7fffffff||raw[i]<=-10000&&raw[i]>=-10100)continue;
             double value=((int)f[3]==7?Float.intBitsToFloat(raw[i]):raw[i])*(double)f[4];
             if(Double.isFinite(value)&&value>=(double)f[5]&&value<=(double)f[6])values.put((String)f[0],value);

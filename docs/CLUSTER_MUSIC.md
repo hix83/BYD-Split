@@ -9,3 +9,11 @@
 Проверка на машине: включить доступ к уведомлениям, запустить Яндекс Музыку, открыть штатную карточку музыки на приборке; проверить смену трека, паузу, прогресс, переход на другой проигрыватель и выключение настройки. В эмуляторе проверяется сборка и отсутствие записи без SDK BYD; физическая приборка требуется для проверки отображения.
 
 Carlink отложен: шестая кнопка скрыта, код приёмника и материалы сохранены.
+
+## Проверка обложек на рабочем DiLink — 2026-10-13
+
+На DiLink5.0 / Android 12 доступ к уведомлениям BYD Split выдан, служба MaxCallNotificationService находится в списке Live notification listeners. Повторная выдача через `cmd notification allow_listener` успешна. Отказ системного экрана разрешений не означает отсутствия доступа.
+
+Исследован установленный `/system/app/MediaController/MediaController.apk`, версия 2.5.0.0.0d843db. В `com.byd.mediacontroller.local.MediaInfoSender` методы `sendCover` и `sendRemoteCover` передают `device`, `source`, `cover` через `ContentResolver.update(MainProvider.URI_INFO, ...)`. `sendBlackThirdPartyAppMediaInfo` использует источник 26 и вызывает `sendCover(null)`. Текст и прогресс передаются отдельно через Instrument FID.
+
+Провайдер `content://com.byd.mediacenter.provider/info` принадлежит `com.byd.mediacontroller.MainProvider`. READ_PROVIDER / WRITE_PROVIDER имеют protectionLevel signature. Попытка чтения из shell UID 2000 возвращает SecurityException с требованием этих разрешений. Штатный MediaController работает под UID 1000. Дополнительный обычный доступ к уведомлениям не открывает канал записи обложки. Текущая реализация BYD Split передаёт текст и прогресс; интеграция обложек через разрешённый системный интерфейс пока не найдена.

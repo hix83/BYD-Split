@@ -18,22 +18,26 @@ import android.view.View;
 import java.util.Locale;
 
 final class VehicleDashboardView extends View {
+    static final int ACTION_STATISTICS = 7;
     static final int ACTION_AUTO = 0;
     static final int ACTION_CLIMATE = 1;
+    static final int ACTION_SEATS = 6;
     static final int ACTION_BATTERY_DETAILS = 4;
     static final int ACTION_TECH_DETAILS = 5;
     static final int ACTION_CAR_SETTINGS = 2;
     static final int ACTION_HOME = 3;
+    private static final int[] QUICK_ACTIONS = {ACTION_AUTO, ACTION_CLIMATE, ACTION_SEATS, ACTION_CAR_SETTINGS, ACTION_HOME, ACTION_TECH_DETAILS, ACTION_STATISTICS};
+
 
     interface ActionListener {
         void onVehicleAction(int action);
     }
-    private static final int TEXT_PRIMARY = 0xFFDAE1EB;
-    private static final int TEXT_SECONDARY = 0xFF99A4AF;
+    private final int TEXT_PRIMARY = ThemePalette.color(getContext(), 0xFFDAE1EB, 0xff26313c);
+    private final int TEXT_SECONDARY = ThemePalette.color(getContext(), 0xFF99A4AF, 0xff65717e);
     private static final int BLUE = 0xFF2682DF;
     private static final int ENERGY_BLUE = 0xFF55B8FF;
-    private static final int HEALTHY = 0xFF55C98A;
-    private static final int AMBER = 0xFFF0A95B;
+    private final int HEALTHY = ThemePalette.color(getContext(), 0xFF55C98A, 0xff168454);
+    private final int AMBER = ThemePalette.color(getContext(), 0xFFF0A95B, 0xffa86816);
     private static final long FLOW_FRAME_INTERVAL_MS = 80L;
 
     private final android.graphics.Typeface ui7Typeface;
@@ -56,7 +60,7 @@ final class VehicleDashboardView extends View {
     private final Bitmap motorBitmap;
     private final ActionListener actionListener;
     private final RectF[] actionBounds = {
-            new RectF(), new RectF(), new RectF(), new RectF(), new RectF()};
+            new RectF(), new RectF(), new RectF(), new RectF(), new RectF(), new RectF(), new RectF()};
     private ClimateIconRenderer climateIcon;
     private VehicleTelemetrySnapshot telemetry = VehicleTelemetrySnapshot.EMPTY;
     private int demoScenario;
@@ -125,7 +129,7 @@ final class VehicleDashboardView extends View {
     private void drawBackground(Canvas canvas, float width, float height) {
         paint.setShader(new LinearGradient(
                 0, 0, width, height,
-                new int[]{0xFF1D252E, 0xFF191F27, 0xFF15181F},
+                new int[]{ThemePalette.color(getContext(), 0xFF1D252E, 0xfff8f9fb), ThemePalette.color(getContext(), 0xFF191F27, 0xfff4f6f8), ThemePalette.color(getContext(), 0xFF15181F, 0xffedeff2)},
                 new float[]{0f, 0.53f, 1f}, Shader.TileMode.CLAMP));
         canvas.drawRoundRect(new RectF(0, 0, width, height),
                 width * 0.035f, width * 0.035f, paint);
@@ -187,11 +191,11 @@ final class VehicleDashboardView extends View {
         float heading = bearing == null ? 0f : bearing;
 
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(0xFF222B34);
+        paint.setColor(ThemePalette.color(getContext(), 0xFF222B34, 0xffe2e6eb));
         canvas.drawCircle(centerX, centerY, radius, paint);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(width * .003f);
-        paint.setColor(0xFF46515C);
+        paint.setColor(ThemePalette.color(getContext(), 0xFF46515C, 0xff9aa8b6));
         canvas.drawCircle(centerX, centerY, radius, paint);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeWidth(width * .005f);
@@ -208,7 +212,7 @@ final class VehicleDashboardView extends View {
             drawText(canvas, points[index], x, y, width * .027f,
                     index == 0 ? BLUE : TEXT_PRIMARY, Paint.Align.CENTER);
         }
-        paint.setColor(Color.WHITE);
+        paint.setColor(ThemePalette.text(getContext()));
         path.reset();
         path.moveTo(centerX, centerY - radius * 1.16f);
         path.lineTo(centerX - radius * .16f, centerY - radius * .83f);
@@ -238,8 +242,13 @@ final class VehicleDashboardView extends View {
         canvas.save();
         canvas.translate(left, top);
         canvas.scale(scale, scale);
-        paint.setAlpha(155);
+        paint.setAlpha(ThemePalette.dark(getContext()) ? 155 : 220);
+        if (!ThemePalette.dark(getContext())) {
+            paint.setColorFilter(new android.graphics.ColorMatrixColorFilter(new float[]{
+                    .22f,0,0,0,0, 0,.26f,0,0,0, 0,0,.30f,0,0, 0,0,0,1,0}));
+        }
         canvas.drawBitmap(vehicleBitmap, null, new RectF(0, 0, 1170, 1034), paint);
+        paint.setColorFilter(null);
         paint.setAlpha(255);
 
         // Component anchors follow the original carbody layout (xhdpi = 2 px/dp).
@@ -319,7 +328,7 @@ final class VehicleDashboardView extends View {
             canvas.drawLine(startX, startY, wheelX, startY, paint);
             canvas.drawLine(wheelX, startY, wheelX, wheelY, paint);
         }
-        paint.setColor(0xFF82949F);
+        paint.setColor(ThemePalette.color(getContext(), 0xFF82949F, 0xff65717e));
         canvas.drawCircle(wheelX, wheelY, 3, paint);
         drawText(canvas, pressure == null ? "— bar" : String.format(Locale.US, "%.1f bar", pressure / 100f),
                 x, y, 36, color, align);
@@ -374,10 +383,10 @@ final class VehicleDashboardView extends View {
             float chipLeft = left + index * (chipWidth + gap);
             RectF chip = actionBounds[index];
             chip.set(chipLeft, top, chipLeft + chipWidth, bottom);
-            paint.setColor(0xFF262D33);
+            paint.setColor(ThemePalette.color(getContext(), 0xFF262D33, 0xffe2e6eb));
             canvas.drawRoundRect(chip, width * 0.018f,
                     width * 0.018f, paint);
-            drawActionIcon(canvas, index, chip.centerX(),
+            drawActionIcon(canvas, QUICK_ACTIONS[index], chip.centerX(),
                     chip.centerY(), width * 0.034f);
 
         }
@@ -393,16 +402,16 @@ final class VehicleDashboardView extends View {
             return;
         }
         paint.setColor(TEXT_PRIMARY);
-        int[] icons = {R.drawable.ui7_oem_car, R.drawable.ui7_climate, R.drawable.ui7_car_settings, R.drawable.ui7_home, R.drawable.ui7_tech};
+        int[] icons = {R.drawable.ui7_oem_car, R.drawable.ui7_climate, R.drawable.ui7_car_settings, R.drawable.ui7_home, R.drawable.ui7_tech, R.drawable.ui7_tech, R.drawable.ui7_seat, R.drawable.ui7_statistics};
         android.graphics.drawable.Drawable icon = getContext().getDrawable(icons[action]);
         icon = icon.mutate();
-        icon.setTint(Color.WHITE);
+        icon.setTint(ThemePalette.text(getContext()));
         if (action == ACTION_AUTO) {
             // OEM default PNG peaks at alpha 152; white tint alone retains that dimness.
             icon.setColorFilter(new android.graphics.ColorMatrixColorFilter(new float[]{
-                    0, 0, 0, 0, 255,
-                    0, 0, 0, 0, 255,
-                    0, 0, 0, 0, 255,
+                    0, 0, 0, 0, android.graphics.Color.red(ThemePalette.text(getContext())),
+                    0, 0, 0, 0, android.graphics.Color.green(ThemePalette.text(getContext())),
+                    0, 0, 0, 0, android.graphics.Color.blue(ThemePalette.text(getContext())),
                     0, 0, 0, 255f / 152f, 0}));
         }
         float opticalScale = action == ACTION_CLIMATE ? 1.30f
@@ -489,7 +498,7 @@ final class VehicleDashboardView extends View {
                 if (actionBounds[index].contains(event.getX(), event.getY())) {
                     performClick();
                     if (actionListener != null) {
-                        actionListener.onVehicleAction(index==4?ACTION_TECH_DETAILS:index);
+                        actionListener.onVehicleAction(QUICK_ACTIONS[index]);
                     }
                     return true;
                 }

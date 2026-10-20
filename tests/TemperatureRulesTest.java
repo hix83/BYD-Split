@@ -27,9 +27,26 @@ public class TemperatureRulesTest {
   e.reset();calls.clear();r.startupOnly=false;
   e.evaluate(rules,0f,5f,Collections.emptyMap(),0,(id,l)->{throw new IllegalStateException("offline");});
   e.evaluate(rules,0f,5f,Collections.emptyMap(),1,a);check(calls.isEmpty());check(e.pendingOffs().isEmpty());
+  check(e.evaluate(rules,0f,5f,Collections.emptyMap(),30000,a).size()==1);check(calls.size()==1);
+  e.reset();calls.clear();r.startupOnly=true;r.levels=new int[]{1,2,-1,-1,-1,-1};r.durationMinutes[1]=1;
+  List<Integer> actionIds=new ArrayList<>();
+  check(e.evaluate(rules,0f,5f,Collections.emptyMap(),0,(id,l)->{actionIds.add(id);if(id==1)throw new IllegalStateException("not ready");}).isEmpty());
+  check(actionIds.equals(Arrays.asList(0,1)));
+  check(e.evaluate(rules,0f,5f,Collections.emptyMap(),30000,(id,l)->actionIds.add(id)).size()==1);
+  check(actionIds.equals(Arrays.asList(0,1,1)));check(e.pendingOffs().get(0)==60000L);check(e.pendingOffs().get(1)==90000L);
+  e.evaluate(rules,0f,5f,Collections.emptyMap(),31000,(id,l)->{throw new AssertionError("startup repeated");});
+  e.newSession();check(e.pendingOffs().size()==2);
+  e.reset();calls.clear();
   e.restoreOff(0,10);e.evaluate(Collections.emptyList(),null,null,Collections.emptyMap(),10,(id,l)->{throw new IllegalStateException("offline");});
   check(e.pendingOffs().get(0)==30010L);
   e.evaluate(Collections.emptyList(),null,null,Collections.emptyMap(),30010,a);check(calls.size()==1&&calls.get(0)==0);check(e.pendingOffs().isEmpty());
+  e.reset();calls.clear();r.startupOnly=true;r.levels=new int[]{1,-1,-1,-1,-1,-1};cabin.threshold=15;
+  e.evaluate(rules,6f,21f,Collections.emptyMap(),0,a);check(calls.isEmpty());
+  cabin.threshold=25;
+  check(e.evaluate(rules,6f,21f,Collections.emptyMap(),1,a).size()==1);check(calls.size()==1);
+  e.evaluate(rules,6f,21f,Collections.emptyMap(),2,a);check(calls.size()==1);
+  e.evaluate(Collections.emptyList(),6f,21f,Collections.emptyMap(),3,a);
+  e.evaluate(rules,6f,21f,Collections.emptyMap(),4,a);check(calls.size()==2);
   System.out.println("Temperature trigger checks passed");
  }
  static void check(boolean b){if(!b)throw new AssertionError();}

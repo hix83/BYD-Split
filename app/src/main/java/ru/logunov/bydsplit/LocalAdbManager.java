@@ -224,25 +224,83 @@ final class LocalAdbManager {
 
     // Song L setting API from the installed framework, not Leopard climate switches.
     synchronized String applyComfortRule(int action, int level) {
-        int[] reads={0x4290000e,0x4fa0001b,0x4fa00023,0x4fa00018,0x4fa00020};
-        int[] writes={0x1ea00035,0x23200014,0x2320001c,0x23200010,0x23200018};
-        if(action<0||action>=5||level<0||level>(action==0?1:3)) return "Недопустимый уровень";
-        try {
-            client.connect();
-            Integer before=readAutomationInt(1001,reads[action]);
-            if(before==null||before<1||before>(action==0?2:4))
-                return "Показание функции недоступно · команда не отправлена";
-            int wanted=level+1;
-            if(before==wanted)return null;
-            Matcher reply=PARCEL_VALUE.matcher(client.shell("service call autoservice 6 i32 1001 i32 "+writes[action]+" i32 "+wanted));
-            if(!reply.find()||(int)Long.parseLong(reply.group(1),16)<0)return "Автомобиль отклонил команду";
-            for(int attempt=0;attempt<4;attempt++) {
-                Thread.sleep(250);
-                Integer actual=readAutomationInt(1001,reads[action]);
-                if(actual!=null&&actual==wanted)return null;
-            }
+        if(action<0||action>=5||level<0||level>(action==0?1:3))return "Недопустимый уровень";
+        try{
+            client.connect();String apk=context.getApplicationInfo().sourceDir;
+            if(!SAFE_APK_PATH.matcher(apk).matches())return "Путь приложения недоступен";
+            String result=client.shell("CLASSPATH="+apk+" app_process /system/bin ru.logunov.bydsplit.ComfortCommandWriter "+action+" "+level).trim();
+            if(result.contains("OK:"+(level+1)))return null;
+            Log.w(TAG,"Comfort action "+action+": "+result);
+            if(result.contains("UNAVAILABLE"))return "Показание функции недоступно";
+            if(result.contains("REFUSED"))return "Автомобиль отклонил команду";
             return "Изменение не подтверждено автомобилем";
-        } catch(Exception error) { return "Нет связи с автомобилем"; }
+        }catch(Exception e){return "Нет связи с автомобилем";}
+    }
+
+    synchronized ComfortState readComfortPanel() {
+        try { return ComfortState.parse(comfortPanelCommand("read")); }
+        catch (Exception error) { return ComfortState.parse(""); }
+    }
+
+    synchronized String writeComfortPanel(ComfortState.Field field, int value) {
+        try {
+            String result = comfortPanelCommand("write " + field.name() + " " + value).trim();
+            for (String line : result.split("[\\r\\n]+")) if (line.matches("OK:[0-9]+")) {
+                Log.i("BYD_COMFORT", "Confirmed " + field.name() + ": " + value);
+                return null;
+            }
+            Log.w("BYD_COMFORT", "Unconfirmed " + field.name() + ": " + result);
+            if (result.contains("REFUSED")) return "Автомобиль отклонил команду";
+            if (result.contains("UNAVAILABLE")) return "Функция сейчас недоступна";
+            return "Автомобиль не подтвердил изменение";
+        } catch (Exception error) { return "Нет связи с автомобилем"; }
+    }
+
+    private String comfortPanelCommand(String args) throws Exception {
+        String apk = context.getApplicationInfo().sourceDir;
+        if (!SAFE_APK_PATH.matcher(apk).matches() || !args.matches("[A-Za-z0-9_ -]+"))
+            throw new IllegalArgumentException("command");
+        client.connect();
+        return client.shell("CLASSPATH=" + apk + " app_process /system/bin ru.logunov.bydsplit.ComfortPanelBridge " + args);
+    }
+
+    synchronized StatisticsSample readStatistics() {
+        VehicleTelemetrySnapshot vehicle = readVehicleTelemetry();
+        if (vehicle == null) return null;
+        try {
+            // Read battery power at HV terminals, not traction motor power.
+            String[] commands = {
+                "service call autoservice 5 i32 1009 i32 1145045000",
+                "service call autoservice 7 i32 1009 i32 1145045016",
+                "service call autoservice 5 i32 1014 i32 1246765072"};
+            Double[] values = new Double[3];
+            for (int i = 0; i < commands.length; i++) {
+                Matcher match = PARCEL_VALUE.matcher(client.shell(commands[i]));
+                if (!match.find()) continue;
+                int raw = (int) Long.parseLong(match.group(1), 16);
+                values[i] = StatisticsSensorDecoder.decode(i, raw);
+            }
+            Double watts = values[0] != null && values[0] > 50 && values[1] != null
+                    ? values[0] * values[1] : null;
+            Double fuel = null;
+            try {
+                fuel = TripFuelCounter.readReply(client.shell("service call autoservice "
+                        + TripFuelCounter.TRANSACTION + " i32 " + TripFuelCounter.DEVICE
+                        + " i32 " + TripFuelCounter.FID));
+            } catch (Exception error) {
+                Log.w(TAG, "Fuel counter unavailable", error);
+            }
+            Double energy = null;
+            try {
+                energy = TripEnergyCounter.readReply(client.shell("service call autoservice "
+                        + TripEnergyCounter.TRANSACTION + " i32 " + TripEnergyCounter.DEVICE
+                        + " i32 " + TripEnergyCounter.FID));
+            } catch (Exception error) { Log.w(TAG, "BMS energy counter unavailable", error); }
+            return new StatisticsSample(vehicle, watts, values[2], fuel, energy);
+        } catch (Exception error) {
+            Log.w(TAG, "Statistics unavailable", error);
+            return null;
+        }
     }
 
     synchronized TechSnapshot readTechDetails() {
