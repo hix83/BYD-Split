@@ -184,6 +184,11 @@ final class LocalAdbManager {
                 try { updateEmbeddedImmersive(); }
                 catch (Exception policyError) { Log.w(TAG, "Embedded bars policy unavailable", policyError); }
             }
+            if (Build.VERSION.SDK_INT == 28) {
+                String before = client.shell("am stack list");
+                if (EmbeddedTaskParser.anyTask(before, packageName, 0) != null
+                        && !moveGuestTask(component, packageName, displayId, 0)) return false;
+            }
             String output = client.shell("am start --display " + displayId
                     + " -f 0x00010000 -n " + component + "; sleep 0.2");
             if (output.contains("Error:") || output.contains("Exception")) {
@@ -193,8 +198,12 @@ final class LocalAdbManager {
             if (EmbeddedTaskParser.root(tasks, packageName, displayId, true) == null) {
                 Integer root = EmbeddedTaskParser.root(tasks, packageName, null, false);
                 if (root == null) return false;
-                String moved = client.shell("am display move-stack " + root + " " + displayId);
-                if (moved.contains("Error") || moved.contains("Exception")) return false;
+                if (Build.VERSION.SDK_INT == 28) {
+                    if (!moveGuestTask(component, packageName, displayId, null)) return false;
+                } else {
+                    String moved = client.shell("am display move-stack " + root + " " + displayId);
+                    if (moved.contains("Error") || moved.contains("Exception")) return false;
+                }
             }
             // API 28 may open a delayed onboarding/entry Activity in a new stack on
             // display 0 even after the initial task was moved. Follow that startup
@@ -204,8 +213,7 @@ final class LocalAdbManager {
                 tasks = client.shell("sleep 0.3; am stack list");
                 Integer redirected = EmbeddedTaskParser.root(tasks, packageName, 0, true);
                 if (redirected != null) {
-                    String moved = client.shell("am display move-stack " + redirected + " " + displayId);
-                    if (moved.contains("Error") || moved.contains("Exception")) return false;
+                    if (!moveGuestTask(component, packageName, displayId, 0)) return false;
                 }
             }
             // A transient entry during a crash is not a successful launch.
@@ -224,6 +232,35 @@ final class LocalAdbManager {
             Log.e(TAG, "Cannot launch on virtual display", error);
             return false;
         }
+    }
+
+    private boolean moveGuestTask(String component, String pkg, int destination, Integer source) throws Exception {
+        String dump = client.shell("am stack list");
+        Integer task = EmbeddedTaskParser.anyTask(dump, pkg, source);
+        if (task == null) return false;
+        Integer originalDisplay = EmbeddedTaskParser.taskDisplay(dump, task);
+        if (originalDisplay == null) return false;
+        if (originalDisplay == destination) return true;
+        // ActivityOptions task+display is the normal per-task path. Some Di2
+        // builds omit FEATURE_ACTIVITIES_ON_SECONDARY_DISPLAYS and reject it.
+        client.shell("am start --task " + task + " --display " + destination
+                + " --windowingMode 1 -f 0x10010000 -n " + component);
+        dump = client.shell("am stack list");
+        if (Integer.valueOf(destination).equals(EmbeddedTaskParser.taskDisplay(dump, task))) return true;
+        Integer root = EmbeddedTaskParser.fullscreenRootOnDisplay(dump, destination);
+        if (root == null) return false;
+        // That rejected launch still creates a FULLSCREEN stack at the target.
+        // Reparent within one display (permitted on Di2), then return this owned
+        // guest-only stack. Never move the host's shared primary-display stack.
+        String moved = client.shell("am display move-stack " + root + " " + originalDisplay);
+        if (moved.contains("Exception") || moved.contains("Error")) return false;
+        try {
+            moved = client.shell("am stack move-task " + task + " " + root + " true");
+            if (moved.contains("Exception") || moved.contains("Error")) return false;
+        } finally {
+            client.shell("am display move-stack " + root + " " + destination);
+        }
+        return Integer.valueOf(destination).equals(EmbeddedTaskParser.taskDisplay(client.shell("am stack list"), task));
     }
 
     synchronized void focusEmbeddedTask(String packageName, int displayId) {
@@ -302,6 +339,26 @@ final class LocalAdbManager {
         }
     }
 
+    synchronized boolean recoverFullscreenGuest(java.util.List<String> packages) {
+        if (Build.VERSION.SDK_INT != 28 || packages.isEmpty()) return false;
+        try {
+            client.connect();
+            String tasks = client.shell("am stack list");
+            for (String pkg : packages) {
+                if (pkg.matches("[A-Za-z0-9._]+")
+                        && EmbeddedTaskParser.root(tasks, pkg, 0, true) != null) {
+                    // A separately auto-started guest covered the host before ADB
+                    // was available. Its absent SurfaceView cannot bootstrap a VD.
+                    // Restore the host once; surface callbacks then move this guest
+                    // into its selected pane and return focus to the guest task.
+                    Log.i(TAG, "Recovering fullscreen startup guest: " + pkg);
+                    return startMainActivity();
+                }
+            }
+        } catch (Exception error) { Log.w(TAG, "Fullscreen startup recovery unavailable", error); }
+        return false;
+    }
+
     synchronized boolean startMainActivity() {
         try {
             client.connect();
@@ -323,6 +380,16 @@ final class LocalAdbManager {
         return "Обогрев руля и сидений через Di2 SDK пока не подтверждён";
     }
 
+    static BatteryCellReadings readBatteryCells(Context context) {
+        String apk=context.getApplicationInfo().sourceDir;
+        if(apk==null||!SAFE_APK_PATH.matcher(apk).matches())return null;
+        // Full sweep takes seconds. Keep it off the shared display/control connection.
+        try(LocalAdbClient dedicated=new LocalAdbClient(new LocalAdbKeyStore(context.getApplicationContext()))) {
+            return BatteryCellReadings.parse(dedicated.shell("CLASSPATH="+apk
+                    +" app_process /system/bin ru.logunov.bydsplit.BatteryCellBridge"));
+        }catch(Exception error){Log.w(TAG,"Individual BMS measurements unavailable",error);return null;}
+    }
+
     private final Object batteryReadLock = new Object();
     private long batteryReadAt;
     private Map<String, Double> batteryValues = new HashMap<>();
@@ -330,17 +397,17 @@ final class LocalAdbManager {
     private Map<String, Double> readDi2Battery() {
         synchronized (batteryReadLock) {
             long now = android.os.SystemClock.elapsedRealtime();
-            if (batteryReadAt != 0 && now - batteryReadAt < 30_000) return batteryValues;
+            if (batteryReadAt != 0 && now - batteryReadAt < 5_000) return batteryValues;
             batteryReadAt = now;
             batteryValues = new HashMap<>();
             // Dedicated connection: display-helper bootstrap must not block telemetry.
             try (LocalAdbClient reader = new LocalAdbClient(new LocalAdbKeyStore(context))) {
                 reader.connect();
                 String command = "";
-                String[] labels = {"SOH", "MIN_TEMP", "MAX_TEMP", "VOLTAGE", "MIN_CELL", "MAX_CELL"};
-                int[] tx = {5, 5, 5, 7, 7, 7};
-                int[] dev = {1014, 1014, 1014, 1001, 1014, 1014};
-                int[] fid = {1145045032, 1148190736, 1148190752, 1128267816, 1147142160, 1147142192};
+                String[] labels = {"SOH", "MIN_TEMP", "MAX_TEMP", "VOLTAGE", "MIN_CELL", "MAX_CELL", "MOTOR_TEMP", "INVERTER_TEMP", "HV_VOLTAGE", "HV_CURRENT", "INSULATION", "AC_COMPRESSOR"};
+                int[] tx = {5, 5, 5, 7, 7, 7, 5, 5, 5, 7, 5, 5};
+                int[] dev = {1014, 1014, 1014, 1001, 1014, 1014, 1039, 1039, 1009, 1039, 1039, 1000};
+                int[] fid = {1145045032, 1148190736, 1148190752, 1128267816, 1147142160, 1147142192, 1154482192, 1154482184, 1145045000, 1151336480, 1134559256, 1077936137};
                 for (int i = 0; i < labels.length; i++) {
                     command += "r=$(service call autoservice " + tx[i] + " i32 " + dev[i]
                             + " i32 " + fid[i] + "); echo \"" + labels[i] + "=$r\"; ";

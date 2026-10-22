@@ -65,6 +65,11 @@ final class ShellBridgeClient {
         recovery.start();
     }
 
+    void recoverFullscreenGuest(java.util.List<String> packages) {
+        java.util.List<String> snapshot = new java.util.ArrayList<>(packages);
+        if (!snapshot.isEmpty()) executor.execute(() -> localAdb.recoverFullscreenGuest(snapshot));
+    }
+
     void restartHelpers(Consumer<Boolean> callback) {
         executor.execute(() -> callback.accept(
                 localAdb.startHelpers(true)));

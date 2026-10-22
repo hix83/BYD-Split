@@ -15,10 +15,12 @@ public final class EmbeddedInputInstrumentation extends Instrumentation {
     private long down;
     private boolean dashboardOnly;
     private boolean settingsOnly;
+    private boolean startupRecoveryOnly;
     private boolean displayLifecycleOnly;
     private boolean guestFocusOnly;
     private String paneName = "far";
     @Override public void onCreate(Bundle args) { super.onCreate(args);
+        startupRecoveryOnly = args != null && "true".equals(args.getString("startup_recovery_only"));
         settingsOnly = args != null && "true".equals(args.getString("settings_only"));
         guestFocusOnly = args != null && "true".equals(args.getString("guest_focus_only"));
         displayLifecycleOnly = args != null && "true".equals(args.getString("display_lifecycle_only"));
@@ -31,6 +33,11 @@ public final class EmbeddedInputInstrumentation extends Instrumentation {
         try {
             if (Build.VERSION.SDK_INT != 28) throw new IllegalStateException("Run on API 28");
             Context context = getTargetContext();
+            if (startupRecoveryOnly) {
+                testFullscreenStartupRecovery(context);
+                result.putString("stream", "PASS: fullscreen guest before ADB returns to its pane after delayed connection; unrelated app untouched\n");
+                finish(-1, result); return;
+            }
             if (settingsOnly) {
                 testSettingsPanel(context);
                 result.putString("stream", "PASS: settings panel sections, layout swap, retained guest view and Back restoration\n");
@@ -252,6 +259,64 @@ public final class EmbeddedInputInstrumentation extends Instrumentation {
                 check(guest[0].getTranslationX() == 0, "original guest translation restored");
             }
         });
+    }
+
+    private void testFullscreenStartupRecovery(Context context) throws Exception {
+        // Host script must remove reverse tcp:5555 before instrumentation, then
+        // restore it only after the external app has covered the launcher.
+        String component = "ru.logunov.bydsplit.test/ru.logunov.bydsplit.InputProbeActivity";
+        android.content.SharedPreferences prefs = AppPreferences.get(context);
+        prefs.edit().putString(AppPreferences.KEY_FAR_APP, component)
+                .putString(AppPreferences.KEY_FAR_APPS, component)
+                .remove(AppPreferences.KEY_DRIVER_APP).remove(AppPreferences.KEY_DRIVER_APPS)
+                .putString(AppPreferences.KEY_COMPACT_TARGET, AppPreferences.COMPACT_TARGET_VEHICLE)
+                .putBoolean(AppPreferences.KEY_DEMO_MODE, true).commit();
+        context.startActivity(new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        SystemClock.sleep(2000);
+        check(!ShellDisplayBridge.ready(), "start without ADB/display helper");
+        context.startActivity(new Intent().setComponent(ComponentName.unflattenFromString(component))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                android.app.ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());
+        SystemClock.sleep(1000);
+        check(stats().getInt("display", -1) == 0 && stats().getBoolean("resumed"), "external startup app covers host on display 0");
+        android.util.Log.i("BYD_STARTUP_TEST", "EXTERNAL_GUEST_READY: restore ADB reverse after the startup timeout");
+        long deadline = SystemClock.uptimeMillis() + 70000;
+        while (SystemClock.uptimeMillis() < deadline) {
+            Bundle snapshot = stats();
+            if (snapshot.getInt("display", -1) > 0 && snapshot.getBoolean("resumed")) break;
+            SystemClock.sleep(200);
+        }
+        check(stats().getInt("display", -1) > 0 && stats().getBoolean("resumed"), "late ADB recovers stopped host, surface and guest placement");
+        boolean[] pending = {true};
+        deadline = SystemClock.uptimeMillis() + 10000;
+        while (pending[0] && SystemClock.uptimeMillis() < deadline) {
+            runOnMainSync(() -> {
+                MainActivity host = (MainActivity) ((java.lang.ref.WeakReference<?>) field(null, MainActivity.class, "currentActivity")).get();
+                EmbeddedAppPane pane = (EmbeddedAppPane) field(host, MainActivity.class, "farEmbeddedPane");
+                pending[0] = (Boolean) field(pane, EmbeddedAppPane.class, "startupPending");
+            });
+            SystemClock.sleep(100);
+        }
+        check(!pending[0], "startup redirects settle before testing a different foreground app");
+        try (LocalAdbClient reader = new LocalAdbClient(new LocalAdbKeyStore(context))) {
+            reader.connect();
+            String dump = reader.shell("am stack list");
+            check(EmbeddedTaskParser.root(dump, "ru.logunov.bydsplit", 0, true) != null,
+                    "host stays visible on primary display, not inside its own pane");
+        }
+        context.startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                android.app.ActivityOptions.makeBasic().setLaunchDisplayId(0).toBundle());
+        boolean settingsForeground = false;
+        try (LocalAdbClient reader = new LocalAdbClient(new LocalAdbKeyStore(context))) {
+            reader.connect(); deadline = SystemClock.uptimeMillis() + 10000;
+            while (!settingsForeground && SystemClock.uptimeMillis() < deadline) {
+                settingsForeground = EmbeddedTaskParser.root(reader.shell("am stack list"), "com.android.settings", 0, true) != null;
+                if (!settingsForeground) SystemClock.sleep(100);
+            }
+        }
+        check(settingsForeground, "unrelated settings actually opened on primary display");
+        check(!LocalAdbManager.get(context).recoverFullscreenGuest(java.util.Collections.singletonList("ru.logunov.bydsplit.test")),
+                "do not reclaim unrelated foreground settings");
     }
 
     private Bundle stats() { return getTargetContext().getContentResolver().call(uri, "snapshot", null, null); }

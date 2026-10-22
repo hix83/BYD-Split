@@ -11,6 +11,8 @@ public final class Di2VehicleSdkTest {
             if (deny) throw new SecurityException("no permission");
             switch (method) {
                 case "getCurrentSpeed": return 52.4;
+                case "getAccelerateDeepness": return 37;
+                case "getBrakeDeepness": return 12;
                 case "getElecPercentageValue": return Double.NaN;
                 case "getTotalMileageValue": return 12345;
                 case "getTyrePressureValue": return args[0] == 2 ? 65535 : 230 + args[0];
@@ -48,6 +50,7 @@ public final class Di2VehicleSdkTest {
         TechSnapshot tech = new TechSnapshot(new BatteryDetailsSnapshot(car), r.values);
         check(tech.values.get("mileage") == 12345 && !tech.values.containsKey("inside"),
                 "km not scaled twice; raw sensors cannot drive rules");
+        check(tech.values.get("accelerator") == 37 && tech.values.get("brake") == 12, "SDK pedal percentages reach technical page");
         check(tech.battery.lifetimeKwh == null && tech.battery.deltaMv() == null, "no fabricated zero metrics");
         check("confirmed".equals(sdk.set("power", 1, () -> {})), "power readback");
         check(fake.writes.get(0).equals("start[0]"), "correct source argument");

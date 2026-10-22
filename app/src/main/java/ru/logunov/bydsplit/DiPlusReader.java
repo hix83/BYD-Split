@@ -6,7 +6,7 @@ import java.util.Map;
 import org.json.JSONObject;
 /** Di+ is the primary DiLink 2 reader, as in BYDMate-DiLink2-Seagull. */
 final class DiPlusReader {
- private static final String TEMPLATE="SOC:{电量百分比}|Speed:{车速}|Mileage:{里程}|Power:{发动机功率}|ChargeGun:{充电枪插枪状态}|MinBatTemp:{最低电池温度}|MaxBatTemp:{最高电池温度}|Voltage12V:{蓄电池电压}|MinCellV:{最低电池电压}|MaxCellV:{最高电池电压}|ExtTemp:{车外温度}|InsideTemp:{车内温度}|ACStatus:{空调状态}|ACTemp:{主驾驶空调温度}|FanLevel:{风量档位}|ACCirc:{空调循环方式}|TirePressFL:{左前轮气压}|TirePressFR:{右前轮气压}|TirePressRL:{左后轮气压}|TirePressRR:{右后轮气压}|DriveMode:{整车运行模式}|Wind:{空调出风模式}|MotorRpm:{前电机转速}";
+ private static final String TEMPLATE="SOC:{电量百分比}|Speed:{车速}|Mileage:{里程}|Power:{发动机功率}|ChargeGun:{充电枪插枪状态}|MinBatTemp:{最低电池温度}|MaxBatTemp:{最高电池温度}|Voltage12V:{蓄电池电压}|MinCellV:{最低电池电压}|MaxCellV:{最高电池电压}|ExtTemp:{车外温度}|InsideTemp:{车内温度}|ACStatus:{空调状态}|ACTemp:{主驾驶空调温度}|FanLevel:{风量档位}|ACCirc:{空调循环方式}|TirePressFL:{左前轮气压}|TirePressFR:{右前轮气压}|TirePressRL:{左后轮气压}|TirePressRR:{右后轮气压}|DriveMode:{整车运行模式}|Wind:{空调出风模式}|MotorRpm:{前电机转速}|Accelerator:{加速踏板深度}|Brake:{刹车深度}";
  static JSONObject read()throws Exception {
   HttpURLConnection c=(HttpURLConnection)new URL("http://127.0.0.1:8988/api/getDiPars?text="+URLEncoder.encode(TEMPLATE,"UTF-8")).openConnection();
   c.setConnectTimeout(1800);c.setReadTimeout(1800);c.setInstanceFollowRedirects(false);

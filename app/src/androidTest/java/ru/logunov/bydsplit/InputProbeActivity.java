@@ -33,7 +33,7 @@ public final class InputProbeActivity extends Activity {
     }
     @Override protected void onResume() {
         super.onResume();
-        synchronized (stats) { stats.putBoolean("resumed", true); }
+        synchronized (stats) { stats.putBoolean("resumed", true); stats.putInt("display", getWindowManager().getDefaultDisplay().getDisplayId()); }
     }
     @Override protected void onPause() {
         synchronized (stats) { stats.putBoolean("resumed", false); }

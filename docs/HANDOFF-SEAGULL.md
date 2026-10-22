@@ -475,3 +475,135 @@ BYD_SIGNING_PROPERTIES на отсутствующий файл ожидаемо
 Это первая публикация с сертификатом 2212fb7e...1d7d7b2c; несовместимость
 с подписью alpha.4 явно указана в README и release notes. Старый релиз
 не заменяется. Изменения на машину в рамках публикации не устанавливаются.
+
+
+### Late-ADB fullscreen guest and pedal percentages — 22 October 2026
+
+Fetched all remotes/tags first: seagull unchanged at aba42e6; main advanced to
+7313197 (Song). No blanket merge from main. Compared its technical reader:
+Song reads pedals via native addresses; Seagull's Di+ template omitted them and
+TechSnapshot(Map) only copied mileage and AC state. No Di5 addresses transplanted.
+
+Added Di+ keys Accelerator:{加速踏板深度} and Brake:{刹车深度}; names found
+in owner's local diplus.1.3.8-beta20_RU.apk DEX string table. SDK fallback uses
+getAccelerateDeepness/getBrakeDeepness signatures from BYDAutoSpeedDevice.
+Both paths validate 0..100, preserve missing/invalid values as unavailable, and
+copy percentages into the technical snapshot. Technical page polls every 1 s
+while active (battery page unchanged at 3 s). Parser/SDK/snapshot tests cover
+zero,100, fractional values, unsupported placeholders, sentinels and NaN.
+Actual readings from the owner's Seagull have NOT been verified this session.
+
+When a separately auto-started Music task covers MainActivity before ADB,
+its SurfaceView is unavailable; surface-first recovery alone deadlocks startup.
+Waiting panes now expose their selected guest package independently of Surface
+validity. On healthy ADB, only a visible selected waiting guest on display 0
+can trigger host foreground recovery, enabling VD creation/attachment and
+reparenting. Waiting UI stays inside the pane; no fullscreen fallback launch
+is issued by BYD Split while the bridge is unavailable. An external OEM/app
+startup can still briefly show Music fullscreen before ADB is available.
+
+API28 can put host and guest tasks in the same root stack. Moving that root
+would move the host too. Move the guest task only. On builds lacking the
+secondary-display activity feature, direct task+display launch creates a target
+fullscreen stack but refuses reparenting. The compatibility path temporarily
+moves that owned guest-only root to the task's source display, reparents within
+one display, then returns the root. It rejects roots containing the launcher
+and split-screen-secondary roots. Do NOT use `am stack start` to create roots:
+its API28 implementation creates split-secondary mode and an exploratory
+attempt caused a system_server watchdog in the disposable AVD. That approach
+was removed; final code uses the explicit fullscreen task launch.
+
+StackInfo.visible applies to all tasks in the root; check topActivity package
+as well before treating Music as the foreground app. Background Music beneath
+unrelated Settings must not cause the launcher to steal focus.
+
+Final clean disposable API28 emulator (1280x720/160dpi) regression PASS:
+no local ADB bridge, external different-UID guest fullscreen on display 0,
+late reverse localhost5555->host5571 after initial pane timeout; same host
+regains its surface, guest moves into the VD and resumes, host remains visible
+on display 0. Waited for launch redirects to settle before opening unrelated
+system Settings; recovery leaves Settings untouched. Real Yandex APK was not
+used in this automated test; it uses InputProbeActivity with separate UID.
+Real Di2 unavailable: no USB/mDNS ADB, 127.0.0.1:5038 refused, bounded on-link
+192.168.17.0/24 TCP5555 scan found only gateway (no successful handshake).
+No physical-device install or GitHub publication performed for these fixes.
+
+
+### Physical alpha.6 verification — 22 October 2026
+
+Remote ADB restored on 127.0.0.1:5038; verified physical alps k65v1_64_bsp,
+MT6765/API28. Speed was 0 before installation. Installed release alpha.6/code42
+with permanent certificate using install -r: Success, settings retained.
+Main visible on display0; Yandex Music visible on virtual display17 (836x612).
+Diagnostics displayReady=true, Di+ plus autoservice Di2 supplement healthy.
+No new BYD Split fatal exception/ANR found in the inspected logcat window.
+Late-ADB cold-start recovery remains tested with a separate-UID guest on the
+API28 emulator, not by disabling the real car's ADB transport.
+
+Manual parked pedal test: Di+ Brake 0 -> 59 -> 87 -> 0%, Accelerator
+0 -> 99 -> 0%, speed remained0. User confirmed pedals work in UI. Technical
+page shows both percentages. Temporary host HTTP forward removed after test.
+
+
+### BMS charts / alpha.8 on physical Seagull — 22 October 2026
+
+Owner suggested Song event approach. Found local uncommitted parent
+BatteryCellBridge/Readings; parent checkout was only read, not modified.
+Adapted independently verified Di2 14-byte/bus0,94cells/7probes profile.
+Added BatteryCellReadings/Bridge and BmsMeasurementsView, captured anonymous
+CAN fixture and pure regressions. Battery and technical pages show voltage
+and temperature bars. Only complete, checksum-valid, ordered fresh sweeps;
+10s age expiry, bounded8.5s subscription on separate local ADB connection.
+Background reading stops on page close (an in-flight bounded request may
+finish). No vehicle write/CAN transmission/UDS added.
+
+alpha.7/code43 was intermediate; final installed alpha.8/code44, same
+permanent release certificate, install-r Success, settings retained. Full
+release build, lint, pure tests and APK verification passed. Screenshot
+confirmed live94 bars and7 temperatures, technical page shows308V,~123W,
+insulation~6.94MOhm, estimatedSOC/hour0.40 (uses owner's saved capacity).
+Native motor19C, inverter17 then16C both in guarded diagnostics.
+Display helper recovered to displayReady=true after normal startup.
+Removed only BMS limit cards per explicit clarification; retained insulation,
+power and estimatedSOC/hour. No GitHub publication/commit this session.
+
+Inspected unrelated Di+ P2000 app_process crash: missing OEM
+IBYDCameraUser$Stub class. BYD Split stayed alive, Di+ HTTP and BMS
+measurements continued; do not attribute that stack trace to our chart.
+See docs/firmware/di2-diplus.md for exact fields/format/validation.
+
+
+### Climate section / alpha.9 — 22 October 2026
+
+User confirmed actual cabin/outdoor temperatures unavailable on this vehicle.
+Removed both cards, replaced with real target/fan/airflow/recirculation.
+Mapped climate enums through TechSnapshot, added native A/C mode supplement
+(tx5/dev1000/FID1077936137), corrected compressor interpretation from watts
+to0/1 A/C mode. Main climate power and A/C mode are separate. Never use
+target27C as measured cabin temperature (BYDMate fork does alias it).
+SDK getTemprature(3) is rear target, not cabin; removed that unused raw probe.
+Di+ returns -2000/-128 for cabin/outdoor and instrument returns sentinel195.
+Manual user test changed climate0->1 and fan0->7; A/C final0. Intermediate
+A/C-on edge not captured. Details/tests in docs/firmware/di2-diplus.md.
+
+RemoteADB5038 dropped during investigation; desktop Stop/Start of same
+existing session restored it, physical target reverified. No global ADB reset.
+alpha.9/code45 installed-r Success with speed0; permanent certificate,
+settings retained. Origin/seagull still aba42e6, no blanket merge from main.
+No GitHub publication or commit.
+
+Final alpha.9 screenshot on physical Di2: technical climate section displays
+climateOff,A/Coff,target27C,fan0/7,glass+feet,recirculationOn; cabin/outdoor
+cards absent. Motor19C/inverter16C still visible above. Helper diagnostics
+displayReady=true after bootstrap. This confirms final UI and data mapping.
+
+
+### Release preparation — 22 October 2026
+
+At owner's request, consolidated today's changes for Seagull alpha.9/code45,
+release tag seagull-v0.9.2-alpha.9. Updated README, channel documentation and
+release notes. Fetched remotes/tags: origin/seagull unchanged at aba42e6,
+origin/main advanced357ca45; no blanket merge. Full release build/lint/logic
+and permanent certificate verification passed. Publish via
+tools/publish_release.sh as prerelease with latest=false; attach APK and
+SHA256SUMS and verify GitHub asset digest before leaving draft.

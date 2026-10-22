@@ -141,9 +141,15 @@ public final class MainActivity extends ThemeActivity {
                     adbConnected = connected;
                     if (vehicleDashboardView != null) vehicleDashboardView.setAdbConnected(connected);
                     if (!connected) return;
+                    List<String> waitingGuests = new ArrayList<>();
                     for (EmbeddedAppPane pane : new ArrayList<>(activePanes)) {
+                        String pkg = pane.waitingGuestPackage();
+                        if (pkg != null) waitingGuests.add(pkg);
                         pane.recoverAfterAdbReady();
                     }
+                    // This also runs while our Activity is stopped by a guest
+                    // that the car auto-started on display 0 before ADB was ready.
+                    shellBridgeClient.recoverFullscreenGuest(waitingGuests);
                 }));
         render();
         if (getIntent().getBooleanExtra("open_settings", false)

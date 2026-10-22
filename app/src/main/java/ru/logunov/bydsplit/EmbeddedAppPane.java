@@ -75,6 +75,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private int displayCreateAttempts;
     private boolean startupPending;
     private boolean needsAdbRecovery;
+    private TextView startupWaiting;
     private ImageView transitionSnapshot;
     private Bitmap transitionBitmap;
     private ImageView transitionIncoming;
@@ -1495,8 +1496,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
             return;
         }
         if (android.os.Build.VERSION.SDK_INT == 28 && !ShellDisplayBridge.ready()) {
+            showStartupWaiting();
             if (++displayCreateAttempts <= 40) postDelayed(this::createDisplayAndLaunch, 200);
-            else showFailure("Нет связи с ADB-помощником экрана. Проверьте подключение ADB.");
             return;
         }
         try {
@@ -1513,6 +1514,32 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         }
 
         launchAfterAdbRecovery();
+    }
+
+    /** Attached views may have no Surface while an external boot app covers the host. */
+    String waitingGuestPackage() {
+        if (released || startupPending || !isAttachedToWindow() || entry == null) return null;
+        boolean missingDisplay = virtualDisplay == null;
+        if (!missingDisplay && android.os.Build.VERSION.SDK_INT == 28) {
+            android.hardware.display.DisplayManager displays = (android.hardware.display.DisplayManager)
+                    getContext().getSystemService(Context.DISPLAY_SERVICE);
+            missingDisplay = displays.getDisplay(virtualDisplay.getDisplayId()) == null;
+        }
+        return missingDisplay || needsAdbRecovery ? entry.component.getPackageName() : null;
+    }
+
+    private void showStartupWaiting() {
+        if (startupWaiting == null) {
+            startupWaiting = new TextView(getContext());
+            startupWaiting.setText("Ожидание подключения ADB…\nПриложение откроется в этой области");
+            startupWaiting.setTextColor(getContext().getColor(R.color.text_secondary));
+            startupWaiting.setTextSize(16);
+            startupWaiting.setGravity(Gravity.CENTER);
+            startupWaiting.setPadding(dp(20), dp(20), dp(20), dp(20));
+            startupWaiting.setBackgroundColor(getContext().getColor(R.color.surface_light));
+            addView(startupWaiting, new LayoutParams(-1, -1));
+        }
+        startupWaiting.setVisibility(VISIBLE);
     }
 
     /** Only resume a waiting/failed pane. Healthy guests and their surfaces stay untouched. */
@@ -1549,6 +1576,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                             || virtualDisplay.getDisplayId() != displayId) return;
                     needsAdbRecovery = !success;
                     if (success) {
+                        if (startupWaiting != null) startupWaiting.setVisibility(GONE);
                         Log.i(TAG, entry.component + " -> display " + displayId);
                         postDelayed(() ->
                                 cacheDisplayedFrame(launchedComponent), 80);
@@ -1576,6 +1604,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
                 getHeight(),
                 getResources().getDisplayMetrics().densityDpi);
         virtualDisplay.setSurface(surface);
+        if (needsAdbRecovery && !startupPending) launchAfterAdbRecovery();
         Log.i(TAG, paneName + " surface attached to existing display "
                 + virtualDisplay.getDisplayId());
     }

@@ -95,3 +95,91 @@ remaining actions: climate, vehicle settings, home, technical details.
 On-device shortcut tap verified: first quick button opens the OEM climate
 activity with populated controls (fan level 4, defrost airflow), not an empty
 screen. Native climate controls were not changed during this check.
+
+
+## Pedal percentages (22 October 2026)
+
+Di+ parameter names from owner's beta20 RU APK: `{加速踏板深度}` (accelerator)
+and `{刹车深度}` (brake). DiPlusReader requests Accelerator/Brake, parser emits
+accelerator/brake, and the map-based technical snapshot retains them as 0..100%.
+SDK fallback reads BYDAutoSpeedDevice.getAccelerateDeepness/getBrakeDeepness.
+These are getters; no pedal or powertrain commands are issued. No native Di5
+pedal FIDs were reused for Di2. Tests use fixtures; live pedal response remains
+to be checked when the Seagull is connected. Unsupported replies show “—”.
+
+
+Live confirmation, 22 October: alpha.6/code42 installed; guarded diagnostics
+include accelerator/brake. Parked manual test Brake 59/87%, Accelerator99%,
+both return to0, speed0 throughout. User confirmed display response.
+
+
+## Individual BMS measurements and thermal data — 22 October 2026
+
+Reference mechanism: owner's uncommitted Song BatteryCellBridge/Readings in
+the parent checkout (read only, parent files unchanged). Seagull independently
+verified by a bounded GB subscription: autoservice dev1039, event -1728053217.
+BODYWORK_BATTERY_SINGLE_NUM=94 (dev1001, FID1134559240),
+GB_BATTERY_PROBE_NUM=7 (dev1039, FID1134559248). SDK constants must be
+resolved after ActivityThread.systemMain/system context initialization: the
+OEM model mapping rewrites inherited feature constants. Metadata alone before
+initialization can show default FIDs shifted by2048. No default ID scan used.
+
+Di2 GB CAN envelope is14 bytes: big-endian CAN ID4, bus2, payload8; there is
+no timestamp field. This differs from the Song18-byte/bus2 profile.
+For captured Seagull BMS frames bus=0. Payload byte7 is checksum: sum of all
+8 payload bytes modulo256=255. 0x43d: index0..31, three LE uint16 mV
+per frame; final frame contains cell94 and two ffff pads. 0x43c: index0..1,
+six unsigned byte temperatures per frame, subtract40 C; final frame has
+probe7 and five ff pads. Summary indices are ignored, not treated as cells.
+Five complete94-cell sweeps measured3270..3275mV (4..5mV spread), all7
+probes12C. Numbering is BMS order, not a claimed physical layout. Captured
+fixture tests checksum, missing/out-of-order frames, padding, sentinel/ranges,
+slow/incomplete sweeps and freshness. Unsupported pack counts are rejected.
+
+Read-only scalar signals confirmed on this Di2 (tx5=int unless stated):
+- motor19C: dev1039/FID1154482192 (GB_FRONT_MOTOR_TEMP);
+- inverter17C, later16C: dev1039/FID1154482184 (GB_FRONT_MOTOR_IPM_TEMP);
+- HV308V: dev1009/FID1145045000; agrees with94*~3.274V;
+- current~0.4..0.5A: tx7 float/dev1039/FID1151336480;
+- insulation6934, later6085kOhm: dev1039/FID1134559256,
+  display6.934/6.085MOhm (same native GB contract/scale as Song).
+No Di5 temperature offsets applied. Missing float -1 and error/sentinel
+replies are rejected. PowerHV=V*A in watts; SOC/hour is an estimate from
+this power and manually configured capacity, not a direct BMS measurement.
+
+Individual measurements are collected only while the battery/technical page
+is active, using a separate local ADB connection. Each subscription ends
+on a complete sweep or8.5s timeout and unregisters in finally; no CAN/vehicle
+write commands, UDS requests or monitoring service added. Age limit10s;
+partial/stale sets never become a chart. Voltage axis is explicitly zoomed
+and labelled in mV. Bar tap shows numbered measurement and exact voltage.
+Technical BMS limit cards removed at owner's request; insulation, power and
+SOC/hour retained. New charts show94 voltages and7 temperatures.
+
+
+## Climate telemetry / alpha.9 — 22 October 2026
+
+Owner confirms measured cabin and outdoor temperatures are unavailable on
+this Seagull. Live Di+ replies InsideTemp=-2000, ExtTemp=-128 even after
+manual climate activation. Instrument.getOutCarTemperature path
+(dev1007/FID1246769216) returns195, SDK TEMPERATURE_INVALID. Do not divide
+this sentinel or map target temperature into cabin temperature. Related
+BYDMate fork deliberately aliases target into cabin for its UI; this project
+does not copy that alias. SDK getTemprature(3) is REAR TARGET, not a cabin
+sensor; removed that probe and corrected the previous SDK comment. The old
+insideRaw documentation above is historical and must not be used as a sensor.
+
+Read-only native A/C mode verified tx5/dev1000/FID1077936137:
+0=off,1=on, per initialized Di2 AC_COMPRESSOR_MODE and SDK enum. This
+is A/C mode status, not compressor watts/RPM or proof of mechanical rotation.
+Separate climate power remains Di+ ACStatus (native FID1077936144).
+Before manual test climate0/fan0; after user toggled A/C: climate1/fan7,
+A/Cmode0, target27C, wind4 (glass+feet), recirculation0 (outside air).
+The intermediate A/C-on edge was not captured; parser regression covers
+both boolean states and missing/error replies.
+
+Technical climate cards now show climate power, A/C mode, target temperature,
+fan0..7, airflow and recirculation. Removed unavailable cabin/outdoor cards
+at owner's direction. Current map-based TechSnapshot explicitly propagates
+validated climate enums; missing is not off, target is never a sensor.
+Release alpha.9/code45 uses permanent key; build,lint,logic tests passed.

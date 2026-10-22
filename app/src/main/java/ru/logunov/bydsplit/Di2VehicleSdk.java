@@ -31,6 +31,8 @@ final class Di2VehicleSdk {
     Reading read() {
         Reading r = new Reading();
         read(r, "speedKmh", "speed", "getCurrentSpeed", 0, 300);
+        read(r, "accelerator", "speed", "getAccelerateDeepness", 0, 100);
+        read(r, "brake", "speed", "getBrakeDeepness", 0, 100);
         read(r, "socPercent", "statistic", "getElecPercentageValue", 0, 100);
         // The SDK already multiplies the raw odometer by 0.1. Do not scale twice.
         read(r, "mileage", "statistic", "getTotalMileageValue", 0, 10000000);
@@ -51,7 +53,7 @@ final class Di2VehicleSdk {
         read(r, "recirculation", "ac", "getAcCycleMode", 0, 1);
         read(r, "compressor", "ac", "getAcCompressorMode", 0, 1);
         read(r, "temperatureUnit", "ac", "getTemperatureUnit", 0, 1);
-        // Firmware spells this method 'Temprature'. 1=main, 3=cabin, 4=outside.
+        // Firmware spells this method 'Temprature'. 1=main target, 3=rear target, 4=outside.
         read(r, "temperature", "ac", "getTemprature", 17, 91, 1);
         Double unit = r.values.get("temperatureUnit"), temperature = r.values.get("temperature");
         if (temperature != null && (unit == null || (unit == 1 ? temperature > 33 : temperature < 64))) {
@@ -60,7 +62,6 @@ final class Di2VehicleSdk {
         }
         // Sensor conversion/offsets are not proven: retain raw values for diagnostics,
         // but do not feed them into temperature automations as degrees Celsius.
-        read(r, "insideRaw", "ac", "getTemprature", -60, 255, 3);
         read(r, "outsideRaw", "ac", "getTemprature", -60, 255, 4);
     }
 

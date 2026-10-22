@@ -16,6 +16,17 @@ public final class DiPlusValuesTest {
   s=Di2Snapshot.vehicle(v);
   if(s.climate.targetTemperatureC!=28.5f || s.withBearing(10f).climate.targetTemperatureC!=28.5f || VehicleTelemetrySnapshot.EMPTY.withVehicleData(s).climate.targetTemperatureC!=28.5f)throw new AssertionError("climate target lost");
   if(Di2Snapshot.vehicle(DiPlusValues.parse("ACTemp:-2000")).climate.targetTemperatureC!=null)throw new AssertionError("invalid target");
+  v=DiPlusValues.parse("SOC:92|Accelerator:37.5|Brake:12");
+  TechSnapshot tech=new TechSnapshot(Di2Snapshot.battery(v),v);
+  if(tech.values.get("accelerator")!=37.5 || tech.values.get("brake")!=12)throw new AssertionError("pedals lost before technical page");
+  v=DiPlusValues.parse("Accelerator:0|Brake:100");
+  if(v.get("accelerator")!=0 || v.get("brake")!=100)throw new AssertionError("pedal endpoints");
+  for(String invalid:new String[]{"-1","101","65535","NaN","Infinity","{加速踏板深度}","—"}) {
+   v=DiPlusValues.parse("Accelerator:"+invalid+"|Brake:"+invalid);
+   if(v.containsKey("accelerator")||v.containsKey("brake"))throw new AssertionError("invalid pedal: "+invalid);
+  }
+  tech=new TechSnapshot(Di2Snapshot.battery(v),v);
+  if(tech.values.containsKey("accelerator")||tech.values.containsKey("brake"))throw new AssertionError("missing pedals must stay unknown");
   System.out.println("DiPlusValues: live reply, units and missing-data checks passed");
  }
 }

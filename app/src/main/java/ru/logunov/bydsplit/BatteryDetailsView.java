@@ -14,7 +14,11 @@ final class BatteryDetailsView extends LinearLayout {
     private final Map<String, TextView> values = new HashMap<>();
     private final TextView status;
     private final TemperatureChart chart;
-    private ScheduledExecutorService reader;
+    private ScheduledExecutorService reader, cellReader;
+    private BmsMeasurementsView measurements;
+    private final Runnable ageRefresh=new Runnable(){@Override public void run(){
+        if(!active||measurements==null)return;measurements.refreshAge();postDelayed(this,1000);
+    }};
     private int generation;
     private boolean active;
     private final boolean demo;
@@ -53,6 +57,11 @@ final class BatteryDetailsView extends LinearLayout {
         row(content,new String[]{"soh","soc","power"},new String[]{"SOH · здоровье","SOC · заряд","Мощность батареи"});
         TextView explanation=label("SOH рассчитывает BMS автомобиля. Это состояние батареи относительно новой, а SOC — её текущий заряд.",12,muted);
         explanation.setPadding(dp(4),dp(10),dp(4),dp(6)); content.addView(explanation);
+        section(content,"Напряжения ячеек · 94");
+        measurements=new BmsMeasurementsView(context);
+        content.addView(measurements,new LinearLayout.LayoutParams(-1,dp(448)));
+        TextView cellNote=label("Номера соответствуют порядку BMS, а не расположению ячеек в корпусе. Диаграмма обновляется только при открытом экране.",12,muted);
+        cellNote.setPadding(dp(4),dp(6),dp(4),dp(8));content.addView(cellNote);
         section(content,"Температура батареи");
         row(content,new String[]{"minTemp","maxTemp","deltaTemp"},new String[]{"Минимальная","Максимальная","Разница датчиков"});
         chart=new TemperatureChart(context); LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,dp(105));cp.topMargin=dp(12);content.addView(chart,cp);
@@ -70,25 +79,27 @@ final class BatteryDetailsView extends LinearLayout {
         row(content,new String[]{"drive","frontRpm"},new String[]{"Режим движения","Электромотор · об/мин"});
         section(content,"Батарея · сейчас");
         row(content,new String[]{"soh","soc","avgTemp"},new String[]{"SOH","SOC","Температура · средняя"});
-        row(content,new String[]{"hv","power","batteryWatts"},new String[]{"Напряжение HV","Мощность батареи","Мощность BMS"});
-        row(content,new String[]{"voltage","insulation","rate"},new String[]{"Бортсеть","Изоляция HV","Изменение SOC / час"});
+        row(content,new String[]{"hv","power","batteryWatts"},new String[]{"Напряжение HV","Мощность батареи","Мощность HV · Вт"});
+        row(content,new String[]{"voltage","insulation","rate"},new String[]{"Бортсеть","Изоляция HV","Расчёт SOC / час"});
         TextView capacity=label("Ёмкость батареи для расчёта %/ч · настроить",13,getContext().getColor(R.color.accent));
         capacity.setPadding(0,dp(10),0,dp(6));capacity.setOnClickListener(v->editCapacity());content.addView(capacity);
-        section(content,"Лимиты BMS и ячейки");
-        row(content,new String[]{"chargeLimit","dischargeLimit"},new String[]{"Макс. мощность заряда","Макс. мощность разряда"});
+        section(content,"Измерения ячеек и датчиков BMS");
+        measurements=new BmsMeasurementsView(getContext());
+        content.addView(measurements,new LinearLayout.LayoutParams(-1,dp(448)));
         row(content,new String[]{"minCell","maxCell","deltaCell"},new String[]{"Ячейка · минимум","Ячейка · максимум","Разброс"});
         section(content,"Электромотор и инвертор");
         row(content,new String[]{"frontTemp","frontInv"},new String[]{"Температура мотора","Температура инвертора"});
-        TextView motorsNote=label("Источники показаний DiLink 2 требуют проверки на автомобиле. Недоступные значения обозначены прочерком.",14,muted);
+        TextView motorsNote=label("Температуры переднего электромотора и инвертора · DiLink 2. Недоступные значения обозначены прочерком.",14,muted);
         motorsNote.setPadding(0,dp(8),0,dp(4));content.addView(motorsNote);
         row(content,new String[]{"accelerator","brake"},new String[]{"Педаль газа","Педаль тормоза"});
         section(content,"Климат");
-        row(content,new String[]{"compressor","ac"},new String[]{"Компрессор","Кондиционер"});
-        row(content,new String[]{"inside","outside"},new String[]{"Температура салона","Температура снаружи"});
+        row(content,new String[]{"ac","compressor"},new String[]{"Климат","Кондиционер A/C"});
+        row(content,new String[]{"target","fan"},new String[]{"Заданная температура","Вентилятор"});
+        row(content,new String[]{"airflow","recirculation"},new String[]{"Направление обдува","Рециркуляция"});
         section(content,"Батарея · история");
         row(content,new String[]{"mileage","lifetime"},new String[]{"Пробег BMS","Энергия BMS"});
         row(content,new String[]{"sessionAvg","allAvg"},new String[]{"Средний SOC после зарядки","Средний SOC · наблюдения"});
-        TextView note=label("—: нет достоверного показания. Средняя температура — середина минимума и максимума. Средний SOC собирается приложением раз в минуту при получении телеметрии. %/ч: плюс — расход, минус — заряд.",14,muted);
+        TextView note=label("—: нет достоверного показания. Средняя температура — середина минимума и максимума. Средний SOC собирается приложением раз в минуту при получении телеметрии. %/ч — оценка по мощности HV и заданной ёмкости: плюс — расход, минус — заряд.",14,muted);
         note.setPadding(0,dp(14),0,dp(12));content.addView(note);
     }
     private void editCapacity() {
@@ -105,10 +116,17 @@ final class BatteryDetailsView extends LinearLayout {
         for(Map.Entry<String,TextView> item:values.entrySet())item.getValue().setText("—");
         for(Object[] f:TechSnapshot.FIELDS) {
             String key=(String)f[0];if(!values.containsKey(key))continue;
-            String unit=key.contains("Temp")||key.endsWith("Inv")||key.equals("inside")||key.equals("outside")?"°C":key.endsWith("Rpm")?"об/мин":key.endsWith("Limit")?"кВт":key.equals("hv")?"В":key.equals("insulation")?"МОм":key.equals("compressor")?"Вт":key.equals("mileage")?"км":key.equals("ac")?"":"%";
+            String unit=key.contains("Temp")||key.endsWith("Inv")||key.equals("inside")||key.equals("outside")?"°C":key.endsWith("Rpm")?"об/мин":key.endsWith("Limit")?"кВт":key.equals("hv")?"В":key.equals("insulation")?"МОм":key.equals("compressor")?"":key.equals("mileage")?"км":key.equals("ac")?"":"%";
             put(key,number(data.values.get(key),unit,key.equals("insulation")?2:key.endsWith("Limit")?1:0));
         }
-        Double ac=data.values.get("ac");put("ac",ac==null?"—":ac==1?"Включён":"Выключен");
+        Double ac=data.values.get("ac");put("ac",state(ac));
+        put("compressor",state(data.values.get("compressor")));
+        put("target",number(data.values.get("temperature"),"°C",0));
+        Double fan=data.values.get("fan");put("fan",fan==null?"—":String.format(Locale.ROOT,"%.0f / 7",fan));
+        put("recirculation",state(data.values.get("recirculation")));
+        Double wind=data.values.get("wind");
+        String[] directions={"—","Лицо","Лицо и ноги","Ноги","Стекло и ноги","Стекло","Лицо, ноги и стекло","Лицо и стекло"};
+        put("airflow",wind==null?"—":directions[wind.intValue()]);
         put("drive",s.driveMode==null?"—":s.driveMode==1?"ECO":s.driveMode==2?"SPORT":s.driveMode==4?"SNOWFIELD":s.driveMode==0||s.driveMode==3?"NORMAL":"Код "+s.driveMode);
         put("frontRpm",number(s.motorRpm,"об/мин",0));
         put("soc",number(s.batterySocPercent,"%",0));put("soh",number(s.batterySohPercent,"%",0));
@@ -145,8 +163,18 @@ final class BatteryDetailsView extends LinearLayout {
     void setActive(boolean enabled) {
         if(active==enabled)return;active=enabled;generation++;
         if(reader!=null){reader.shutdownNow();reader=null;}
+        if(cellReader!=null){cellReader.shutdownNow();cellReader=null;}
+        removeCallbacks(ageRefresh);
+        if(measurements!=null)measurements.update(null);
         if(!enabled)return;
         final int token=generation;
+        if(measurements!=null&&!demo) {
+            post(ageRefresh);cellReader=Executors.newSingleThreadScheduledExecutor();
+            cellReader.scheduleWithFixedDelay(()->{
+                BatteryCellReadings cells=LocalAdbManager.readBatteryCells(getContext());
+                post(()->{if(active&&token==generation)measurements.update(cells);});
+            },0,3,TimeUnit.SECONDS);
+        }
         reader=Executors.newSingleThreadScheduledExecutor();
         reader.scheduleWithFixedDelay(() -> {
             if(technical) {
@@ -156,9 +184,10 @@ final class BatteryDetailsView extends LinearLayout {
             BatteryDetailsSnapshot data=demo ? new BatteryDetailsSnapshot(VehicleTelemetrySnapshot.demo(),new int[]{3275,3279,Float.floatToIntBits(1200),0,2})
                     : LocalAdbManager.get(getContext()).readBatteryDetails();
             post(() -> {if(active && token==generation)update(data);});
-        },0,3,TimeUnit.SECONDS);
+        },0,technical?1:3,TimeUnit.SECONDS);
     }
     @Override protected void onDetachedFromWindow(){setActive(false);super.onDetachedFromWindow();}
+    private String state(Double n){return n==null?"—":n==1?"Включён":"Выключен";}
     private String number(Number n,String unit,int decimals){return n==null?"—":String.format(Locale.forLanguageTag("ru"),"%."+decimals+"f",n.doubleValue())+" "+unit;}
     private void put(String key,String value){TextView field=values.get(key);if(field!=null)field.setText(value);}
     private void update(BatteryDetailsSnapshot data) {

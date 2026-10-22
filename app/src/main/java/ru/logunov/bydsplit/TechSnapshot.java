@@ -8,7 +8,31 @@ final class TechSnapshot {
         this.battery = battery;
         // Di2 SDK odometer is already km. Climate power is a 0/1 state.
         if (readings.containsKey("mileage")) values.put("mileage", readings.get("mileage"));
-        if (readings.containsKey("power")) values.put("ac", readings.get("power"));
+        discrete(readings,"power","ac",0,1);
+        discrete(readings,"compressor","compressor",0,1);
+        discrete(readings,"fan","fan",0,7);
+        discrete(readings,"wind","wind",1,7);
+        discrete(readings,"recirculation","recirculation",0,1);
+        copy(readings,"temperature",17,33);
+        for (String key : new String[]{"accelerator", "brake"}) {
+            Double value = readings.get(key);
+            if (value != null && Double.isFinite(value) && value >= 0 && value <= 100)
+                values.put(key, value);
+        }
+        for(String key:new String[]{"frontTemp","frontInv"}) {
+            Double value=readings.get(key);
+            if(value!=null&&Double.isFinite(value)&&value>=-40&&value<=200)values.put(key,value);
+        }
+        copy(readings,"hv",100,600);copy(readings,"current",-2000,2000);copy(readings,"insulation",0,10000);
+        Double volts=values.get("hv"),amps=values.get("current");
+        if(volts!=null&&amps!=null&&amps!=-1)values.put("batteryWatts",volts*amps);
+    }
+    private void discrete(Map<String,Double> readings,String from,String to,int min,int max){
+        Double v=readings.get(from);
+        if(v!=null&&Double.isFinite(v)&&v==Math.rint(v)&&v>=min&&v<=max)values.put(to,v);
+    }
+    private void copy(Map<String,Double> readings,String key,double min,double max){
+        Double v=readings.get(key);if(v!=null&&Double.isFinite(v)&&v>=min&&v<=max)values.put(key,v);
     }
     // key, device, FID, transaction, scale, minimum, maximum
     static final Object[][] FIELDS={
@@ -25,7 +49,7 @@ final class TechSnapshot {
         {"rearRpm",1012,621805576,5,1.,-25000.,25000.},
         {"accelerator",1013,874512392,5,1.,0.,100.},
         {"brake",1013,874512400,5,1.,0.,100.},
-        {"compressor",1000,1031798840,5,1.,0.,30000.},
+        {"compressor",1000,1077936137,5,1.,0.,1.},
         {"ac",1000,1077936144,5,1.,0.,1.},
         {"inside",1000,1031798832,5,1.,-60.,80.},
         {"outside",1000,1077936184,5,1.,-60.,80.},

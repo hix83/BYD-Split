@@ -9,6 +9,7 @@ final class DiPlusValues {
   put(v,fields,"Mileage","mileage",0,100000000,.1);
   for(String wheel:new String[]{"FL","FR","RL","RR"})put(v,fields,"TirePress"+wheel,"pressure_"+wheel.toLowerCase(java.util.Locale.ROOT),100,500,1);
   put(v,fields,"Power","batteryPowerKw",-500,500,1);
+  put(v,fields,"Accelerator","accelerator",0,100,1);put(v,fields,"Brake","brake",0,100,1);
   put(v,fields,"MotorRpm","motorRpm",-20000,20000,1);
   put(v,fields,"ChargeGun","chargeGunState",1,5,1);
   put(v,fields,"DriveMode","driveMode",0,4,1);
