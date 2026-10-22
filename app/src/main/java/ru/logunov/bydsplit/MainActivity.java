@@ -70,6 +70,10 @@ public final class MainActivity extends Activity {
     private int pickingDirection;
     private View pickerOverlay;
     private LinearLayout splitRoot;
+    private LinearLayout screenRoot;
+    private View classicDock;
+    private DynamicDockView dynamicDock;
+    private MusicGlowView classicMusicGlow;
     private LinearLayout compactPaneContainer;
     private View dividerView;
     private FrameLayout driverSlot;
@@ -120,6 +124,7 @@ public final class MainActivity extends Activity {
         currentActivity = new WeakReference<>(this);
         preferences = AppPreferences.get(this);
         applyDebugLaunchOptions(getIntent());
+        AdbRecovery.get(this).start();
         repository = new AppRepository(this);
         shellBridgeClient = new ShellBridgeClient(this);
         steeringEventServer = new SteeringEventServer();
@@ -195,6 +200,8 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        if (classicMusicGlow != null) classicMusicGlow.setActive(!DockConfiguration.dynamic(this));
+        if (dynamicDock != null) dynamicDock.setActive(DockConfiguration.dynamic(this));
         GithubUpdater.onResume(this);
         if (batteryDetailsView != null) batteryDetailsView.setActive(true);
         if (internalPage instanceof ComfortView) ((ComfortView)internalPage).setActive(true);
@@ -271,6 +278,8 @@ public final class MainActivity extends Activity {
     @Override
     protected void onPause() {
         resumed = false;
+        if (classicMusicGlow != null) classicMusicGlow.setActive(false);
+        if (dynamicDock != null) dynamicDock.setActive(false);
         if (batteryDetailsView != null) batteryDetailsView.setActive(false);
         if (internalPage instanceof ComfortView) ((ComfortView)internalPage).setActive(false);
         super.onPause();
@@ -278,6 +287,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (dynamicDock != null) dynamicDock.closeEditor(false);
         cameraAutomation.stop();
         clusterMusicBridge.close();
         ParkingCameraOverlay.close(this);
@@ -372,6 +382,9 @@ public final class MainActivity extends Activity {
     }
 
     private void render() {
+        if (dynamicDock != null) dynamicDock.closeEditor(false);
+        if (dynamicDock != null) dynamicDock.setActive(false);
+        dynamicDock = null;
         releasePanes();
 
         splitRoot = new LinearLayout(this);
@@ -391,11 +404,17 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams dockParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(86));
         dockParams.topMargin = dp(8);
-        compactPaneContainer.addView(createCompactDock(), dockParams);
+        classicDock = createCompactDock();
+        compactPaneContainer.addView(classicDock, dockParams);
 
         dividerView = createDivider();
         attachPanelOrder();
-        setContentView(splitRoot);
+        screenRoot = new LinearLayout(this);
+        screenRoot.setOrientation(LinearLayout.VERTICAL);
+        screenRoot.setBackgroundColor(getColor(R.color.background));
+        screenRoot.addView(splitRoot, new LinearLayout.LayoutParams(-1, 0, 1f));
+        setContentView(screenRoot);
+        configureDock();
         restoreCompactContent();
         refreshPane(KEY_FAR_APP);
     }
@@ -406,6 +425,36 @@ public final class MainActivity extends Activity {
             return;
         }
         attachPanelOrder();
+        configureDock();
+    }
+
+    private void configureDock() {
+        if (screenRoot == null) return;
+        boolean dynamic = DockConfiguration.dynamic(this);
+        classicDock.setVisibility(dynamic ? View.GONE : View.VISIBLE);
+        if (classicMusicGlow != null) classicMusicGlow.setActive(!dynamic && resumed);
+        if (dynamic && dynamicDock == null) {
+            dynamicDock = new DynamicDockView(this, item -> {
+                switch (item) {
+                    case SONG: showVehicleDashboard(true); break;
+                    case CAMERA: showParkingCamera(); break;
+                    case MUSIC: activateQuickApp(quickMusicApp); break;
+                    case MESSAGES: activateQuickApp(quickMaxApp); break;
+                    case SETTINGS: toggleSettings(); break;
+                    case CLIMATE: openComfort(false); break;
+                    case SEATS: toggleInternalPage("seats", () -> openComfort(true)); break;
+                    default: break;
+                }
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(DynamicDockView.HEIGHT_DP));
+            params.setMargins(dp(8), 0, dp(8), dp(8));
+            screenRoot.addView(dynamicDock, params);
+        }
+        if (dynamicDock != null) {
+            dynamicDock.setVisibility(dynamic ? View.VISIBLE : View.GONE);
+            dynamicDock.setActive(dynamic && resumed);
+        }
+        updateCompactDockSelection();
     }
 
     private void attachPanelOrder() {
@@ -469,7 +518,13 @@ public final class MainActivity extends Activity {
                 getDrawable(R.drawable.dock_ui7_settings),
                 this::toggleSettings, null);
         updateCompactDockSelection();
-        return dock;
+        FrameLayout background = new FrameLayout(this);
+        background.setBackground(dock.getBackground());background.setClipToOutline(true);
+        dock.setBackgroundColor(Color.TRANSPARENT);
+        classicMusicGlow = new MusicGlowView(this);
+        background.addView(classicMusicGlow, new FrameLayout.LayoutParams(-1,-1));
+        background.addView(dock, new FrameLayout.LayoutParams(-1,-1));
+        return background;
     }
 
     private View addCompactButton(LinearLayout dock, String label,
@@ -539,6 +594,11 @@ public final class MainActivity extends Activity {
                 contentVisible && !showingVehicleDashboard
                         && sameComponent(driverApp, quickPhoneApp));
         styleCompactButton(compactSettingsButton, settingsVisible);
+        if (dynamicDock != null) dynamicDock.setNavigation(
+                contentVisible && showingVehicleDashboard, cameraVisible,
+                contentVisible && !showingVehicleDashboard && sameComponent(driverApp, quickMusicApp),
+                contentVisible && !showingVehicleDashboard && sameComponent(driverApp, quickMaxApp),
+                settingsVisible, internalPageName);
     }
 
     private void styleCompactButton(View button, boolean active) {
@@ -837,6 +897,12 @@ public final class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions,
                                            int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == MusicGlowView.PERMISSION_REQUEST) {
+            boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            preferences.edit().putBoolean(MusicGlowView.ENABLED, granted).apply();
+            if (settingsView != null) settingsView.refreshMusicGlowSetting();
+            if (!granted) Toast.makeText(this,"Без разрешения анализ аудиовыхода недоступен",Toast.LENGTH_SHORT).show();
+        }
         if (requestCode == 341 && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             cameraAutomation.start();

@@ -45,6 +45,11 @@ final class LocalAdbManager {
         return client.isConnected();
     }
 
+    synchronized boolean restartHelpersAfterRecovery() {
+        client.close();
+        return startHelpers(true);
+    }
+
     synchronized boolean connect() {
         try {
             client.connect();

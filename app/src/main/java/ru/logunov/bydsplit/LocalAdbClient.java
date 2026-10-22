@@ -25,6 +25,7 @@ final class LocalAdbClient implements Closeable {
     private static final String TAG = "BYD_LOCAL_ADB";
     private static final int A_CNXN = 0x4e584e43;
     private static final int A_AUTH = 0x48545541;
+    private static final int A_STLS = 0x534c5453;
     private static final int A_OPEN = 0x4e45504f;
     private static final int A_OKAY = 0x59414b4f;
     private static final int A_CLSE = 0x45534c43;
@@ -38,13 +39,20 @@ final class LocalAdbClient implements Closeable {
             "3021300906052b0e03021a05000414");
 
     private final LocalAdbKeyStore keyStore;
+    private final int port, handshakeTimeout;
+    private final boolean requireTls;
     private final AtomicInteger nextLocalId = new AtomicInteger(1);
     private Socket socket;
     private InputStream input;
     private OutputStream output;
 
     LocalAdbClient(LocalAdbKeyStore keyStore) {
-        this.keyStore = keyStore;
+        this(keyStore, 5555, false, 65000);
+    }
+
+    LocalAdbClient(LocalAdbKeyStore keyStore, int port, boolean requireTls, int timeout) {
+        if (port < 1 || port > 65535) throw new IllegalArgumentException("Invalid local ADB port");
+        this.keyStore = keyStore; this.port = port; this.requireTls = requireTls; this.handshakeTimeout = timeout;
     }
 
     synchronized boolean isConnected() {
@@ -57,9 +65,9 @@ final class LocalAdbClient implements Closeable {
         }
         close();
         Socket candidate = new Socket();
-        candidate.connect(new InetSocketAddress("127.0.0.1", 5555), 1800);
-        candidate.setSoTimeout(65000);
         socket = candidate;
+        candidate.connect(new InetSocketAddress("127.0.0.1", port), 1800);
+        candidate.setSoTimeout(handshakeTimeout);
         input = candidate.getInputStream();
         output = candidate.getOutputStream();
 
@@ -67,10 +75,20 @@ final class LocalAdbClient implements Closeable {
         send(A_CNXN, VERSION, 4096,
                 "host::bydsplit\0".getBytes(StandardCharsets.US_ASCII));
         boolean sentPublicKey = false;
+        boolean tlsUpgraded = false;
+        long handshakeDeadline = System.nanoTime() + handshakeTimeout * 1000000L;
         while (true) {
+            if (System.nanoTime() > handshakeDeadline) throw new java.net.SocketTimeoutException("ADB handshake timeout");
             Packet response = readPacket();
+            if (response.command == A_STLS && !tlsUpgraded && requireTls) {
+                send(A_STLS, 0x01000000, 0, new byte[0]);
+                socket = AdbRecoveryTls.upgrade(socket, keys);
+                input = socket.getInputStream(); output = socket.getOutputStream();
+                tlsUpgraded = true; continue;
+            }
+            if (requireTls && !tlsUpgraded) throw new IllegalStateException("ADB TLS required");
             if (response.command == A_CNXN) {
-                socket.setSoTimeout(15000);
+                socket.setSoTimeout(Math.min(15000, handshakeTimeout));
                 return;
             }
             if (response.command != A_AUTH || response.arg0 != AUTH_TOKEN) {
@@ -89,6 +107,10 @@ final class LocalAdbClient implements Closeable {
 
     synchronized String shell(String command) throws Exception {
         return runService("shell:" + command + "\0", false);
+    }
+
+    synchronized void restartTcpip() throws Exception {
+        runService("tcpip:5555\0", false);
     }
 
     synchronized String shellV2(String command) throws Exception {

@@ -15,7 +15,7 @@ final class ComfortView extends LinearLayout {
     private final Runnable onStateChanged=this::refresh;
     private final List<Runnable> bindings=new ArrayList<>();
     private final TextView status;
-    private final LinearLayout content;
+    private final FittedPanel content;
     private final Button climateTab,seatsTab;
     private boolean foreground,subscribed;
     private boolean seats;
@@ -35,8 +35,7 @@ final class ComfortView extends LinearLayout {
         back.setContentDescription("Закрыть экран и вернуться к приложению");
         LayoutParams backParams=new LayoutParams(dp(140),dp(48));backParams.leftMargin=dp(28);header.addView(back,backParams);addView(header);
         status=text("Получение состояний автомобиля…",13,true);LayoutParams statusParams=new LayoutParams(-1,dp(35));addView(status,statusParams);
-        ScrollView scroll=new ScrollView(context);scroll.setFillViewport(true);scroll.setClipToPadding(false);
-        content=column();scroll.addView(content);addView(scroll,new LayoutParams(-1,0,1));
+        content=new FittedPanel(context);addView(content,new LayoutParams(-1,0,1));
         build();
     }
     boolean seatsPage(){return seats;}
@@ -51,11 +50,11 @@ final class ComfortView extends LinearLayout {
             public boolean enabled(){return available();}
             public void command(ComfortState.Field field,int value){write(field,value);}
         });
-        content.addView(panel,new LayoutParams(-1,-1));bindings.add(panel::refreshState);
+        content.show(panel,800,590);bindings.add(panel::refreshState);
     }
     private void buildSeats(){
         SeatCabin cabin=new SeatCabin();
-        content.addView(cabin,new LayoutParams(-1,-1));
+        content.show(cabin,790,632);
         bindings.add(cabin::refreshState);
     }
     /** Original 518×604 dp OEM cabin, with accessible controls anchored to the seats. */
@@ -169,10 +168,31 @@ final class ComfortView extends LinearLayout {
         }
     }
     private Integer current(ComfortState.Field field){return available()?controller.current(field):null;}
+    /** Scale art, text and touch targets together to the actual pane, including a full-width dock. */
+    private final class FittedPanel extends FrameLayout {
+        private int designWidth,designHeight;
+        FittedPanel(Context context){super(context);setClipChildren(true);}
+        void show(View panel,int width,int height){
+            removeAllViews();designWidth=dp(width);designHeight=dp(height);
+            addView(panel,new FrameLayout.LayoutParams(designWidth,designHeight));
+        }
+        @Override protected void onMeasure(int widthSpec,int heightSpec){
+            int width=MeasureSpec.getSize(widthSpec),height=MeasureSpec.getSize(heightSpec);
+            setMeasuredDimension(width,height);
+            if(getChildCount()>0)getChildAt(0).measure(MeasureSpec.makeMeasureSpec(designWidth,MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(designHeight,MeasureSpec.EXACTLY));
+        }
+        @Override protected void onLayout(boolean changed,int l,int t,int r,int b){
+            if(getChildCount()==0)return;
+            View panel=getChildAt(0);float scale=Math.min(getWidth()/(float)designWidth,getHeight()/(float)designHeight);
+            panel.setPivotX(0);panel.setPivotY(0);panel.setScaleX(scale);panel.setScaleY(scale);
+            int x=Math.round((getWidth()-designWidth*scale)/2),y=Math.round((getHeight()-designHeight*scale)/2);
+            panel.layout(x,y,x+designWidth,y+designHeight);
+        }
+    }
     private boolean available(){return foreground&&isAttachedToWindow()&&controller.available();}
     private void refresh(){
         for(Runnable update:bindings)update.run();
-        if(AppPreferences.isDemoModeEnabled(getContext()))status.setText("Демо-режим: управление автомобилем отключено");
+        if(AppPreferences.isDemoModeEnabled(getContext()))status.setText("Демо: кнопки меняют только показания на экране");
         else if(controller.pending())status.setText("Применяем настройки…");
         else status.setText(available()?"Состояния автомобиля · обновляются автоматически":"Нет свежих данных от автомобиля · управление недоступно");
     }
@@ -180,7 +200,7 @@ final class ComfortView extends LinearLayout {
     @Override protected void onAttachedToWindow(){super.onAttachedToWindow();updateRunning();}
     @Override protected void onDetachedFromWindow(){unsubscribe();super.onDetachedFromWindow();}
     private void updateRunning(){
-        boolean shouldListen=foreground&&isAttachedToWindow()&&!AppPreferences.isDemoModeEnabled(getContext());
+        boolean shouldListen=foreground&&isAttachedToWindow();
         if(shouldListen&&!subscribed){subscribed=true;controller.addListener(onStateChanged);}
         else if(!shouldListen)unsubscribe();
         refresh();

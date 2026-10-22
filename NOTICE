@@ -12,3 +12,10 @@ Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
 These adapted components are licensed under PolyForm Noncommercial License 1.0.0,
 not Apache 2.0. Terms: https://polyformproject.org/licenses/noncommercial/1.0.0/
 Full license included in app/src/main/assets/BYDMate-LICENSE.txt and in APK assets.
+
+AdbRecovery / AdbRecoveryTls and the STLS flow in LocalAdbClient are adapted from
+BYDMate AdbRestoreManager / AdbRestoreSystem / AdbTls / AdbCertificate / AdbProtocolClient,
+commit b47ead7fc9f0741ed2d4b2ff61a785da337f0500 (https://github.com/AndyShaman/BYDMate).
+Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
+These adapted components are licensed under PolyForm Noncommercial License 1.0.0,
+not Apache 2.0. Full license: app/src/main/assets/BYDMate-LICENSE.txt (included in APK).

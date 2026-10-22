@@ -37,5 +37,6 @@ final class ComfortRequests {
         return false;
     }
     boolean hasPending(){return !pending.isEmpty();}
+    boolean pending(ComfortState.Field field){return pending.containsKey(field);}
     void clear(){pending.clear();inFlight=null;}
 }

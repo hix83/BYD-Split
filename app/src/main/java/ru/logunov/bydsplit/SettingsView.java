@@ -34,6 +34,19 @@ final class SettingsView extends LinearLayout
     private Button steeringResetButton;
     private TextView layoutHelp;
     private TextView steeringStatus;
+    private TextView adbRestoreStatus;
+    private TextView musicGlowStatus;
+    private Switch musicGlowSwitch;
+    void refreshMusicGlowSetting() {
+        if (musicGlowSwitch != null) musicGlowSwitch.setChecked(MusicGlowView.enabled(activity));
+    }
+    private final Runnable refreshAdbRestore = new Runnable() {
+        @Override public void run() {
+            if (adbRestoreStatus != null) adbRestoreStatus.setText(AdbRecovery.get(getContext()).status());
+            if (musicGlowStatus != null) musicGlowStatus.setText(MusicGlowView.status(getContext()));
+            if (isAttachedToWindow()) postDelayed(this, 1000);
+        }
+    };
     private ShellBridgeClient bridgeClient;
     private int steeringCaptureStage;
     private int capturedShortScan;
@@ -63,8 +76,10 @@ final class SettingsView extends LinearLayout
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         if (bridgeClient == null) bridgeClient = new ShellBridgeClient(activity);
+        post(refreshAdbRestore);
     }
     @Override protected void onDetachedFromWindow() {
+        removeCallbacks(refreshAdbRestore);
         SteeringEventServer.cancelKeyCapture(this);
         steeringCaptureStage = 0;
         ShellBridgeClient closingBridge = bridgeClient;
@@ -198,6 +213,93 @@ final class SettingsView extends LinearLayout
         updateLayoutButtons();
         root.addView(layoutCard, fullWidthWrap());
 
+        LinearLayout dockCard = card();
+        dockCard.addView(sectionTitle("Нижняя панель"));
+        Switch dynamicDock = settingsSwitch("Динамическая панель", DockConfiguration.dynamic(activity));
+        dynamicDock.setOnCheckedChangeListener((button, checked) -> {
+            AppPreferences.get(activity).edit().putBoolean(DockConfiguration.MODE, checked).apply();
+            MainActivity.applyPanelLayoutFromSettings();
+        });
+        addWithTop(dockCard, dynamicDock, 8);
+        addWithTop(dockCard, text("Выключено — классическая панель из пяти кнопок под служебной областью. Включено — панель на всю ширину и две области одинаковой высоты. Удерживайте кнопку или свободное место: панель перейдёт в режим редактирования, а над ней откроется библиотека. Добавляйте элементы из библиотеки, двигайте кнопки на панели; корзина возвращает элемент в библиотеку. От 2 до 20 кнопок; длинная панель прокручивается горизонтально.", 14, getColor(R.color.text_secondary)), 8);
+        addWithTop(root, dockCard, 12);
+
+        LinearLayout glowCard = card();
+        glowCard.addView(sectionTitle("Светомузыка панели"));
+        musicGlowSwitch = settingsSwitch("Мягкие волны под музыку", MusicGlowView.enabled(activity));
+        musicGlowSwitch.setOnCheckedChangeListener((button, checked) -> {
+            if (checked && activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                musicGlowSwitch.setChecked(false);
+                activity.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MusicGlowView.PERMISSION_REQUEST);
+            } else AppPreferences.get(activity).edit().putBoolean(MusicGlowView.ENABLED, checked).apply();
+        });
+        addWithTop(glowCard, musicGlowSwitch, 8);
+        addWithTop(glowCard, text("Свечение от нижнего края реагирует на аудиовыход Android. Иконки остаются неподвижными. Система запрашивает разрешение «Микрофон» для Visualizer; запись с микрофона не ведётся. Доступность звука зависит от прошивки и плеера.",14,getColor(R.color.text_secondary)),8);
+        musicGlowStatus = text(MusicGlowView.status(activity),14,getColor(R.color.text_secondary));
+        addWithTop(glowCard, musicGlowStatus, 8);
+        TextView glowBrightness = text("Яркость",14,getColor(R.color.text_secondary));addWithTop(glowCard,glowBrightness,8);
+        android.widget.SeekBar brightness = new android.widget.SeekBar(activity);
+        brightness.setMax(100);brightness.setProgress(AppPreferences.get(activity).getInt(MusicGlowView.BRIGHTNESS,40));
+        brightness.setContentDescription("Яркость светомузыки");
+        brightness.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
+            public void onStartTrackingTouch(android.widget.SeekBar bar){} public void onStopTrackingTouch(android.widget.SeekBar bar){}
+            public void onProgressChanged(android.widget.SeekBar bar,int value,boolean user){if(user)AppPreferences.get(activity).edit().putInt(MusicGlowView.BRIGHTNESS,value).apply();}
+        });addWithTop(glowCard,brightness,4);
+        int initialHeight = Math.max(10,Math.min(80,AppPreferences.get(activity).getInt(MusicGlowView.HEIGHT,52)));
+        TextView glowHeight = text("Высота волн: " + initialHeight + "%",14,getColor(R.color.text_secondary));
+        addWithTop(glowCard,glowHeight,8);
+        android.widget.SeekBar height = new android.widget.SeekBar(activity);
+        height.setMax(70);height.setProgress(initialHeight-10);
+        height.setContentDescription("Высота волн светомузыки");
+        height.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
+            public void onStartTrackingTouch(android.widget.SeekBar bar){} public void onStopTrackingTouch(android.widget.SeekBar bar){}
+            public void onProgressChanged(android.widget.SeekBar bar,int value,boolean user){
+                if(user){int percent=value+10;glowHeight.setText("Высота волн: "+percent+"%");
+                    AppPreferences.get(activity).edit().putInt(MusicGlowView.HEIGHT,percent).apply();}
+            }
+        });addWithTop(glowCard,height,4);
+        addWithTop(glowCard,text("Цвет волн",14,getColor(R.color.text_secondary)),8);
+        android.widget.GridLayout colorGrid = new android.widget.GridLayout(activity);colorGrid.setColumnCount(4);
+        List<Button> colorButtons = new ArrayList<>();
+        Button customColor = actionButton("");
+        Runnable refreshColors = () -> {
+            int selected=AppPreferences.get(activity).getInt(MusicGlowView.COLOR,0);
+            boolean custom=true;for(int preset:MusicGlowView.COLORS)if(selected==preset)custom=false;
+            int customValue=custom?selected:AppPreferences.get(activity).getInt(WaveColorDialog.CUSTOM_COLOR,0xff2682df);
+            customColor.setText((custom?"✓  ":"")+"Свой цвет  ●");
+            android.text.SpannableString customLabel=new android.text.SpannableString(customColor.getText());
+            customLabel.setSpan(new android.text.style.ForegroundColorSpan(customValue),customLabel.length()-1,customLabel.length(),android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            customColor.setText(customLabel);
+            customColor.setSelected(custom);
+            GradientDrawable customBackground=rounded(getColor(R.color.button),14);
+            if(custom)customBackground.setStroke(dp(2),selected);customColor.setBackground(customBackground);
+            for(int i=0;i<colorButtons.size();i++){
+                Button button=colorButtons.get(i);int color=MusicGlowView.COLORS[i];boolean chosen=color==selected;
+                android.text.SpannableString label=new android.text.SpannableString((chosen?"✓ ":"● ")+MusicGlowView.COLOR_NAMES[i]);
+                label.setSpan(new android.text.style.ForegroundColorSpan(color==0?getColor(R.color.accent):color),0,1,0);
+                button.setText(label);button.setSelected(chosen);
+                GradientDrawable background=rounded(getColor(R.color.button),12);
+                if(chosen)background.setStroke(dp(2),color==0?getColor(R.color.accent):color);
+                button.setBackground(background);button.setContentDescription("Цвет волн: "+MusicGlowView.COLOR_NAMES[i]+(chosen?", выбран":""));
+            }
+        };
+        for(int i=0;i<MusicGlowView.COLORS.length;i++){
+            final int color=MusicGlowView.COLORS[i];Button choice=actionButton("");choice.setTextSize(12);choice.setPadding(dp(4),0,dp(4),0);
+            choice.setMinWidth(0);choice.setMinimumWidth(0);colorButtons.add(choice);
+            choice.setOnClickListener(v->{AppPreferences.get(activity).edit().putInt(MusicGlowView.COLOR,color).apply();refreshColors.run();});
+            android.widget.GridLayout.LayoutParams p=new android.widget.GridLayout.LayoutParams(android.widget.GridLayout.spec(i/4),android.widget.GridLayout.spec(i%4,1f));
+            p.width=0;p.height=dp(42);p.setMargins(dp(3),dp(3),dp(3),dp(3));colorGrid.addView(choice,p);
+        }
+        refreshColors.run();addWithTop(glowCard,colorGrid,4);
+        customColor.setOnClickListener(v->WaveColorDialog.show(activity,refreshColors));
+        addWithTop(glowCard,customColor,8);
+        Button previewGlow = actionButton("Предпросмотр · 6 секунд");
+        previewGlow.setOnClickListener(v->{
+            if(!MusicGlowView.enabled(activity))Toast.makeText(activity,"Сначала включите светомузыку",Toast.LENGTH_SHORT).show();
+            else MusicGlowView.preview();
+        });addWithTop(glowCard,previewGlow,8);
+        addWithTop(root,glowCard,12);
+
         LinearLayout behaviorCard = card();
         behaviorCard.addView(sectionTitle("Оформление"));
         String[] modes = {"Как в DiLink", "Дневная", "Ночная"};
@@ -318,6 +420,24 @@ final class SettingsView extends LinearLayout
         LinearLayout.LayoutParams behaviorParams = fullWidthWrap();
         behaviorParams.topMargin = dp(16);
         root.addView(behaviorCard, behaviorParams);
+        LinearLayout adbCard = card();
+        adbCard.addView(sectionTitle("Восстановление ADB после перезагрузки"));
+        AdbRecovery recovery = AdbRecovery.get(activity);
+        Switch restore = settingsSwitch("Автоматически восстанавливать ADB", recovery.enabled());
+        restore.setEnabled(AdbRecovery.supported());
+        restore.setOnCheckedChangeListener((button, checked) -> recovery.setEnabled(checked));
+        addWithTop(adbCard, restore, 10);
+        adbRestoreStatus = text(recovery.status(), 14, getColor(R.color.text_secondary));
+        addWithTop(adbCard, adbRestoreStatus, 8);
+        addWithTop(adbCard, text("Для новых прошивок DiLink, где после загрузки закрывается ADB (в BYDMate — 2606+). Требуются Android 11+ и подключение к Wi-Fi. Пока обычный ADB доступен, включите функцию: приложение подготовит системное разрешение. На новой сети подтвердите системное окно отладки по Wi-Fi. В деморежиме функция не выполняется.", 14, getColor(R.color.text_secondary)), 8);
+        Button retryRestore = actionButton("Повторить проверку / активацию");
+        retryRestore.setEnabled(AdbRecovery.supported());
+        retryRestore.setOnClickListener(v -> {
+            if (!recovery.enabled()) Toast.makeText(activity, "Сначала включите восстановление ADB", Toast.LENGTH_SHORT).show();
+            else recovery.retry();
+        });
+        addWithTop(adbCard, retryRestore, 10);
+        addWithTop(root, adbCard, 16);
         LinearLayout updateCard = card();
         updateCard.addView(sectionTitle("Обновления"));
         Switch autoUpdate = settingsSwitch("Проверять обновления автоматически",

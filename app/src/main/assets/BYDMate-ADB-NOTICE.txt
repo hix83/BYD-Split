@@ -1,0 +1,10 @@
+Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
+
+ADB restore behavior and STLS/TLS transport adapted from BYDMate:
+AdbRestoreManager, AdbRestoreSystem, AdbProtocolClient, AdbTls, AdbCertificate.
+Source commit: b47ead7fc9f0741ed2d4b2ff61a785da337f0500
+Source: https://github.com/AndyShaman/BYDMate
+
+Adapted components: AdbRecovery, AdbRecoveryTls, STLS flow in LocalAdbClient.
+Licensed under PolyForm Noncommercial License 1.0.0, not Apache 2.0.
+Full license is included alongside this notice as BYDMate-LICENSE.txt.
