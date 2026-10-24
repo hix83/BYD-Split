@@ -14,6 +14,13 @@ final class BatteryDetailsView extends LinearLayout {
     private final Map<String, TextView> values = new HashMap<>();
     private final TextView status;
     private final TemperatureChart chart;
+    private BatteryMeasurementsView cellMeasurements, sensorMeasurements;
+    private BatteryCellReadings cellReadings;
+    private boolean cellsAttempted;
+    private ScheduledExecutorService cellsReader;
+    private TextView imbalanceStatus;
+    private final Runnable imbalanceListener=this::updateImbalance;
+    private final Runnable freshnessTick=new Runnable(){public void run(){if(!active)return;updateCellCharts();postDelayed(this,1000);}};
     private ScheduledExecutorService reader;
     private int generation;
     private boolean active;
@@ -48,6 +55,20 @@ final class BatteryDetailsView extends LinearLayout {
         row(content,new String[]{"soh","soc","power"},new String[]{"SOH · здоровье","SOC · заряд","Мощность батареи"});
         TextView explanation=label("SOH рассчитывает BMS автомобиля. Это состояние батареи относительно новой, а SOC — её текущий заряд.",12,muted);
         explanation.setPadding(dp(4),dp(10),dp(4),dp(6)); content.addView(explanation);
+        section(content,"Состав батареи");
+        row(content,new String[]{"cellCount","sensorCount"},new String[]{"Ячеек в батарее","Датчиков температуры"});
+        cellMeasurements=new BatteryMeasurementsView(context,false);
+        sensorMeasurements=new BatteryMeasurementsView(context,true);
+        LinearLayout.LayoutParams cellsLayout=new LinearLayout.LayoutParams(-1,dp(200));cellsLayout.topMargin=dp(12);
+        content.addView(cellMeasurements,cellsLayout);
+        imbalanceStatus=label("Разброс BMS · ожидаем показания",14,muted);
+        imbalanceStatus.setPadding(dp(12),dp(10),dp(12),dp(10));
+        LinearLayout.LayoutParams imbalanceLayout=new LinearLayout.LayoutParams(-1,-2);imbalanceLayout.topMargin=dp(8);
+        content.addView(imbalanceStatus,imbalanceLayout);
+        TextView imbalanceNote=label("Выбранная шкала: 0–10 мВ — отлично; >10–20 — норма; >20–30 — допустимо, наблюдать; >30–<50 — повышенный дисбаланс; 50–100 — диагностика и балансировка; >100 — существенный дисбаланс, возможны проблемы с ячейками. Предупреждение: превышение более 30 мВ не менее минуты. Это шкала пользователя, а не подтверждённые допуски BYD. При нагрузке и в конце зарядки разброс может расти; малый разброс не гарантирует равенство заряда. Наблюдение работает в фоне независимо от записи поездок.",12,muted);
+        imbalanceNote.setPadding(dp(4),dp(6),dp(4),dp(4));content.addView(imbalanceNote);
+        LinearLayout.LayoutParams sensorsLayout=new LinearLayout.LayoutParams(-1,dp(210));sensorsLayout.topMargin=dp(12);
+        content.addView(sensorMeasurements,sensorsLayout);
         section(content,"Температура батареи");
         row(content,new String[]{"minTemp","maxTemp","deltaTemp"},new String[]{"Минимальная","Максимальная","Разница датчиков"});
         chart=new TemperatureChart(context); LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,dp(105));cp.topMargin=dp(12);content.addView(chart,cp);
@@ -56,7 +77,7 @@ final class BatteryDetailsView extends LinearLayout {
         row(content,new String[]{"voltage","gun","charging"},new String[]{"Бортсеть","Подключение","Состояние зарядки"});
         section(content,"Счётчики энергии");
         row(content,new String[]{"lifetime","session"},new String[]{"Накопленная энергия BMS","Энергия зарядной сессии"});
-        TextView note=label("График: минимум и максимум датчиков за время просмотра. Счётчики передаются BMS; энергия сессии может сохраняться после отключения кабеля. Недоступные данные обозначены прочерком.",13,muted);
+        TextView note=label("Ячейки и датчики показаны по номерам из потока BMS. Их физическое расположение в батарее пока не установлено. Напряжения собираются последовательно за полный цикл, а не одновременно. График истории показывает минимум и максимум температур за время просмотра. Недоступные данные обозначены прочерком.",13,muted);
         note.setPadding(dp(4),dp(14),dp(4),dp(10));content.addView(note);
         }
     }
@@ -149,8 +170,20 @@ final class BatteryDetailsView extends LinearLayout {
     void setActive(boolean enabled) {
         if(active==enabled)return;active=enabled;generation++;
         if(reader!=null){reader.shutdownNow();reader=null;}
+        if(cellsReader!=null){cellsReader.shutdownNow();cellsReader=null;}
+        removeCallbacks(freshnessTick);
+        BatteryWatchController.get().removeListener(imbalanceListener);
         if(!enabled)return;
+        if(!technical)BatteryWatchController.get().addListener(imbalanceListener);
         final int token=generation;
+        if(!technical)post(freshnessTick);
+        if(!technical&&!demo) {
+            cellsReader=Executors.newSingleThreadScheduledExecutor();
+            cellsReader.scheduleWithFixedDelay(()->{
+                BatteryCellReadings readings=LocalAdbManager.readBatteryCells(getContext());
+                post(()->{if(active&&token==generation){cellReadings=readings;cellsAttempted=true;updateCellCharts();}});
+            },0,1,TimeUnit.SECONDS);
+        }
         reader=Executors.newSingleThreadScheduledExecutor();
         reader.scheduleWithFixedDelay(() -> {
             if(technical) {
@@ -165,10 +198,37 @@ final class BatteryDetailsView extends LinearLayout {
     @Override protected void onDetachedFromWindow(){setActive(false);super.onDetachedFromWindow();}
     private String number(Number n,String unit,int decimals){return n==null?"—":String.format(Locale.forLanguageTag("ru"),"%."+decimals+"f",n.doubleValue())+" "+unit;}
     private void put(String key,String value){values.get(key).setText(value);}
+    private void updateCellCharts() {
+        if(cellMeasurements==null)return;
+        long now=SystemClock.elapsedRealtime();
+        cellMeasurements.setReadings(cellReadings!=null&&cellReadings.cellsFresh(now)?cellReadings.millivolts:null,cellsAttempted||demo);
+        sensorMeasurements.setReadings(cellReadings!=null&&cellReadings.temperaturesFresh(now)?cellReadings.temperatures:null,cellsAttempted||demo);
+    }
+    private void updateImbalance() {
+        if(imbalanceStatus==null)return;
+        BatteryWatchState.Snapshot sample=BatteryWatchController.get().snapshot();
+        BatteryImbalanceMonitor.Level level=sample.level;
+        String message=sample.message();
+        if(message.contentEquals(imbalanceStatus.getText()))return;
+        imbalanceStatus.setText(message);
+        BatteryImbalanceMonitor.Rating rating=BatteryImbalanceMonitor.rating(sample.delta);
+        boolean watch=level==BatteryImbalanceMonitor.Level.WARNING||level==BatteryImbalanceMonitor.Level.OBSERVING||rating==BatteryImbalanceMonitor.Rating.WATCH;
+        boolean good=rating==BatteryImbalanceMonitor.Rating.EXCELLENT||rating==BatteryImbalanceMonitor.Rating.NORMAL;
+        imbalanceStatus.setTextColor((level==BatteryImbalanceMonitor.Level.HIGH||level==BatteryImbalanceMonitor.Level.DIAGNOSTIC)?ThemePalette.color(getContext(),0xffffa28f,0xffa33220)
+                :watch?ThemePalette.color(getContext(),0xffffce7a,0xff805300):good?ThemePalette.color(getContext(),0xff79d5b0,0xff22694e):muted);
+        imbalanceStatus.setBackground(bg((level==BatteryImbalanceMonitor.Level.HIGH||level==BatteryImbalanceMonitor.Level.DIAGNOSTIC)?ThemePalette.color(getContext(),0xff452d2a,0xffffe7df)
+                :watch?ThemePalette.color(getContext(),0xff3b3326,0xfffff0d7)
+                :ThemePalette.color(getContext(),0xff252f3a,0xffe8ecf0)));
+    }
+
     private void update(BatteryDetailsSnapshot data) {
+        updateCellCharts();
+
         if(data==null){status.setText("Нет связи · показания недоступны");for(TextView v:values.values())v.setText("—");return;}
         VehicleTelemetrySnapshot s=data.vehicle;
         status.setText(demo?"Демонстрационные данные":"Данные автомобиля · обновлено "+new java.text.SimpleDateFormat("HH:mm:ss",Locale.getDefault()).format(new Date()));
+        put("cellCount",data.cellCount==null?"—":Integer.toString(data.cellCount));
+        put("sensorCount",data.temperatureSensorCount==null?"—":Integer.toString(data.temperatureSensorCount));
         put("soh",number(s.batterySohPercent,"%",0));put("soc",number(s.batterySocPercent,"%",0));put("power",number(s.batteryPowerKw,"кВт",0));
         put("minTemp",number(s.batteryMinTempC,"°C",0));put("maxTemp",number(s.batteryMaxTempC,"°C",0));
         Integer delta=s.batteryMinTempC!=null&&s.batteryMaxTempC!=null?s.batteryMaxTempC-s.batteryMinTempC:null;

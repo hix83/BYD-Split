@@ -408,6 +408,7 @@ final class SettingsView extends LinearLayout
                     Toast.LENGTH_SHORT).show();
             updateSteeringControlsEnabled();
             StatisticsService.sync(activity);
+            BatteryWatchService.sync(activity);
             activity.recreate();
         });
         addWithTop(behaviorCard, demoMode, 8);

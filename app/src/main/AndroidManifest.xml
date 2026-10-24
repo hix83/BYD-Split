@@ -32,6 +32,9 @@
         android:resizeableActivity="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.BYDSplit">
+        <service android:name=".BatteryWatchService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Read-only local vehicle battery voltage monitoring over authorized in-car ADB" />
+        </service>
         <service android:name=".StatisticsService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Local vehicle telemetry and trip journal over authorized in-car ADB" />
         </service>

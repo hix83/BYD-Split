@@ -14,6 +14,11 @@ final class LocalAdbManager {
             "Parcel\\(00000000\\s+([0-9a-fA-F]{8})");
     private static LocalAdbManager instance;
     private static LocalAdbManager callInstance;
+    private static LocalAdbManager batteryWatchInstance;
+    static synchronized LocalAdbManager forBatteryWatch(Context context) {
+        if(batteryWatchInstance==null)batteryWatchInstance=new LocalAdbManager(context.getApplicationContext());
+        return batteryWatchInstance;
+    }
     static synchronized LocalAdbManager forCallRouting(Context context) {
         if(callInstance==null)callInstance=new LocalAdbManager(context.getApplicationContext());
         return callInstance;
@@ -333,9 +338,12 @@ final class LocalAdbManager {
                     + "service call autoservice 5 i32 1014 i32 1147142192; "
                     + "service call autoservice 7 i32 1014 i32 1032871984; "
                     + "service call autoservice 7 i32 1009 i32 666894360; "
-                    + "service call autoservice 5 i32 1009 i32 876609560");
+                    + "service call autoservice 5 i32 1009 i32 876609560; "
+                    + "service call autoservice 5 i32 1001 i32 1134559240; "
+                    + "service call autoservice 5 i32 1009 i32 1132462136; "
+                    + "service call autoservice 5 i32 1039 i32 1134559248");
             Matcher matcher = PARCEL_VALUE.matcher(output);
-            int[] raw = new int[5];
+            int[] raw = new int[8];
             int count = 0;
             while (matcher.find() && count < raw.length)
                 raw[count++] = (int) Long.parseLong(matcher.group(1), 16);
@@ -344,6 +352,26 @@ final class LocalAdbManager {
             Log.w(TAG, "Cannot read battery details", error);
             return null;
         }
+    }
+
+    static BatteryCellReadings readBatteryCells(Context context) {
+        String apk=context.getApplicationInfo().sourceDir;
+        if(apk==null||!SAFE_APK_PATH.matcher(apk).matches())return null;
+        // A full numbered sweep takes several seconds. Never hold the shared control connection.
+        try(LocalAdbClient dedicated=new LocalAdbClient(new LocalAdbKeyStore(context.getApplicationContext()))) {
+            return BatteryCellReadings.parse(dedicated.shell("CLASSPATH="+apk
+                    +" app_process /system/bin ru.logunov.bydsplit.BatteryCellBridge"));
+        } catch(Exception error){Log.w(TAG,"Cannot read individual BMS measurements",error);return null;}
+    }
+
+    synchronized Integer readCellVoltageDelta() {
+        try {
+            String output=client.shell("service call autoservice 5 i32 1014 i32 1147142160; "
+                    +"service call autoservice 5 i32 1014 i32 1147142192");
+            Matcher values=PARCEL_VALUE.matcher(output);int[] pair=new int[2];int count=0;
+            while(values.find()&&count<2)pair[count++]=(int)Long.parseLong(values.group(1),16);
+            return count==2&&pair[0]>=1500&&pair[1]<=4500&&pair[0]<=pair[1]?pair[1]-pair[0]:null;
+        } catch(Exception error){client.close();Log.w(TAG,"Battery watch read failed",error);return null;}
     }
 
     synchronized VehicleTelemetrySnapshot readVehicleTelemetry() {

@@ -79,6 +79,7 @@ public final class MainActivity extends Activity {
     private FrameLayout driverSlot;
     private FrameLayout farSlot;
     private BatteryDetailsView batteryDetailsView;
+    private BatteryWarningBanner batteryWarningBanner;
     private View internalPage;
     private String internalPageName = "";
     private SettingsView settingsView;
@@ -173,6 +174,7 @@ public final class MainActivity extends Activity {
     }
 
     private void openRequestedPage(Intent intent) {
+        if (intent.getBooleanExtra("open_battery", false)) { intent.removeExtra("open_battery"); openBatteryDetails(); }
         if (intent.getBooleanExtra("open_settings", false)) { intent.removeExtra("open_settings"); openSettings(); }
         if (intent.getBooleanExtra("open_climate", false)) { intent.removeExtra("open_climate"); openComfort(false); }
         if (intent.getBooleanExtra("open_seats", false)) { intent.removeExtra("open_seats"); openComfort(true); }
@@ -202,6 +204,8 @@ public final class MainActivity extends Activity {
         resumed = true;
         if (classicMusicGlow != null) classicMusicGlow.setActive(!DockConfiguration.dynamic(this));
         if (dynamicDock != null) dynamicDock.setActive(DockConfiguration.dynamic(this));
+        BatteryWatchService.sync(this);
+        if(batteryWarningBanner!=null)batteryWarningBanner.start();
         GithubUpdater.onResume(this);
         if (batteryDetailsView != null) batteryDetailsView.setActive(true);
         if (internalPage instanceof ComfortView) ((ComfortView)internalPage).setActive(true);
@@ -280,6 +284,7 @@ public final class MainActivity extends Activity {
         resumed = false;
         if (classicMusicGlow != null) classicMusicGlow.setActive(false);
         if (dynamicDock != null) dynamicDock.setActive(false);
+        if(batteryWarningBanner!=null)batteryWarningBanner.stop();
         if (batteryDetailsView != null) batteryDetailsView.setActive(false);
         if (internalPage instanceof ComfortView) ((ComfortView)internalPage).setActive(false);
         super.onPause();
@@ -288,6 +293,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (dynamicDock != null) dynamicDock.closeEditor(false);
+        if(batteryWarningBanner!=null)batteryWarningBanner.stop();
         cameraAutomation.stop();
         clusterMusicBridge.close();
         ParkingCameraOverlay.close(this);
@@ -415,6 +421,8 @@ public final class MainActivity extends Activity {
         screenRoot.addView(splitRoot, new LinearLayout.LayoutParams(-1, 0, 1f));
         setContentView(screenRoot);
         configureDock();
+        if(batteryWarningBanner==null)batteryWarningBanner=new BatteryWarningBanner(this,this::openBatteryDetails);
+        batteryWarningBanner.attach();
         restoreCompactContent();
         refreshPane(KEY_FAR_APP);
     }

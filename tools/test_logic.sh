@@ -7,7 +7,7 @@ java_bin="${JAVA_HOME:+$JAVA_HOME/bin/}"
 source_dir=app/src/main/java/ru/logunov/bydsplit
 "${java_bin}javac" -d "$test_classes" \
   "$source_dir/ComfortRequests.java" "$source_dir/ComfortState.java" "$source_dir/VehicleTelemetrySnapshot.java" "$source_dir/ClimateIconState.java" \
-  "$source_dir/BatteryDetailsSnapshot.java" "$source_dir/TechSnapshot.java" \
+  "$source_dir/BatteryWatchState.java" "$source_dir/BatteryImbalanceMonitor.java" "$source_dir/BatteryCellReadings.java" "$source_dir/BatteryDetailsSnapshot.java" "$source_dir/TechSnapshot.java" \
   "$source_dir/ClusterTrackText.java" "$source_dir/UpdateVersion.java" \
   "$source_dir/StatisticsSensorDecoder.java" "$source_dir/HvBatteryPower.java" "$source_dir/BatteryPriceHistory.java" "$source_dir/TripEnergyCounter.java" "$source_dir/TripFuelCounter.java" "$source_dir/TripAccumulator.java" "$source_dir/FuelLedger.java" \
   "$source_dir/DmiEnergyFlow.java" "$source_dir/TemperatureRules.java" \
