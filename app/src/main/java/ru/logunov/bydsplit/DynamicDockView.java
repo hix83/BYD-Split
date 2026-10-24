@@ -25,6 +25,7 @@ final class DynamicDockView extends FrameLayout {
     private final Runnable update = () -> { for (Runnable binding : bindings) binding.run(); };
     private final java.util.EnumSet<DockConfiguration.Item> navigation = java.util.EnumSet.noneOf(DockConfiguration.Item.class);
     private boolean listening, editorOpen;
+    private int heightPercent;
     private Dialog editorDialog;
     private List<DockConfiguration.Item> draft;
     private int draftAlignment;
@@ -51,19 +52,30 @@ final class DynamicDockView extends FrameLayout {
     DynamicDockView(Activity activity, Host host) {
         super(activity); this.activity = activity; this.host = host;
         controller = ComfortController.get(activity);
-        setPadding(dp(6), dp(7), dp(6), dp(7));
+        heightPercent = DockConfiguration.heightPercent(activity);
+        setPadding(sd(6), sd(7), sd(6), sd(7));
         setClipToPadding(false);
         setClipToOutline(true);
         rebuild();
     }
 
-    void setNavigation(boolean song, boolean camera, boolean music, boolean messages, boolean settings, String page) {
+    int heightDp() { return Math.round(HEIGHT_DP * heightPercent / 100f); }
+    void refreshSize() {
+        int value = DockConfiguration.heightPercent(activity);
+        if (value == heightPercent || editorOpen) return;
+        heightPercent = value;
+        setPadding(sd(6), sd(7), sd(6), sd(7));
+        rebuild();
+    }
+
+    void setNavigation(boolean song, boolean camera, boolean music, boolean messages, boolean settings, boolean phone, String page) {
         navigation.clear();
         if (song) navigation.add(DockConfiguration.Item.SONG);
         if (camera) navigation.add(DockConfiguration.Item.CAMERA);
         if (music) navigation.add(DockConfiguration.Item.MUSIC);
         if (messages) navigation.add(DockConfiguration.Item.MESSAGES);
         if (settings) navigation.add(DockConfiguration.Item.SETTINGS);
+        if (phone) navigation.add(DockConfiguration.Item.PHONE);
         if ("climate".equals(page)) navigation.add(DockConfiguration.Item.CLIMATE);
         if ("seats".equals(page)) navigation.add(DockConfiguration.Item.SEATS);
         update.run();
@@ -99,15 +111,17 @@ final class DynamicDockView extends FrameLayout {
             cell.setTag(item);
             LinearLayout tile = new LinearLayout(activity);
             tile.setOrientation(LinearLayout.VERTICAL); tile.setGravity(Gravity.CENTER);
-            tile.setPadding(dp(3), 0, dp(3), 0);
+            tile.setPadding(sd(3), 0, sd(3), 0);
             ImageView icon = icon(item);
-            tile.addView(icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
-            TextView caption = text(item.caption(), 10); caption.setGravity(Gravity.CENTER); caption.setSingleLine(true);
+            if (item.ordinal() > DockConfiguration.Item.SETTINGS.ordinal())
+                icon.setPadding(sd(4), sd(4), sd(4), sd(4));
+            tile.addView(icon, new LinearLayout.LayoutParams(sd(40), sd(40)));
+            TextView caption = text(item.caption(), 10); caption.setTextSize(10 * heightPercent / 100f); caption.setGravity(Gravity.CENTER); caption.setSingleLine(true);
             DockLevelIndicator levels = new DockLevelIndicator();
             if (item.field != null && !editorOpen) {
-                tile.addView(levels, new LinearLayout.LayoutParams(dp(52), dp(8)));
+                tile.addView(levels, new LinearLayout.LayoutParams(sd(52), sd(8)));
             }
-            tile.addView(caption, new LinearLayout.LayoutParams(-1, dp(item.field == null || editorOpen ? 29 : 21)));
+            tile.addView(caption, new LinearLayout.LayoutParams(-1, sd(item.field == null || editorOpen ? 29 : 21)));
             cell.addView(tile, new FrameLayout.LayoutParams(-1, -1));
             cell.setOnLongClickListener(v -> {
                 if (!editorOpen) edit();
@@ -129,7 +143,7 @@ final class DynamicDockView extends FrameLayout {
                     remove.setBackgroundTintList(null);
                     remove.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x33ffffff), null, badgeMask));
                     remove.setContentDescription("Удалить: " + item.title);
-                    FrameLayout.LayoutParams badge = new FrameLayout.LayoutParams(dp(40), dp(40), Gravity.TOP | Gravity.RIGHT);
+                    FrameLayout.LayoutParams badge = new FrameLayout.LayoutParams(sd(40), sd(40), Gravity.TOP | Gravity.RIGHT);
                     cell.addView(remove, badge);
                     remove.setOnClickListener(v -> { draft.remove(item); refreshEditor(); });
                 }
@@ -161,7 +175,7 @@ final class DynamicDockView extends FrameLayout {
                     cell.setBackground(shape(background, 0));
                 });
             }
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(90) * item.slots, -1);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(sd(90) * item.slots, -1);
             if (editorOpen) p.setMargins(dp(2), 0, dp(2), 0);
             dockRow.addView(cell, p);
         }
@@ -266,11 +280,11 @@ final class DynamicDockView extends FrameLayout {
         void update(int level, int maximum, int color) { this.level = level; this.maximum = maximum; this.color = color; invalidate(); }
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            float gap = dp(3), width = Math.min(dp(18), (getWidth()-gap*(maximum-1))/maximum);
+            float gap = sd(3), width = Math.min(sd(18), (getWidth()-gap*(maximum-1))/maximum);
             float start = (getWidth()-width*maximum-gap*(maximum-1))/2;
             for (int i=0; i<maximum; i++) {
                 paint.setColor(i < level ? color : activity.getColor(R.color.text_secondary)); paint.setAlpha(i < level ? 255 : 65);
-                float x = start+i*(width+gap); canvas.drawRoundRect(x, dp(2), x+width, dp(6), dp(2), dp(2), paint);
+                float x = start+i*(width+gap); canvas.drawRoundRect(x, sd(2), x+width, sd(6), sd(2), sd(2), paint);
             }
         }
     }
@@ -318,7 +332,7 @@ final class DynamicDockView extends FrameLayout {
         original.removeView(this); original.addView(placeholder, originalIndex, originalParams);
         Dialog dialog = new Dialog(activity); editorDialog = dialog; dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         FrameLayout layer = new FrameLayout(activity); layer.setBackgroundColor(0x66000000);
-        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(-1, dp(HEIGHT_DP), Gravity.BOTTOM);
+        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(-1, dp(heightDp()), Gravity.BOTTOM);
         panelParams.setMargins(dp(8), 0, dp(8), dp(8)); layer.addView(this, panelParams);
         LinearLayout card = new LinearLayout(activity); card.setOrientation(LinearLayout.VERTICAL); card.setPadding(dp(14), dp(10), dp(14), dp(10));
         card.setBackground(shape(ThemePalette.color(activity, 0xff1d252e, 0xfff8f9fb), 0)); card.setElevation(dp(12));
@@ -341,9 +355,9 @@ final class DynamicDockView extends FrameLayout {
         ScrollView scroll = new ScrollView(activity); library = new GridLayout(activity); library.setColumnCount(6); scroll.addView(library);
         card.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         int width = Math.min(activity.getResources().getDisplayMetrics().widthPixels - dp(32), dp(1050));
-        int height = Math.min(dp(330), Math.max(dp(190), activity.getResources().getDisplayMetrics().heightPixels - dp(150)));
+        int height = Math.min(dp(330), Math.max(dp(190), activity.getResources().getDisplayMetrics().heightPixels - dp(heightDp() + 40)));
         FrameLayout.LayoutParams libraryParams = new FrameLayout.LayoutParams(width, height, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        libraryParams.bottomMargin = dp(HEIGHT_DP + 20); layer.addView(card, libraryParams);
+        libraryParams.bottomMargin = dp(heightDp() + 20); layer.addView(card, libraryParams);
         dialog.setContentView(layer);
         dialog.setOnDismissListener(d -> {
             stopEdgeScroll(); editorOpen = false; editorDialog = null;
@@ -411,6 +425,7 @@ final class DynamicDockView extends FrameLayout {
         button.setOnClickListener(v -> action.run()); return button;
     }
     private TextView text(String value, int size) { TextView t = new TextView(activity); t.setText(value); t.setTextSize(size); t.setTextColor(ThemePalette.text(activity)); return t; }
+    private int sd(int value) { return Math.round(value * heightPercent / 100f * getResources().getDisplayMetrics().density); }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private GradientDrawable shape(int color, int stroke) { GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(10)); if (stroke != 0) d.setStroke(dp(2), stroke); return d; }
 }

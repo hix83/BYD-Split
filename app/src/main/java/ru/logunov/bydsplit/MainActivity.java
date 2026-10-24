@@ -364,6 +364,13 @@ public final class MainActivity extends Activity {
         }
     }
 
+    static void applyDockSizeFromSettings() {
+        MainActivity activity = currentActivity.get();
+        if (activity != null && !activity.isFinishing() && !activity.isDestroyed()) {
+            activity.runOnUiThread(activity::configureDock);
+        }
+    }
+
     static boolean handleSteeringPulse(boolean longPress) {
         MainActivity activity = currentActivity.get();
         if (SteeringEventServer.isKeyCaptureActive()) {
@@ -439,6 +446,8 @@ public final class MainActivity extends Activity {
     private void configureDock() {
         if (screenRoot == null) return;
         boolean dynamic = DockConfiguration.dynamic(this);
+        if (settingsView != null) settingsView.refreshDockInsets();
+        resizeClassicDock();
         classicDock.setVisibility(dynamic ? View.GONE : View.VISIBLE);
         if (classicMusicGlow != null) classicMusicGlow.setActive(!dynamic && resumed);
         if (dynamic && dynamicDock == null) {
@@ -448,17 +457,22 @@ public final class MainActivity extends Activity {
                     case CAMERA: showParkingCamera(); break;
                     case MUSIC: activateQuickApp(quickMusicApp); break;
                     case MESSAGES: activateQuickApp(quickMaxApp); break;
+                    case PHONE: openPhoneProjection(); break;
                     case SETTINGS: toggleSettings(); break;
                     case CLIMATE: openComfort(false); break;
                     case SEATS: toggleInternalPage("seats", () -> openComfort(true)); break;
                     default: break;
                 }
             });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(DynamicDockView.HEIGHT_DP));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(dynamicDock.heightDp()));
             params.setMargins(dp(8), 0, dp(8), dp(8));
             screenRoot.addView(dynamicDock, params);
         }
         if (dynamicDock != null) {
+            dynamicDock.refreshSize();
+            ViewGroup.LayoutParams size = dynamicDock.getLayoutParams();
+            size.height = dp(dynamicDock.heightDp());
+            dynamicDock.setLayoutParams(size);
             dynamicDock.setVisibility(dynamic ? View.VISIBLE : View.GONE);
             dynamicDock.setActive(dynamic && resumed);
         }
@@ -495,6 +509,31 @@ public final class MainActivity extends Activity {
         divider.addView(handle, new FrameLayout.LayoutParams(
                 dp(3), dp(72), Gravity.CENTER));
         return divider;
+    }
+
+    private void resizeClassicDock() {
+        float scale = DockConfiguration.scale(this);
+        ViewGroup.LayoutParams size = classicDock.getLayoutParams();
+        size.height = Math.round(dp(86) * scale);
+        classicDock.setLayoutParams(size);
+        LinearLayout row = (LinearLayout) ((FrameLayout) classicDock).getChildAt(1);
+        row.setPadding(0, Math.round(dp(5) * scale), 0, Math.round(dp(4) * scale));
+        for (int i = 0; i < row.getChildCount(); i++) {
+            FrameLayout cell = (FrameLayout) row.getChildAt(i);
+            ImageView icon = (ImageView) cell.getChildAt(0);
+            FrameLayout.LayoutParams imageSize = (FrameLayout.LayoutParams) icon.getLayoutParams();
+            imageSize.width = imageSize.height = Math.round(dp(40) * scale);
+            imageSize.topMargin = Math.round(dp(7) * scale); icon.setLayoutParams(imageSize);
+            TextView caption = (TextView) cell.getChildAt(1);
+            caption.setTextSize(9.5f * scale);
+            FrameLayout.LayoutParams labelSize = (FrameLayout.LayoutParams) caption.getLayoutParams();
+            labelSize.height = Math.round(dp(22) * scale);
+            labelSize.bottomMargin = Math.round(dp(9) * scale); caption.setLayoutParams(labelSize);
+            View indicator = cell.getChildAt(2);
+            FrameLayout.LayoutParams indicatorSize = (FrameLayout.LayoutParams) indicator.getLayoutParams();
+            indicatorSize.width = Math.round(dp(24) * scale); indicatorSize.height = Math.max(1, Math.round(dp(2) * scale));
+            indicatorSize.bottomMargin = Math.round(dp(4) * scale); indicator.setLayoutParams(indicatorSize);
+        }
     }
 
     private View createCompactDock() {
@@ -606,7 +645,8 @@ public final class MainActivity extends Activity {
                 contentVisible && showingVehicleDashboard, cameraVisible,
                 contentVisible && !showingVehicleDashboard && sameComponent(driverApp, quickMusicApp),
                 contentVisible && !showingVehicleDashboard && sameComponent(driverApp, quickMaxApp),
-                settingsVisible, internalPageName);
+                settingsVisible, contentVisible && !showingVehicleDashboard
+                        && driverApp != null && PACKAGE_ICCOA_CARLINK.equals(driverApp.component.getPackageName()), internalPageName);
     }
 
     private void styleCompactButton(View button, boolean active) {
@@ -644,6 +684,15 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, "Назначено: " + selected.label,
                     Toast.LENGTH_SHORT).show();
         });
+    }
+
+    private void openPhoneProjection() {
+        quickPhoneApp = findFirstInstalled(PACKAGE_ICCOA_CARLINK);
+        if (quickPhoneApp == null) {
+            Toast.makeText(this, "ICCOA — экспериментальная функция. Нужны автомобильный приёмник Carlink и совместимый телефон с CarWith", Toast.LENGTH_LONG).show();
+            return;
+        }
+        activateQuickApp(quickPhoneApp);
     }
 
     private void activateQuickApp(AppEntry entry) {

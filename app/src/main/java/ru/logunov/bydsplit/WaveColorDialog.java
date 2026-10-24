@@ -25,7 +25,7 @@ final class WaveColorDialog {
         Shader shader;
         Palette(Activity activity,float[] hsv,Runnable changed){
             super(activity);this.hsv=hsv;this.changed=changed;
-            setContentDescription("Палитра цвета волн: оттенок слева направо, насыщенность сверху вниз");
+            setContentDescription("Палитра цвета эффекта: оттенок слева направо, насыщенность сверху вниз");
             setFocusable(true);
         }
         @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){
@@ -86,7 +86,7 @@ final class WaveColorDialog {
                 android.content.res.ColorStateList accent=android.content.res.ColorStateList.valueOf(activity.getColor(R.color.accent));
                 sliders[i].setThumbTintList(accent);sliders[i].setProgressTintList(accent);
                 sliders[i].setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(ThemePalette.color(activity,0xff455361,0xffcdd6df)));
-                sliders[i].setContentDescription(new String[]{"Оттенок волн","Насыщенность цвета волн","Светлота цвета волн"}[i]);
+                sliders[i].setContentDescription(new String[]{"Оттенок эффекта","Насыщенность цвета эффекта","Светлота цвета эффекта"}[i]);
                 sliders[i].setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
                     public void onStartTrackingTouch(SeekBar bar){} public void onStopTrackingTouch(SeekBar bar){}
                     public void onProgressChanged(SeekBar bar,int progress,boolean user){
@@ -99,7 +99,7 @@ final class WaveColorDialog {
         }
         AlertDialog show(){
             ScrollView scroll=new ScrollView(activity);scroll.addView(root);
-            TextView title=text("Свой цвет волн",22);title.setPadding(dp(24),dp(20),dp(24),dp(10));
+            TextView title=text("Свой цвет эффекта",22);title.setPadding(dp(24),dp(20),dp(24),dp(10));
             AlertDialog dialog=new AlertDialog.Builder(activity,ThemePalette.dialogTheme(activity)).setCustomTitle(title).setView(scroll)
                     .setNegativeButton("Отмена",null).setPositiveButton("Применить",null).create();
             dialog.setOnDismissListener(d->{if(!applied){AppPreferences.get(activity).edit().putInt(MusicGlowView.COLOR,original).apply();changed.run();}});

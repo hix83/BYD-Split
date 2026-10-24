@@ -37,6 +37,13 @@ final class SettingsView extends LinearLayout
     private TextView adbRestoreStatus;
     private TextView musicGlowStatus;
     private Switch musicGlowSwitch;
+    private LinearLayout settingsRoot;
+    private ScrollView generalScroll;
+    void refreshDockInsets() {
+        boolean dynamic = DockConfiguration.dynamic(activity);
+        if (settingsRoot != null) settingsRoot.setPadding(dp(18), dp(14), dp(18), dynamic ? 0 : dp(16));
+        if (generalScroll != null) generalScroll.setPadding(0, dp(14), 0, dynamic ? 0 : dp(14));
+    }
     void refreshMusicGlowSetting() {
         if (musicGlowSwitch != null) musicGlowSwitch.setChecked(MusicGlowView.enabled(activity));
     }
@@ -90,6 +97,7 @@ final class SettingsView extends LinearLayout
 
     private View createContent() {
         LinearLayout root = new LinearLayout(activity);
+        settingsRoot = root;
         root.setOrientation(LinearLayout.HORIZONTAL);
         root.setPadding(dp(18), dp(14), dp(18), dp(16));
         root.setBackground(rounded(getColor(R.color.background), 24));
@@ -147,6 +155,7 @@ final class SettingsView extends LinearLayout
         }
         selectedPage = page;
         host.removeAllViews();
+        generalScroll = null;
         for (int index = 0; index < tabs.getChildCount(); index++) {
             if (!(tabs.getChildAt(index).getTag() instanceof Integer)) continue;
             ((TextView) tabs.getChildAt(index)).setTextColor(index == page ? Color.WHITE : ThemePalette.text(activity));
@@ -159,10 +168,12 @@ final class SettingsView extends LinearLayout
                 : createGeneralPage(page);
         host.addView(content, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        refreshDockInsets();
     }
 
     private View createGeneralPage(int page) {
         ScrollView scroll = new ScrollView(activity);
+        generalScroll = scroll;
         scroll.setFillViewport(true);
         scroll.setClipToPadding(true);
         scroll.setPadding(0, dp(14), 0, dp(14));
@@ -222,11 +233,38 @@ final class SettingsView extends LinearLayout
         });
         addWithTop(dockCard, dynamicDock, 8);
         addWithTop(dockCard, text("Выключено — классическая панель из пяти кнопок под служебной областью. Включено — панель на всю ширину и две области одинаковой высоты. Удерживайте кнопку или свободное место: панель перейдёт в режим редактирования, а над ней откроется библиотека. Добавляйте элементы из библиотеки, двигайте кнопки на панели; корзина возвращает элемент в библиотеку. От 2 до 20 кнопок; длинная панель прокручивается горизонтально.", 14, getColor(R.color.text_secondary)), 8);
+        TextView dockHeightLabel = text("Высота панели: " + DockConfiguration.heightPercent(activity) + "%", 14, getColor(R.color.text_secondary));
+        addWithTop(dockCard, dockHeightLabel, 12);
+        android.widget.SeekBar dockHeight = new android.widget.SeekBar(activity);
+        dockHeight.setMax((DockConfiguration.MAX_HEIGHT_PERCENT - DockConfiguration.MIN_HEIGHT_PERCENT) / 5);
+        dockHeight.setProgress((DockConfiguration.heightPercent(activity) - DockConfiguration.MIN_HEIGHT_PERCENT) / 5);
+        dockHeight.setContentDescription("Высота нижней панели и размер кнопок");
+        dockHeight.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+            public void onStopTrackingTouch(android.widget.SeekBar bar) {}
+            public void onProgressChanged(android.widget.SeekBar bar, int value, boolean user) {
+                if (!user) return;
+                int percent = DockConfiguration.MIN_HEIGHT_PERCENT + value * 5;
+                AppPreferences.get(activity).edit().putInt(DockConfiguration.HEIGHT_PERCENT, percent).apply();
+                dockHeightLabel.setText("Высота панели: " + percent + "%");
+                MainActivity.applyDockSizeFromSettings();
+            }
+        });
+        addWithTop(dockCard, dockHeight, 4);
+        addWithTop(dockCard, text("80–150%. Иконки, подписи и индикаторы масштабируются вместе с панелью. Действует для обоих видов панели; размер виден сразу.", 14, getColor(R.color.text_secondary)), 4);
+        Button resetDockHeight = actionButton("Стандартная высота · 100%");
+        resetDockHeight.setOnClickListener(view -> {
+            AppPreferences.get(activity).edit().putInt(DockConfiguration.HEIGHT_PERCENT, 100).apply();
+            dockHeight.setProgress((100 - DockConfiguration.MIN_HEIGHT_PERCENT) / 5);
+            dockHeightLabel.setText("Высота панели: 100%");
+            MainActivity.applyDockSizeFromSettings();
+        });
+        addWithTop(dockCard, resetDockHeight, 8);
         addWithTop(root, dockCard, 12);
 
         LinearLayout glowCard = card();
         glowCard.addView(sectionTitle("Светомузыка панели"));
-        musicGlowSwitch = settingsSwitch("Мягкие волны под музыку", MusicGlowView.enabled(activity));
+        musicGlowSwitch = settingsSwitch("Эффекты под музыку", MusicGlowView.enabled(activity));
         musicGlowSwitch.setOnCheckedChangeListener((button, checked) -> {
             if (checked && activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 musicGlowSwitch.setChecked(false);
@@ -237,6 +275,26 @@ final class SettingsView extends LinearLayout
         addWithTop(glowCard, text("Свечение от нижнего края реагирует на аудиовыход Android. Иконки остаются неподвижными. Система запрашивает разрешение «Микрофон» для Visualizer; запись с микрофона не ведётся. Доступность звука зависит от прошивки и плеера.",14,getColor(R.color.text_secondary)),8);
         musicGlowStatus = text(MusicGlowView.status(activity),14,getColor(R.color.text_secondary));
         addWithTop(glowCard, musicGlowStatus, 8);
+        addWithTop(glowCard,text("Эффект",14,getColor(R.color.text_secondary)),8);
+        android.widget.GridLayout effectGrid=new android.widget.GridLayout(activity);effectGrid.setColumnCount(2);
+        List<Button> effectButtons=new ArrayList<>();
+        Runnable refreshEffects=()->{
+            int selected=Math.max(0,Math.min(MusicGlowView.EFFECT_NAMES.length-1,AppPreferences.get(activity).getInt(MusicGlowView.EFFECT,0)));
+            for(int i=0;i<effectButtons.size();i++){
+                Button button=effectButtons.get(i);boolean chosen=i==selected;
+                button.setText((chosen?"✓  ":"")+MusicGlowView.EFFECT_NAMES[i]);button.setSelected(chosen);
+                button.setContentDescription("Эффект: "+MusicGlowView.EFFECT_NAMES[i]+(chosen?", выбран":""));
+                GradientDrawable background=rounded(getColor(R.color.button),12);
+                if(chosen)background.setStroke(dp(2),getColor(R.color.accent));button.setBackground(background);
+            }
+        };
+        for(int i=0;i<MusicGlowView.EFFECT_NAMES.length;i++){
+            final int selected=i;Button choice=actionButton("");choice.setTextSize(13);effectButtons.add(choice);
+            choice.setOnClickListener(v->{AppPreferences.get(activity).edit().putInt(MusicGlowView.EFFECT,selected).apply();refreshEffects.run();});
+            android.widget.GridLayout.LayoutParams p=new android.widget.GridLayout.LayoutParams(android.widget.GridLayout.spec(i/2),android.widget.GridLayout.spec(i%2,1f));
+            p.width=0;p.height=dp(44);p.setMargins(dp(3),dp(3),dp(3),dp(3));effectGrid.addView(choice,p);
+        }
+        refreshEffects.run();addWithTop(glowCard,effectGrid,4);
         TextView glowBrightness = text("Яркость",14,getColor(R.color.text_secondary));addWithTop(glowCard,glowBrightness,8);
         android.widget.SeekBar brightness = new android.widget.SeekBar(activity);
         brightness.setMax(100);brightness.setProgress(AppPreferences.get(activity).getInt(MusicGlowView.BRIGHTNESS,40));
@@ -246,19 +304,23 @@ final class SettingsView extends LinearLayout
             public void onProgressChanged(android.widget.SeekBar bar,int value,boolean user){if(user)AppPreferences.get(activity).edit().putInt(MusicGlowView.BRIGHTNESS,value).apply();}
         });addWithTop(glowCard,brightness,4);
         int initialHeight = Math.max(10,Math.min(80,AppPreferences.get(activity).getInt(MusicGlowView.HEIGHT,52)));
-        TextView glowHeight = text("Высота волн: " + initialHeight + "%",14,getColor(R.color.text_secondary));
+        TextView glowHeight = text("Высота эффекта: " + initialHeight + "%",14,getColor(R.color.text_secondary));
         addWithTop(glowCard,glowHeight,8);
         android.widget.SeekBar height = new android.widget.SeekBar(activity);
         height.setMax(70);height.setProgress(initialHeight-10);
-        height.setContentDescription("Высота волн светомузыки");
+        height.setContentDescription("Высота эффекта светомузыки");
         height.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
             public void onStartTrackingTouch(android.widget.SeekBar bar){} public void onStopTrackingTouch(android.widget.SeekBar bar){}
             public void onProgressChanged(android.widget.SeekBar bar,int value,boolean user){
-                if(user){int percent=value+10;glowHeight.setText("Высота волн: "+percent+"%");
+                if(user){int percent=value+10;glowHeight.setText("Высота эффекта: "+percent+"%");
                     AppPreferences.get(activity).edit().putInt(MusicGlowView.HEIGHT,percent).apply();}
             }
         });addWithTop(glowCard,height,4);
-        addWithTop(glowCard,text("Цвет волн",14,getColor(R.color.text_secondary)),8);
+        addWithTop(glowCard,text("Цвет эффекта",14,getColor(R.color.text_secondary)),8);
+        android.widget.Switch ambientColor=settingsSwitch("Как атмосферная подсветка",AppPreferences.get(activity).getBoolean(MusicGlowView.AMBIENT,false));
+        ambientColor.setOnCheckedChangeListener((button,checked)->AppPreferences.get(activity).edit().putBoolean(MusicGlowView.AMBIENT,checked).apply());
+        addWithTop(glowCard,ambientColor,4);
+        addWithTop(glowCard,text("Повторяет выбранный цвет передней зоны салона. При недоступности данных используется цвет ниже. Переливы и краткие реакции штатной подсветки требуют отдельной поддержки текущего цвета. Настройки подсветки автомобиля не изменяются.",14,getColor(R.color.text_secondary)),4);
         android.widget.GridLayout colorGrid = new android.widget.GridLayout(activity);colorGrid.setColumnCount(4);
         List<Button> colorButtons = new ArrayList<>();
         Button customColor = actionButton("");
@@ -280,7 +342,7 @@ final class SettingsView extends LinearLayout
                 button.setText(label);button.setSelected(chosen);
                 GradientDrawable background=rounded(getColor(R.color.button),12);
                 if(chosen)background.setStroke(dp(2),color==0?getColor(R.color.accent):color);
-                button.setBackground(background);button.setContentDescription("Цвет волн: "+MusicGlowView.COLOR_NAMES[i]+(chosen?", выбран":""));
+                button.setBackground(background);button.setContentDescription("Цвет эффекта: "+MusicGlowView.COLOR_NAMES[i]+(chosen?", выбран":""));
             }
         };
         for(int i=0;i<MusicGlowView.COLORS.length;i++){

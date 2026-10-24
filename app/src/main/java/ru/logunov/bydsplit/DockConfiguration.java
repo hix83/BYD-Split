@@ -9,6 +9,13 @@ import java.util.List;
 final class DockConfiguration {
     static final String MODE = "dock_dynamic", ITEMS = "dock_items", ALIGN = "dock_alignment";
     static final int MAX = 20;
+    static final String HEIGHT_PERCENT = "dock_height_percent";
+    static final int MIN_HEIGHT_PERCENT = 80, MAX_HEIGHT_PERCENT = 150;
+    static int heightPercent(Context c) {
+        return Math.max(MIN_HEIGHT_PERCENT, Math.min(MAX_HEIGHT_PERCENT,
+                AppPreferences.get(c).getInt(HEIGHT_PERCENT, 100)));
+    }
+    static float scale(Context c) { return heightPercent(c) / 100f; }
     enum Item {
         SONG("BYD SONG", R.drawable.dock_ui7_song),
         CAMERA("Камеры", R.drawable.dock_ui7_camera),
@@ -30,7 +37,8 @@ final class DockConfiguration {
         CYCLE("Рециркуляция", R.drawable.song_oem_internal_cycle_mode_had, ComfortState.Field.CYCLE),
         MAX_COOL("Макс. охлаждение", R.drawable.song_oem_ac_max, ComfortState.Field.MAX),
         FAN_DOWN("Вентилятор −", R.drawable.song_oem_ac_wind_level_min_normal, ComfortState.Field.FAN),
-        FAN_UP("Вентилятор +", R.drawable.song_oem_ac_wind_level_max_normal, ComfortState.Field.FAN);
+        FAN_UP("Вентилятор +", R.drawable.song_oem_ac_wind_level_max_normal, ComfortState.Field.FAN),
+        PHONE("Телефон · ICCOA (экспериментально)", R.drawable.dock_ui7_phone);
         final String title; final int icon; final ComfortState.Field field;
         final int slots = 1;
         Item(String title,int icon){this(title,icon,null);}
@@ -38,6 +46,7 @@ final class DockConfiguration {
         boolean required(){return this==SONG||this==SETTINGS;}
         String caption(){
             switch(this){
+                case PHONE:return "Телефон β";
                 case DRIVER_HEAT:return "Подогр. вод.";
                 case PASSENGER_HEAT:return "Подогр. пас.";
                 case DRIVER_VENT:return "Вент. вод.";

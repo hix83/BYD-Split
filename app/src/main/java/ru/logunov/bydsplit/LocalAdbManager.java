@@ -374,6 +374,27 @@ final class LocalAdbManager {
         } catch(Exception error){client.close();Log.w(TAG,"Battery watch read failed",error);return null;}
     }
 
+    /** Read-only Song front-zone palette and selection, also used by BydMyCar. */
+    synchronized AmbientLightState readAmbientLightColor() {
+        try {
+            client.connect();
+            String output=client.shell("service call autoservice 5 i32 1012 i32 1072693258; "
+                    +"service call autoservice 5 i32 1012 i32 1121976336; "
+                    +"service call autoservice 5 i32 1012 i32 1121976384; "
+                    +"service call autoservice 5 i32 1012 i32 679477578");
+            Matcher matcher=PARCEL_VALUE.matcher(output);
+            if(!matcher.find())return null;
+            int config=(int)Long.parseLong(matcher.group(1),16);
+            if(!matcher.find())return null;
+            int index=(int)Long.parseLong(matcher.group(1),16);
+            Integer color=AmbientPalette.color(config,index);
+            if(color==null)return null;
+            boolean music=matcher.find()&&Long.parseLong(matcher.group(1),16)==1;
+            boolean dynamic=matcher.find()&&Long.parseLong(matcher.group(1),16)==1;
+            return new AmbientLightState(color,music,dynamic);
+        }catch(Exception error){return null;}
+    }
+
     synchronized VehicleTelemetrySnapshot readVehicleTelemetry() {
         try {
             client.connect();

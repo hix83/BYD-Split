@@ -25,11 +25,11 @@ public final class DockStatusInstrumentation extends Instrumentation {
                 segments(dock,DockConfiguration.Item.DRIVER_VENT,1,2);
                 segments(dock,DockConfiguration.Item.WHEEL,0,1);
                 requests.request(DRIVER_HEAT,1);
-                dock.setNavigation(false,false,false,false,false,"");
+                dock.setNavigation(false,false,false,false,false,false,"");
                 segments(dock,DockConfiguration.Item.DRIVER_HEAT,1,2);
                 check(controller.pending(DRIVER_HEAT)&&!controller.pending(DRIVER_VENT),"per-field pending missing");
                 field(controller,"receivedAt").setLong(controller,SystemClock.elapsedRealtime()-6000);
-                requests.clear();dock.setNavigation(false,false,false,false,false,"");
+                requests.clear();dock.setNavigation(false,false,false,false,false,false,"");
                 segments(dock,DockConfiguration.Item.DRIVER_HEAT,-1,2);
                 segments(dock,DockConfiguration.Item.DRIVER_VENT,-1,2);
                 check(!text(dock,"НЕТ ДАННЫХ"),"unexpected no-data caption");

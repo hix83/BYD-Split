@@ -38,6 +38,9 @@ public final class MusicGlowInstrumentation extends Instrumentation {
         check(rendered>5&&rendered<=85,"frame cadence not bounded: "+rendered);
         check(field(glow,"lastSample").getLong(glow)>0,"no real audio callbacks");
         check(field(glow,"capturedPeak").getFloat(glow)>.005,"global capture delivered no tone energy");
+        float[] bands=(float[])field(glow,"spectrum").get(glow);float bandPeak=0;
+        for(float band:bands)bandPeak=Math.max(bandPeak,band);
+        check(bandPeak>0,"FFT delivered no frequency energy");
         float peak=field(glow,"capturedPeak").getFloat(glow);
         Bitmap screenshot=getUiAutomation().takeScreenshot();try(java.io.FileOutputStream file=new java.io.FileOutputStream(new java.io.File(getTargetContext().getExternalFilesDir(null),"music-glow.png"))){screenshot.compress(Bitmap.CompressFormat.PNG,100,file);}screenshot.recycle();
         playing.set(false);track.pause();track.flush();if(writer!=null)writer.join(1500);SystemClock.sleep(3000);
@@ -45,6 +48,15 @@ public final class MusicGlowInstrumentation extends Instrumentation {
         check(!field(glow,"framesRunning").getBoolean(glow),"render loop kept running at silence");
         runOnMainSync(MusicGlowView::preview);SystemClock.sleep(1300);
         check(field(glow,"framesRunning").getBoolean(glow),"preview did not animate");
+        for(int i=0;i<MusicGlowView.EFFECT_NAMES.length;i++){
+            final int effect=i;
+            runOnMainSync(()->{AppPreferences.get(activity).edit().putInt(MusicGlowView.EFFECT,effect).commit();MusicGlowView.preview();});
+            SystemClock.sleep(650);
+            check(field(glow,"effect").getInt(glow)==effect,"effect selection not applied");
+            Bitmap effectImage=getUiAutomation().takeScreenshot();
+            try(java.io.FileOutputStream file=new java.io.FileOutputStream(new java.io.File(getTargetContext().getExternalFilesDir(null),"music-effect-"+i+".png"))){effectImage.compress(Bitmap.CompressFormat.PNG,100,file);}effectImage.recycle();
+        }
+        runOnMainSync(()->AppPreferences.get(activity).edit().putInt(MusicGlowView.EFFECT,0).commit());
         Bitmap preview=getUiAutomation().takeScreenshot();try(java.io.FileOutputStream file=new java.io.FileOutputStream(new java.io.File(getTargetContext().getExternalFilesDir(null),"music-glow-preview.png"))){preview.compress(Bitmap.CompressFormat.PNG,100,file);}preview.recycle();
         runOnMainSync(()->{glow.setActive(false);});
         check(field(glow,"capture").get(glow)==null,"capture not released on background");
