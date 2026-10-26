@@ -14,6 +14,8 @@ final class LocalAdbManager {
             "Parcel\\(00000000\\s+([0-9a-fA-F]{8})");
     private static LocalAdbManager instance;
     private static LocalAdbManager callInstance;
+    private static LocalAdbManager statisticsInstance;
+    static synchronized LocalAdbManager forStatistics(Context context){if(statisticsInstance==null)statisticsInstance=new LocalAdbManager(context.getApplicationContext());return statisticsInstance;}
     private static LocalAdbManager batteryWatchInstance;
     static synchronized LocalAdbManager forBatteryWatch(Context context) {
         if(batteryWatchInstance==null)batteryWatchInstance=new LocalAdbManager(context.getApplicationContext());
@@ -274,6 +276,13 @@ final class LocalAdbManager {
         return client.shell("CLASSPATH=" + apk + " app_process /system/bin ru.logunov.bydsplit.ComfortPanelBridge " + args);
     }
 
+    synchronized org.json.JSONArray readNativeHistory() throws Exception {
+        String apk=context.getApplicationInfo().sourceDir;
+        if(!SAFE_APK_PATH.matcher(apk).matches())throw new IllegalArgumentException("apk");
+        client.connect();String reply=client.shell("CLASSPATH="+apk+" app_process /system/bin ru.logunov.bydsplit.NativeEnergyHistoryBridge");
+        for(String line:reply.split("\r?\n"))if(line.startsWith("BYD_HISTORY="))return new org.json.JSONArray(line.substring(12));
+        throw new java.io.IOException("Штатная история BYD пока недоступна");
+    }
     synchronized StatisticsSample readStatistics() {
         VehicleTelemetrySnapshot vehicle = readVehicleTelemetry();
         if (vehicle == null) return null;
@@ -306,7 +315,10 @@ final class LocalAdbManager {
                         + TripEnergyCounter.TRANSACTION + " i32 " + TripEnergyCounter.DEVICE
                         + " i32 " + TripEnergyCounter.FID));
             } catch (Exception error) { Log.w(TAG, "BMS energy counter unavailable", error); }
-            return new StatisticsSample(vehicle, watts, values[2], fuel, energy);
+            Integer powerState=null;
+            Matcher power=PARCEL_VALUE.matcher(client.shell("service call autoservice 5 i32 1023 i32 315621408"));
+            if(power.find()){int raw=(int)Long.parseLong(power.group(1),16);if(raw>=0&&raw<=2)powerState=raw;}
+            return new StatisticsSample(vehicle, watts, values[2], fuel, energy, powerState);
         } catch (Exception error) {
             Log.w(TAG, "Statistics unavailable", error);
             return null;

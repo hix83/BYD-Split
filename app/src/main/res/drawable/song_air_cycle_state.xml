@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_selected="true" android:drawable="@drawable/song_oem_internal_cycle_mode_had" />
+    <item android:drawable="@drawable/song_oem_out_cycle_mode_had" />
+</selector>

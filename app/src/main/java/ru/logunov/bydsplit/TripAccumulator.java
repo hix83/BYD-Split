@@ -3,7 +3,7 @@ package ru.logunov.bydsplit;
 /** Numerical integration of observed samples only. Positive battery watts = discharge.
  * Independent of Android so loss of telemetry and hybrid accounting can be tested. */
 final class TripAccumulator {
-    long start, end, movingMs, observedMs, missingMs;
+    long start, end, movingMs, observedMs, missingMs, powerMissingMs;
     double km, usedKwh, recoveredKwh, maxSpeed;
     boolean engineSeen;
     final TripEnergyCounter electricity = new TripEnergyCounter();
@@ -35,7 +35,7 @@ final class TripAccumulator {
                         accumulate(lastWatts / 2, hours * fraction);
                         accumulate(watts / 2, hours * (1 - fraction));
                     } else accumulate((watts + lastWatts) / 2, hours);
-                } else missingMs += dt;
+                } else powerMissingMs += dt;
             } else missingMs += dt;
         }
         if (speed != null) maxSpeed = Math.max(maxSpeed, speed);
@@ -52,7 +52,10 @@ final class TripAccumulator {
                 electricity.invalid, end - start);
         if (counter != null && counter > 0) return counter;
         // Signed HV power subtracts regeneration and engine-to-battery charging. No SOC fallback on DM-i.
-        return missingMs == 0 && observedMs > 0 ? Math.max(0, netKwh()) : null;
+        if(missingMs == 0 && powerMissingMs == 0 && observedMs > 0)return Math.max(0, netKwh());
+        // A valid positive lifetime counter can remain in the same 0.1 kWh bucket.
+        // Display the resolution beside this estimate; missing counters still remain unknown.
+        return counter != null && end > start ? counter : null;
     }
     Double electricityCost(double price, Double overrideKwh) {
         Double energy = overrideKwh != null ? overrideKwh : automaticElectricityKwh();

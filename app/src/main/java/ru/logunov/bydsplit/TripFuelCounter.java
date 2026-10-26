@@ -43,6 +43,7 @@ final class TripFuelCounter {
         if (startLitres != null && total != null && total - startLitres > MAX_TRIP_LITRES) invalid = true;
     }
 
+    void restore(Double start,Double end,boolean bad){startLitres=start;endLitres=end;previous=end;invalid=bad;started=true;}
     void loseClosingEdge() { endLitres = null; }
 
     Double litres() { return invalid ? null : difference(startLitres, endLitres); }

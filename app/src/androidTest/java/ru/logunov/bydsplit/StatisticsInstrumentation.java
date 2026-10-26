@@ -53,7 +53,7 @@ public final class StatisticsInstrumentation extends Instrumentation {
             StatisticsStore.Entry automatic=store.list(0).get(0);
             near(automatic.fuelLitres(),2.8);near(automatic.fuelCost(),168);
             near(automatic.cost(),180);near(automatic.electricityCost(),12);
-            check(automatic.electricitySource().equals("счётчик BMS"),"BMS source lost");
+            check(automatic.electricitySource().startsWith("счётчик BMS"),"BMS source lost");
             store.correct(autoId,null,2.);
             near(store.list(0).get(0).cost(),180);
             store.correct(autoId,4.,2.);
@@ -82,7 +82,10 @@ public final class StatisticsInstrumentation extends Instrumentation {
             store.addPurchase("charge",13000000,10,1000,null,false);
             near(store.list(0).get(1).cost(),73.33); // A future purchase cannot reprice an existing trip.
             testMigration();
-            result.putString("stream","SQLite journal, recovery, corrections, tariff snapshots, full-tank calculation, deletion, automatic fuel, manual precedence, CSV and v1/v2→v3 migration, automatic full cost and charge pricing: passed\n");
+            testNativeHistory();
+            testNativeSnapshot();
+            testResume();
+            result.putString("stream","SQLite journal, automatic costs, v1/v2/v3→v5 migrations, native history import and deduplication, tariff/correction retention, deletion tombstones, WAL snapshot and live counter resume: passed\n");
             finish(Activity.RESULT_OK,result);
         } catch(Throwable error) {
             result.putString("stream",android.util.Log.getStackTraceString(error));finish(Activity.RESULT_CANCELED,result);
@@ -134,6 +137,54 @@ public final class StatisticsInstrumentation extends Instrumentation {
         } catch(Throwable error) {result.putString("stream",android.util.Log.getStackTraceString(error));finish(Activity.RESULT_CANCELED,result);}
         finally {getTargetContext().deleteDatabase(database);}
     }
+    private void testResume(){
+        String name="song_statistics_resume_test.db";getTargetContext().deleteDatabase(name);
+        try(StatisticsStore db=new StatisticsStore(getTargetContext(),name)){
+            TripAccumulator t=new TripAccumulator();t.add(1000000,0.,null,null,false);t.fuel.sample(400.);t.electricity.sample(1200.);
+            t.add(1030000,0.,null,null,false);t.fuel.sample(400.);t.electricity.sample(1200.1);
+            long id=db.begin("trip",1000000,21.5,70);db.checkpoint(id,t,true,"");
+            StatisticsStore.Entry original=db.list(0).get(0);check(original.missing==0&&original.powerMissing==30000,"missing power confused with missing speed");
+            TripAccumulator resumed=original.resume();db.recoverInterruptedExcept(id);
+            resumed.add(1040000,0.,null,null,false);resumed.fuel.sample(400.);resumed.electricity.sample(1200.2);db.checkpoint(id,resumed,true,"");
+            StatisticsStore.Entry e=db.list(0).get(0);near(e.energyStart,1200);near(e.electricityKwh(),.2);near(e.cost(),4.3);check(e.active&&e.missing==10000,"resume did not preserve gap");
+        }finally{getTargetContext().deleteDatabase(name);}
+    }
+    private void testNativeSnapshot() throws Exception {
+        java.io.File source=new java.io.File(getTargetContext().getCacheDir(),"byd-native-wal-fixture.db");
+        android.database.sqlite.SQLiteDatabase.deleteDatabase(source);
+        try(android.database.sqlite.SQLiteDatabase db=android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(source,null)){
+            db.enableWriteAheadLogging();try(android.database.Cursor pragma=db.rawQuery("PRAGMA wal_autocheckpoint=0",null)){pragma.moveToFirst();}
+            db.execSQL("CREATE TABLE EnergyConsumption(_id INTEGER,start_timestamp INTEGER,end_timestamp INTEGER,duration INTEGER,trip REAL,electricity REAL,fuel REAL,is_deleted INTEGER)");
+            db.execSQL("INSERT INTO EnergyConsumption VALUES(1,1792630000,1792630600,600,10,2,1.5,0)");
+            org.json.JSONArray rows=NativeEnergyHistoryBridge.readRows(source,getTargetContext().getCacheDir());
+            check(rows.length()==1,"WAL-only native row lost");near(rows.getJSONArray(0).getDouble(5),2);
+            try(android.database.Cursor c=db.rawQuery("SELECT count(*) FROM EnergyConsumption",null)){check(c.moveToFirst()&&c.getInt(0)==1,"native source modified");}
+        }finally{android.database.sqlite.SQLiteDatabase.deleteDatabase(source);}
+    }
+    private void testNativeHistory() throws Exception {
+        String name="song_statistics_native_test.db";getTargetContext().deleteDatabase(name);
+        try(StatisticsStore db=new StatisticsStore(getTargetContext(),name)){
+            long base=1792630000000L;
+            long local=db.begin("trip",base+10000,21.5,70);TripAccumulator observation=new TripAccumulator();observation.start=base+10000;observation.end=base+590000;observation.km=10;db.checkpoint(local,observation,false,"original observation");
+            org.json.JSONArray rows=new org.json.JSONArray("[[1,1792630000,1792630600,600,10,2,1.5,0],[2,1792631000,1792631600,600,0,-1.2,0.4,0],[3,1792632000,1792632600,600,2,null,null,0]]");
+            check(db.importNative(rows,21.5,70)==3,"native import count");
+            check(db.list(0).size()==3&&db.archivedObservations()==1,"local/native double counting");
+            StatisticsStore.Entry one=db.list(0).get(2);near(one.cost(),148);near(one.electricityKwh(),2);near(one.fuelLitres(),1.5);check(one.nativeRecord(),"native provenance");
+            StatisticsStore.Entry generated=db.list(0).get(1);near(generated.cost(),28);near(generated.electricityKwh(),0);near(generated.nativeEnergy,-1.2);
+            check(db.list(0).get(0).cost()==null,"null native columns became zero");
+            db.importNative(rows,999,999);near(db.list(0).get(2).cost(),148);check(db.list(0).size()==3,"duplicate reimport");
+            db.correct(one.id,2.,3.);db.importNative(rows,999,999);near(db.list(0).get(2).cost(),204.5);
+            db.delete(one.id);db.importNative(rows,999,999);check(db.list(0).size()==2,"deleted native row resurrected");
+            try(android.database.Cursor c=db.getReadableDatabase().rawQuery("SELECT note FROM journal WHERE id=?",new String[]{""+local})){check(c.moveToFirst()&&"original observation".equals(c.getString(0)),"observation archive lost");}
+            rows.getJSONArray(1).put(7,1);db.importNative(rows,21.5,70);check(db.list(0).size()==1,"BYD deletion ignored");
+        }finally{getTargetContext().deleteDatabase(name);}
+        String migrated="song_statistics_v3_migration.db";getTargetContext().deleteDatabase(migrated);
+        try(android.database.sqlite.SQLiteDatabase db=getTargetContext().openOrCreateDatabase(migrated,0,null)){
+            db.execSQL("CREATE TABLE journal(id INTEGER PRIMARY KEY,type TEXT,start INTEGER,end INTEGER,active INTEGER,km REAL,used REAL,recovered REAL,moving INTEGER,observed INTEGER,missing INTEGER,max REAL,engine INTEGER,electric_price REAL,fuel_price REAL,litres REAL,grid REAL,odometer REAL,full INTEGER,note TEXT,fuel_start REAL,fuel_end REAL,fuel_invalid INTEGER,energy_start REAL,energy_end REAL,energy_invalid INTEGER,soc_start REAL,price_source TEXT,charge_loss REAL)");db.setVersion(3);
+            db.execSQL("INSERT INTO journal(id,type,start,end,active,litres,grid,electric_price,fuel_price,note,price_source) VALUES(1,'trip',1,2,0,1,2,21.5,70,'kept','kept')");
+        }
+        try(StatisticsStore db=new StatisticsStore(getTargetContext(),migrated)){near(db.list(0).get(0).cost(),113);check(db.getReadableDatabase().getVersion()==5,"v3 migration");}finally{getTargetContext().deleteDatabase(migrated);}
+    }
     private void testMigration() {
         for(int version:new int[]{1,2}) {
         String name="song_statistics_v"+version+"_migration.db";
@@ -151,7 +202,7 @@ public final class StatisticsInstrumentation extends Instrumentation {
                 db.setVersion(version);
             }
             try(StatisticsStore migrated=new StatisticsStore(getTargetContext(),name)) {
-                check(migrated.getReadableDatabase().getVersion()==3,"schema version not upgraded");
+                check(migrated.getReadableDatabase().getVersion()==5,"schema version not upgraded");
                 StatisticsStore.Entry old=migrated.list(0).get(0);
                 near(old.fuelLitres(),1.5);near(old.cost(),102);
                 if(version==1)check(old.fuelStart==null&&old.fuelEnd==null,"migration invented old counters");

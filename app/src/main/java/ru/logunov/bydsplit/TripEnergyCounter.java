@@ -27,6 +27,7 @@ final class TripEnergyCounter {
         if (value != null) previous = value;
         endKwh = value;
     }
+    void restore(Double start,Double end,boolean bad){startKwh=start;endKwh=end;previous=end;invalid=bad;started=true;}
     void loseClosingEdge() { endKwh = null; }
     static Double difference(Double start, Double end, boolean invalid, long durationMs) {
         if (invalid || start == null || end == null || !Double.isFinite(start) || !Double.isFinite(end)

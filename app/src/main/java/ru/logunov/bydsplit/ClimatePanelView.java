@@ -27,14 +27,14 @@ final class ClimatePanelView extends FrameLayout {
     ClimatePanelView(Context context,Host host){
         super(context);this.host=host;setClipChildren(false);
         art=new AirflowArt();addView(art,new FrameLayout.LayoutParams(-1,-1));
-        int[] icons={R.drawable.song_oem_ac_power_on,R.drawable.song_oem_control_mode,R.drawable.song_oem_ac_compressor,R.drawable.song_oem_ac_max,R.drawable.song_oem_ac_front_defrost,R.drawable.song_oem_mirrors_icon,R.drawable.song_oem_internal_cycle_mode_had,R.drawable.song_oem_vent_only_icon};
+        int[] icons={R.drawable.song_oem_ac_power_on,R.drawable.song_oem_control_mode,R.drawable.song_oem_ac_compressor,R.drawable.song_oem_ac_max,R.drawable.song_oem_ac_front_defrost,R.drawable.song_oem_mirrors_icon,R.drawable.song_air_cycle_state,R.drawable.song_oem_vent_only_icon};
         ComfortState.Field[] fields={POWER,AUTO,COMPRESSOR,MAX,FRONT,REAR,CYCLE,VENT};
         String[] labels={"Питание климата","Автоматический режим","Кондиционер A/C","Максимальное охлаждение","Обдув лобового стекла","Обогрев зеркал и заднего стекла","Рециркуляция","Вентиляция без охлаждения"};
         for(int i=0;i<fields.length;i++){
             final ComfortState.Field f=fields[i];final int on=f==AUTO?0:1;
             View control=iconControl(icons[i],f==VENT?"≋ ONLY":"",labels[i],()->{Integer v=host.current(f);if(v!=null)send(f,v==on?1-on:on);});
             place(control,48+i*100,40,94,52);
-            bindings.add(()->{Integer v=host.current(f);style(control,v!=null&&v==on,host.enabled()&&v!=null,true);});
+            bindings.add(()->{Integer v=host.current(f);style(control,v!=null&&v==on,host.enabled()&&v!=null,true);if(f==CYCLE)control.setContentDescription(v==null?"Рециркуляция: нет данных":v==1?"Рециркуляция в салоне":"Забор воздуха снаружи");});
         }
         place(new TemperatureRail(DRIVER_TEMP,"Водитель"),60,300,116,350);
         place(new TemperatureRail(PASSENGER_TEMP,"Пассажир"),740,300,116,350);

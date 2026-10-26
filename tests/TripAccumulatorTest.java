@@ -14,7 +14,7 @@ public final class TripAccumulatorTest {
         near(hybrid.estimatedCost(6,1.,60,null),60.5);
         near(hybrid.estimatedCost(6,1.,60,2.),72);
         TripAccumulator unknown=new TripAccumulator();unknown.add(start,60.,null,null,false);unknown.add(start+30000,60.,null,null,false);
-        if(unknown.missingMs!=30000||unknown.estimatedCost(6,null,60,null)!=null)throw new AssertionError("missing power treated as free");
+        if(unknown.missingMs!=0||unknown.powerMissingMs!=30000||unknown.estimatedCost(6,0.,60,null)!=null)throw new AssertionError("missing power treated as free");
         if(new TripAccumulator().consumption()!=null)throw new AssertionError("zero distance");
         TripAccumulator regen=new TripAccumulator();regen.add(start,30.,-2000.,null,false);regen.add(start+30000,30.,-2000.,null,false);
         near(regen.estimatedCost(6,0.,60,null),0);

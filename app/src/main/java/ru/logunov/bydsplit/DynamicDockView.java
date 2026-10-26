@@ -160,9 +160,11 @@ final class DynamicDockView extends FrameLayout {
                             || item.field == ComfortState.Field.WHEEL || item.field == ComfortState.Field.REAR || item.field == ComfortState.Field.FRONT;
                     int activeColor = pending ? ThemePalette.color(activity, 0xffffc25b, 0xff916000)
                             : heating ? ThemePalette.color(activity, 0xffffa06b, 0xffb7460e) : activity.getColor(R.color.accent);
+                    if(item==DockConfiguration.Item.CYCLE)setIcon(icon,raw!=null&&raw==1?R.drawable.song_oem_internal_cycle_mode_had:R.drawable.song_oem_out_cycle_mode_had,true);
                     icon.setColorFilter(on || pending ? activeColor : ThemePalette.text(activity));
                     cell.setAlpha(available ? 1 : .6f); cell.setSelected(on);
                     String state = raw == null ? "нет данных" : item.field.seat() ? "уровень " + (raw - 1) : item.field == ComfortState.Field.FAN ? "скорость " + raw : on ? "включено" : "выключено";
+                    if(item==DockConfiguration.Item.CYCLE&&raw!=null)state=raw==1?"рециркуляция в салоне":"забор воздуха снаружи";
                     caption.setText(item.caption());
                     if (item.field != null) {
                         int max = item.field == ComfortState.Field.FAN ? 7 : item.field.seat() && item.field != ComfortState.Field.WHEEL ? 2 : 1;
@@ -384,12 +386,18 @@ final class DynamicDockView extends FrameLayout {
     private ImageView icon(DockConfiguration.Item item) {
         ImageView image = new ImageView(activity);
         image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        if (item.ordinal() <= DockConfiguration.Item.SETTINGS.ordinal()) {
-            image.setImageResource(item.icon);
+        setIcon(image,item.icon,item.ordinal()>DockConfiguration.Item.SETTINGS.ordinal());
+        return image;
+    }
+    private void setIcon(ImageView image,int resource,boolean crop){
+        if(Integer.valueOf(resource).equals(image.getTag()))return;
+        image.setTag(resource);
+        if (!crop) {
+            image.setImageResource(resource);
         } else {
-            Bitmap cropped = croppedIcons.get(item.icon);
+            Bitmap cropped = croppedIcons.get(resource);
             if (cropped == null) {
-                Drawable drawable = activity.getDrawable(item.icon);
+                Drawable drawable = activity.getDrawable(resource);
                 Bitmap source = Bitmap.createBitmap(192, 192, Bitmap.Config.ARGB_8888);
                 int width = Math.max(1, drawable.getIntrinsicWidth()), height = Math.max(1, drawable.getIntrinsicHeight());
                 float scale = 192f / Math.max(width, height);
@@ -404,12 +412,11 @@ final class DynamicDockView extends FrameLayout {
                     }
                 }
                 cropped = right < left ? source : Bitmap.createBitmap(source, left, top, right - left + 1, bottom - top + 1);
-                croppedIcons.put(item.icon, cropped);
+                croppedIcons.put(resource, cropped);
             }
             image.setImageBitmap(cropped);
             image.setPadding(dp(4), dp(4), dp(4), dp(4));
         }
-        return image;
     }
     private Button action(String title, boolean primary, Runnable action) {
         Button button = new Button(activity); button.setText(title); button.setAllCaps(false);

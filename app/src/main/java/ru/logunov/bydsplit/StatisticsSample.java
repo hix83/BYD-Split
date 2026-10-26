@@ -4,6 +4,7 @@ final class StatisticsSample {
     final Double speed, watts, odometer, lifetimeFuelLitres, lifetimeElectricityKwh, soc;
     final boolean engine, charging, engineKnown;
     final String chargeMode;
+    final Integer powerState, batteryPowerKw;
     StatisticsSample(VehicleTelemetrySnapshot vehicle, Double watts, Double odometer) {
         this(vehicle, watts, odometer, null);
     }
@@ -11,6 +12,10 @@ final class StatisticsSample {
         this(vehicle, watts, odometer, lifetimeFuelLitres, null);
     }
     StatisticsSample(VehicleTelemetrySnapshot vehicle, Double watts, Double odometer, Double lifetimeFuelLitres, Double lifetimeElectricityKwh) {
+        this(vehicle,watts,odometer,lifetimeFuelLitres,lifetimeElectricityKwh,null);
+    }
+    StatisticsSample(VehicleTelemetrySnapshot vehicle, Double watts, Double odometer, Double lifetimeFuelLitres, Double lifetimeElectricityKwh,Integer powerState) {
+        this.powerState=powerState;this.batteryPowerKw=vehicle.batteryPowerKw;
         this.lifetimeFuelLitres = lifetimeFuelLitres;
         this.lifetimeElectricityKwh = lifetimeElectricityKwh;
         soc = vehicle.batterySocPercent == null ? null : vehicle.batterySocPercent.doubleValue();
