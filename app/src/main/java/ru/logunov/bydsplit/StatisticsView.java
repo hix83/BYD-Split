@@ -18,7 +18,8 @@ final class StatisticsView extends LinearLayout {
     private final ScrollView scroll;
     private boolean wide,roomy;
     private final List<Button> tabButtons=new ArrayList<>(), periodButtons=new ArrayList<>();
-    private final Runnable refresh=new Runnable(){public void run(){status.setText(AppPreferences.isDemoModeEnabled(activity)?"Эмулятор · реальная запись отключена":StatisticsService.status);show();postDelayed(this,5000);}};
+    private boolean active=true;
+    private final Runnable refresh=new Runnable(){public void run(){if(!active||!VehicleSleepController.get(activity).pollingAllowed())return;status.setText(AppPreferences.isDemoModeEnabled(activity)?"Эмулятор · реальная запись отключена":StatisticsService.status);show();postDelayed(this,5000);}};
     StatisticsView(Activity activity,Runnable close) { this(activity,close,0,30); }
     int selectedTab(){return tab;}
     int selectedPeriod(){return period;}
@@ -47,7 +48,8 @@ final class StatisticsView extends LinearLayout {
     }
     @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);boolean next=w>=dp(700),large=w>=dp(1000);if(next!=wide||large!=roomy){wide=next;roomy=large;post(this::show);}}
     private int dp(int n){return StatisticsUi.dp(activity,n);}
-    @Override protected void onAttachedToWindow(){super.onAttachedToWindow();post(refresh);}
+    void setActive(boolean enabled){active=enabled;removeCallbacks(refresh);if(active&&isAttachedToWindow())post(refresh);}
+    @Override protected void onAttachedToWindow(){super.onAttachedToWindow();setActive(active);}
     @Override protected void onDetachedFromWindow(){removeCallbacks(refresh);store.close();super.onDetachedFromWindow();}
     private long since(){Calendar c=Calendar.getInstance();if(period==0)return 0;c.set(Calendar.HOUR_OF_DAY,0);c.set(Calendar.MINUTE,0);c.set(Calendar.SECOND,0);c.set(Calendar.MILLISECOND,0);c.add(Calendar.DAY_OF_YEAR,1-period);return c.getTimeInMillis();}
     private void line(String s,int size){StatisticsUi.add(content,StatisticsUi.text(activity,s,size));}

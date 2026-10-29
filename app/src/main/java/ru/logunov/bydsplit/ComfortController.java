@@ -17,6 +17,7 @@ final class ComfortController {
         if(instance==null)instance=new ComfortController(context.getApplicationContext());return instance;
     }
     private final Context context;
+    private final VehicleSleepController sleep;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final ComfortRequests requests=new ComfortRequests();
@@ -27,11 +28,11 @@ final class ComfortController {
     private String lastError="";
     private boolean reading,writing;
     private final Runnable tick=new Runnable(){public void run(){if(listeners.isEmpty())return;publish();poll();main.postDelayed(this,1500);}};
-    private ComfortController(Context context){this.context=context;}
+    private ComfortController(Context context){this.context=context;sleep=VehicleSleepController.get(context);}
     void addListener(Runnable listener){boolean first=listeners.isEmpty();listeners.add(listener);listener.run();if(first)main.post(tick);}
     void removeListener(Runnable listener){listeners.remove(listener);if(listeners.isEmpty())main.removeCallbacks(tick);}
     private boolean demo(){return AppPreferences.isDemoModeEnabled(context);}
-    boolean available(){return demo()||receivedAt>0&&SystemClock.elapsedRealtime()-receivedAt<5000;}
+    boolean available(){return demo()||sleep.pollingAllowed()&&receivedAt>0&&SystemClock.elapsedRealtime()-receivedAt<5000;}
     boolean pending(){return !demo()&&requests.hasPending();}
     boolean pending(ComfortState.Field field){return !demo()&&requests.pending(field);}
     Integer current(ComfortState.Field field){return demo()?demoState.get(field):requests.current(field);}
@@ -58,17 +59,20 @@ final class ComfortController {
     private void accept(ComfortState sample){requests.accept(sample);receivedAt=sample.any()?SystemClock.elapsedRealtime():0;}
     private void publish(){for(Runnable listener:new LinkedHashSet<>(listeners))listener.run();}
     private void poll(){
+        if(!sleep.pollingAllowed())return;
         if(reading||writing||requests.hasPending()||AppPreferences.isDemoModeEnabled(context))return;
         reading=true;worker.execute(()->{ComfortState sample=LocalAdbManager.get(context).readComfortPanel();main.post(()->{
             reading=false;accept(sample);publish();drain();
         });});
     }
     private void drain(){
+        if(!sleep.pollingAllowed()){requests.clear();receivedAt=0;publish();return;}
         if(reading||writing)return;
         if(AppPreferences.isDemoModeEnabled(context)){requests.clear();publish();return;}
         ComfortRequests.Request command=requests.next();if(command==null)return;
         writing=true;
         worker.execute(()->{
+            if(!sleep.pollingAllowed()){main.post(()->{writing=false;requests.clear();receivedAt=0;publish();});return;}
             LocalAdbManager adb=LocalAdbManager.get(context);
             String error=adb.writeComfortPanel(command.field,command.value);
             ComfortState sample=adb.readComfortPanel();

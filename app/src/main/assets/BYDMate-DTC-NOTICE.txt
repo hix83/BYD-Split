@@ -1,0 +1,5 @@
+Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
+BYDMate a36fa7b653a30517433cdac91f72bc8d07d0596d: DTC protocol, scan flow, descriptions and dtc/ tables.
+Adapted to Java and BYD Split by Eduard Logunov.
+PolyForm Noncommercial License 1.0.0: BYDMate-DTC-LICENSE.txt
+https://polyformproject.org/licenses/noncommercial/1.0.0/

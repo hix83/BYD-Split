@@ -9,6 +9,10 @@ import java.util.concurrent.*;
 public final class StatisticsService extends Service {
     static final String ENABLED = "statistics_enabled";
     private ScheduledExecutorService worker;
+    private ScheduledFuture<?> polling;
+    private VehicleSleepController sleep;
+    private final Runnable sleepListener=this::syncPolling;
+    private volatile long polls,historyReads;
     private StatisticsStore store;
     private TripAccumulator trip, charge;
     private long tripId, chargeId, lastGood, lastSave;
@@ -38,20 +42,34 @@ public final class StatisticsService extends Service {
         for(StatisticsStore.Entry e:store.list(0))if(e.active&&e.type.equals("trip")&&now>=e.end&&now-e.end<=120000){trip=e.resume();tripId=e.id;lastGood=e.end;session.resume(e.end);break;}
         store.recoverInterruptedExcept(trip==null?-1:tripId);
         worker=Executors.newSingleThreadScheduledExecutor();
-        worker.scheduleWithFixedDelay(this::poll,0,3,TimeUnit.SECONDS);
+        sleep=VehicleSleepController.get(this);
+        sleep.addListener(this,sleepListener);
+    }
+    private void syncPolling() {
+        if(sleep.pollingAllowed()) {
+            if(polling==null||polling.isCancelled())polling=worker.scheduleWithFixedDelay(this::poll,0,3,TimeUnit.SECONDS);
+        } else {
+            if(polling!=null)polling.cancel(false);polling=null;
+            worker.execute(()->{finishAll("Машина выключена · наблюдение приостановлено",false);latest=null;lastSampleAt=0;status="Машина спит · ожидание включения или зарядки";});
+        }
     }
     @Override public int onStartCommand(Intent intent,int flags,int id){return START_STICKY;}
     private void poll() {
         try {
+            if(!sleep.pollingAllowed())return;
+            polls++;
             if(!AppPreferences.get(this).getBoolean(ENABLED,true)||AppPreferences.isDemoModeEnabled(this)){stopSelf();return;}
             long now=System.currentTimeMillis();
             LocalAdbManager adb=LocalAdbManager.forStatistics(this);
             if(now-lastHistory>=60000){
                 lastHistory=now;
+                historyReads++;
                 try{org.json.JSONArray rows=adb.readNativeHistory();android.content.SharedPreferences p=AppPreferences.get(this);int added=store.importNative(rows,p.getFloat("electricity_price",6),p.getFloat("fuel_price",60));historyStatus="Штатная история BYD: "+rows.length()+" записей";android.util.Log.i("BYD_STATISTICS","BYD history read="+rows.length()+" added="+added);}
                 catch(Exception e){historyStatus="Штатная история BYD временно недоступна";android.util.Log.w("BYD_STATISTICS",historyStatus,e);}
             }
+            if(!sleep.pollingAllowed())return;
             StatisticsSample sample=adb.readStatistics();
+            if(!sleep.pollingAllowed())return;
             now=System.currentTimeMillis();
             if(sample==null) {
                 status="Нет телеметрии · ожидание ADB";
@@ -117,6 +135,8 @@ public final class StatisticsService extends Service {
         if(charge!=null){if(incomplete)charge.missingMs+=1000;store.checkpoint(chargeId,charge,false,note);charge=null;}
     }
     @Override public void onDestroy() {
+        if(sleep!=null)sleep.removeListener(this);
+        if(polling!=null)polling.cancel(false);
         if(worker!=null) {
             worker.execute(()->{finishAll("Наблюдение остановлено · конец по последнему полученному показанию",false);store.close();});
             worker.shutdown();
@@ -124,4 +144,8 @@ public final class StatisticsService extends Service {
         latest=null;lastSampleAt=0;status="Запись остановлена";super.onDestroy();
     }
     @Override public IBinder onBind(Intent intent){return null;}
+    @Override protected void dump(java.io.FileDescriptor fd,java.io.PrintWriter writer,String[] args){
+        writer.println("Statistics: polls="+polls+" historyReads="+historyReads+" status="+status);
+        if(sleep!=null)writer.println("Vehicle sleep: "+sleep.describe());
+    }
 }

@@ -17,6 +17,13 @@ final class LocalAdbManager {
     private static LocalAdbManager statisticsInstance;
     static synchronized LocalAdbManager forStatistics(Context context){if(statisticsInstance==null)statisticsInstance=new LocalAdbManager(context.getApplicationContext());return statisticsInstance;}
     private static LocalAdbManager batteryWatchInstance;
+    private static LocalAdbManager powerObserverInstance;
+    private static LocalAdbManager diagnosticsInstance;
+    static synchronized LocalAdbManager forDiagnostics(Context context){if(diagnosticsInstance==null)diagnosticsInstance=new LocalAdbManager(context.getApplicationContext());return diagnosticsInstance;}
+    static synchronized LocalAdbManager forPowerObserver(Context context) {
+        if(powerObserverInstance==null)powerObserverInstance=new LocalAdbManager(context.getApplicationContext());
+        return powerObserverInstance;
+    }
     static synchronized LocalAdbManager forBatteryWatch(Context context) {
         if(batteryWatchInstance==null)batteryWatchInstance=new LocalAdbManager(context.getApplicationContext());
         return batteryWatchInstance;
@@ -52,6 +59,41 @@ final class LocalAdbManager {
         return client.isConnected();
     }
 
+    synchronized void startPowerObserver(String arguments) throws Exception {
+        String apk=context.getApplicationInfo().sourceDir;
+        if(apk==null||!SAFE_APK_PATH.matcher(apk).matches()
+                ||!arguments.matches(" --owner [0-9]+ [a-f0-9]{32}"))throw new IllegalArgumentException();
+        try {
+            client.shellV2(daemonCommand(apk,"ru.logunov.bydsplit.VehiclePowerBridge",
+                    "byd-split-power.log",arguments.trim()));
+        } finally { client.close(); }
+    }
+    synchronized void startDtcScan(String arguments)throws Exception {
+        String apk=context.getApplicationInfo().sourceDir;
+        if(apk==null||!SAFE_APK_PATH.matcher(apk).matches()||!arguments.matches(" --owner [0-9]+ [a-f0-9]{32}"))throw new IllegalArgumentException();
+        try{client.shellV2(daemonCommand(apk,"ru.logunov.bydsplit.DtcBridge","byd-split-dtc.log",arguments.trim()));}
+        finally{client.close();}
+    }
+
+    synchronized String readPowerState() throws Exception {
+        try {
+            String output=client.shell("service call autoservice 5 i32 1023 i32 315621408; "
+                    +"service call autoservice 5 i32 1009 i32 876609586");
+            Matcher m=PARCEL_VALUE.matcher(output);
+            int power=m.find()?(int)Long.parseLong(m.group(1),16):-1;
+            int cable=m.find()?(int)Long.parseLong(m.group(1),16):-1;
+            return "STATE "+power+" "+cable;
+        } finally { client.close(); }
+    }
+
+    static void closeIdleConnections(Context context) {
+        VehicleSleepController sleep=VehicleSleepController.get(context);
+        LocalAdbManager[] readers;
+        synchronized(LocalAdbManager.class){readers=new LocalAdbManager[]{instance,statisticsInstance,batteryWatchInstance,callInstance,powerObserverInstance};}
+        for(LocalAdbManager reader:readers)if(reader!=null&&sleep.mode()==VehicleSleepState.Mode.SLEEP)reader.closeConnection();
+    }
+    private synchronized void closeConnection(){client.close();}
+
     synchronized boolean restartHelpersAfterRecovery() {
         client.close();
         return startHelpers(true);
@@ -69,6 +111,8 @@ final class LocalAdbManager {
     }
 
     synchronized boolean startHelpers(boolean includeSteering) {
+        HelperSession owner = HelperSession.current();
+        if (owner == null || !owner.isOpen()) return false;
         String apk = context.getApplicationInfo().sourceDir;
         if (apk == null || !SAFE_APK_PATH.matcher(apk).matches()) {
             Log.e(TAG, "Unsafe APK path");
@@ -77,7 +121,7 @@ final class LocalAdbManager {
         try {
             String command = daemonCommand(apk,
                     "ru.logunov.bydsplit.ShellInputDaemon",
-                    "byd-split-input.log", "");
+                    "byd-split-input.log", owner.arguments().trim());
             if (includeSteering) {
                 String steeringArgs =
                         AppPreferences.getSteeringShortScan(context)
@@ -85,14 +129,14 @@ final class LocalAdbManager {
                                 + AppPreferences.getSteeringLongScan(context);
                 command += " " + daemonCommand(apk,
                         "ru.logunov.bydsplit.SteeringInputDaemon",
-                        "byd-split-steering.log", steeringArgs);
+                        "byd-split-steering.log", steeringArgs + owner.arguments());
                 command += " " + accessibilityCommand();
             }
             command = "wm set-ignore-orientation-request -d 0 true; "
                     + "cmd notification allow_listener ru.logunov.bydsplit/ru.logunov.bydsplit.MaxCallNotificationService; "
                     + command;
             client.shellV2(command);
-            return true;
+            return owner.isOpen();
         } catch (Exception error) {
             client.close();
             Log.e(TAG, "Cannot start embedded helpers", error);

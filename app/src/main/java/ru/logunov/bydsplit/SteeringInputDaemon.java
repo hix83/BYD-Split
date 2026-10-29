@@ -43,6 +43,8 @@ public final class SteeringInputDaemon {
     }
 
     public static void main(String[] args) {
+        try { HelperLifetime.attach(args); }
+        catch (Exception error) { System.err.println("No launcher owner: " + error); return; }
         int shortScan = parseScanCode(
                 args, 0, DEFAULT_SCAN_VOICE_SHORT);
         int longScan = parseScanCode(

@@ -26,6 +26,7 @@ final class BatteryDetailsView extends LinearLayout {
     private boolean active;
     private final boolean demo;
     final boolean technical;
+    private DtcScanView dtcView;
     private final int text = getContext().getColor(R.color.text_primary), muted = getContext().getColor(R.color.text_secondary);
 
     BatteryDetailsView(Context context, Runnable close) {
@@ -50,7 +51,7 @@ final class BatteryDetailsView extends LinearLayout {
         LinearLayout content=new LinearLayout(context); content.setOrientation(VERTICAL);
         scroll.addView(content); addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         if(technical) {
-            chart=null; buildTechnical(content);
+            chart=null;dtcView=new DtcScanView(context);content.addView(dtcView); buildTechnical(content);
         } else {
         row(content,new String[]{"soh","soc","power"},new String[]{"SOH · здоровье","SOC · заряд","Мощность батареи"});
         TextView explanation=label("SOH рассчитывает BMS автомобиля. Это состояние батареи относительно новой, а SOC — её текущий заряд.",12,muted);
@@ -168,6 +169,8 @@ final class BatteryDetailsView extends LinearLayout {
     private GradientDrawable bg(int color) { GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(14));return d; }
     private int dp(int n) { return Math.round(n*getResources().getDisplayMetrics().density); }
     void setActive(boolean enabled) {
+        enabled=enabled&&(demo||VehicleSleepController.get(getContext()).pollingAllowed());
+        if(dtcView!=null)dtcView.setActive(enabled);
         if(active==enabled)return;active=enabled;generation++;
         if(reader!=null){reader.shutdownNow();reader=null;}
         if(cellsReader!=null){cellsReader.shutdownNow();cellsReader=null;}

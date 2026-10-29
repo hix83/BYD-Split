@@ -36,6 +36,8 @@ final class VehicleTelemetryController implements LocationListener {
     private ScheduledFuture<?> polling;
     private boolean locationStarted;
     private volatile boolean demoActive;
+    private final VehicleSleepController sleep;
+    private volatile boolean requested;
 
     VehicleTelemetryController(
             Context context, Consumer<VehicleTelemetrySnapshot> listener) {
@@ -44,10 +46,19 @@ final class VehicleTelemetryController implements LocationListener {
         localAdb = LocalAdbManager.get(context);
         locationManager = (LocationManager) context.getSystemService(
                 Context.LOCATION_SERVICE);
+        sleep=VehicleSleepController.get(context);
     }
 
     synchronized void start(boolean demo) {
         demoActive = demo;
+        requested=true;
+        sleep.addListener(this,this::syncVehicleState);
+    }
+
+    private synchronized void syncVehicleState() {
+        boolean demo=demoActive;
+        if(!requested)return;
+        if(!sleep.pollingAllowed()&&!demo){stopWork();return;}
         if (demo) {
             if (polling != null) {
                 polling.cancel(true);
@@ -60,14 +71,24 @@ final class VehicleTelemetryController implements LocationListener {
                     this::pollVehicle, 0L, POLL_INTERVAL_MS,
                     TimeUnit.MILLISECONDS);
         }
-        startLocationIfPermitted();
+        if(!demo&&sleep.gpsAllowed())startLocationIfPermitted();
+        else stopLocation();
     }
 
     synchronized void stop() {
+        requested=false;
+        sleep.removeListener(this);
+        stopWork();
+    }
+
+    private void stopWork() {
         if (polling != null) {
             polling.cancel(true);
             polling = null;
         }
+        stopLocation();
+    }
+    private void stopLocation() {
         if (locationStarted) {
             locationManager.removeUpdates(this);
             locationStarted = false;
@@ -75,7 +96,7 @@ final class VehicleTelemetryController implements LocationListener {
     }
 
     synchronized void startLocationIfPermitted() {
-        if (locationStarted || context.checkSelfPermission(
+        if (!requested || demoActive || !sleep.gpsAllowed() || locationStarted || context.checkSelfPermission(
                 Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
             return;
@@ -101,8 +122,9 @@ final class VehicleTelemetryController implements LocationListener {
     }
 
     private void pollVehicle() {
+        if(!requested||!sleep.pollingAllowed())return;
         VehicleTelemetrySnapshot vehicle = localAdb.readVehicleTelemetry();
-        if (vehicle == null || demoActive) {
+        if (vehicle == null || demoActive || !requested || !sleep.pollingAllowed()) {
             return;
         }
         if (!java.util.Objects.equals(lastLoggedEnergyState, vehicle.energyState)) {

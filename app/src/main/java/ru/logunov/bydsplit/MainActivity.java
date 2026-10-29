@@ -117,6 +117,8 @@ public final class MainActivity extends Activity {
     private volatile boolean resumed;
     private ParkingCameraAutomation cameraAutomation;
     private ClusterMusicBridge clusterMusicBridge;
+    private HelperSession helperSession;
+    private VehicleSleepController sleepController;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -125,6 +127,8 @@ public final class MainActivity extends Activity {
         currentActivity = new WeakReference<>(this);
         preferences = AppPreferences.get(this);
         applyDebugLaunchOptions(getIntent());
+        try { helperSession = HelperSession.open(); }
+        catch (Exception error) { android.util.Log.e("BYD_SPLIT", "Cannot own helpers", error); }
         AdbRecovery.get(this).start();
         repository = new AppRepository(this);
         shellBridgeClient = new ShellBridgeClient(this);
@@ -163,6 +167,8 @@ public final class MainActivity extends Activity {
         render();
         applySystemBarsMode();
         StatisticsService.sync(this);
+        sleepController=VehicleSleepController.get(this);
+        sleepController.addListener(this,this::applyVehicleSleep);
         if (savedInstanceState != null) {
             String page = savedInstanceState.getString("internal_page", "");
             if (page.equals("settings")) openSettings(savedInstanceState.getInt("settings_section",0));
@@ -226,8 +232,21 @@ public final class MainActivity extends Activity {
                     android.Manifest.permission.ACCESS_COARSE_LOCATION}, 341);
         } else {
             cameraAutomation.start();
-            vehicleTelemetryController.startLocationIfPermitted();
+            if(showingVehicleDashboard)vehicleTelemetryController.startLocationIfPermitted();
         }
+        applyVehicleSleep();
+    }
+
+    private void applyVehicleSleep() {
+        if(sleepController==null)return;
+        boolean active=resumed&&sleepController.pollingAllowed();
+        if(classicMusicGlow!=null)classicMusicGlow.setActive(active);
+        if(dynamicDock!=null)dynamicDock.setActive(active);
+        if(batteryDetailsView!=null)batteryDetailsView.setActive(active);
+        if(internalPage instanceof ComfortView)((ComfortView)internalPage).setActive(active);
+        if(internalPage instanceof StatisticsView)((StatisticsView)internalPage).setActive(active);
+        if(sleepController.pollingAllowed()&&helperSession!=null&&helperSession.isOpen())AdbRecovery.get(this).start();
+        else AdbRecovery.get(this).stop();
     }
 
     @Override
@@ -282,16 +301,22 @@ public final class MainActivity extends Activity {
     @Override
     protected void onPause() {
         resumed = false;
+        vehicleTelemetryController.stop();
         if (classicMusicGlow != null) classicMusicGlow.setActive(false);
         if (dynamicDock != null) dynamicDock.setActive(false);
         if(batteryWarningBanner!=null)batteryWarningBanner.stop();
         if (batteryDetailsView != null) batteryDetailsView.setActive(false);
         if (internalPage instanceof ComfortView) ((ComfortView)internalPage).setActive(false);
+        if (internalPage instanceof StatisticsView) ((StatisticsView)internalPage).setActive(false);
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
+        if(sleepController!=null)sleepController.removeListener(this);
+        if (helperSession != null) helperSession.close();
+        // A recreated activity may already own a replacement session.
+        if (HelperSession.current() == helperSession) AdbRecovery.get(this).stop();
         if (dynamicDock != null) dynamicDock.closeEditor(false);
         if(batteryWarningBanner!=null)batteryWarningBanner.stop();
         cameraAutomation.stop();
@@ -963,7 +988,7 @@ public final class MainActivity extends Activity {
         if (requestCode == 341 && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             cameraAutomation.start();
-            vehicleTelemetryController.startLocationIfPermitted();
+            if(showingVehicleDashboard)vehicleTelemetryController.startLocationIfPermitted();
         }
     }
 

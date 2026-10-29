@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ScheduledFuture;
 
 /** Mirrors Yandex metadata to the OEM cluster. Adapted from BYDMate; see THIRD_PARTY_NOTICES.md. */
 final class ClusterMusicBridge {
@@ -26,11 +27,21 @@ final class ClusterMusicBridge {
     private String confirmed;
     private long lastWrite;
     private int clearAttempts;
-    ClusterMusicBridge(Context context){this.context=context.getApplicationContext();}
-    void start(){executor.scheduleWithFixedDelay(this::tick,0,3,TimeUnit.SECONDS);}
+    private final VehicleSleepController sleep;
+    private ScheduledFuture<?> polling;
+    ClusterMusicBridge(Context context){this.context=context.getApplicationContext();sleep=VehicleSleepController.get(context);}
+    void start(){sleep.addListener(this,this::syncVehicleState);}
+    private void syncVehicleState(){
+        if(!sleep.gpsAllowed()){
+            if(polling!=null)polling.cancel(false);polling=null;
+            dirty=false;confirmed=null;return;
+        }
+        if(polling==null||polling.isCancelled())polling=executor.scheduleWithFixedDelay(this::tick,0,3,TimeUnit.SECONDS);
+    }
     private boolean source(String pkg){return "ru.yandex.music".equals(pkg)||"ru.yandex.yandexnavi".equals(pkg);}
     private void tick(){
         try {
+            if(!sleep.gpsAllowed())return;
             boolean enabled=!closing&&AppPreferences.get(context).getBoolean(KEY,false)&&!AppPreferences.isDemoModeEnabled(context);
             if(!enabled&&!dirty)return;
             MediaSessionManager manager=(MediaSessionManager)context.getSystemService(Context.MEDIA_SESSION_SERVICE);
@@ -59,10 +70,11 @@ final class ClusterMusicBridge {
             if(!show&&clearAttempts++>=3){dirty=false;return;}
             dirty=true;
             lastWrite=now;
+            if(!sleep.gpsAllowed())return;
             String result=LocalAdbManager.get(context).writeClusterMusic(args);
             if(result.contains("OK")){dirty=show;failures=0;confirmed=show?args:null;clearAttempts=0;}else if(result.contains("UNSUPPORTED")||result.contains("ERROR")){failures++;Log.w("BYD_CLUSTER_MUSIC",result.trim());}
         }catch(SecurityException e){Log.w("BYD_CLUSTER_MUSIC","Notification access required");}
         catch(Exception e){Log.w("BYD_CLUSTER_MUSIC","Cluster sync unavailable",e);}
     }
-    void close(){closing=true;executor.execute(this::tick);executor.shutdown();}
+    void close(){closing=true;sleep.removeListener(this);if(polling!=null)polling.cancel(false);if(sleep.gpsAllowed())executor.execute(this::tick);executor.shutdown();}
 }

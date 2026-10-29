@@ -25,6 +25,7 @@ final class AdbRecovery {
     private final Object settingLock=new Object();
     private volatile String status="Выключено";
     private boolean started;
+    private ScheduledFuture<?> periodic;
     private volatile long lastEnable;
     private AdbRecovery(Context context){this.context=context;}
     boolean enabled(){return AppPreferences.get(context).getBoolean(ENABLED,false);}
@@ -32,7 +33,12 @@ final class AdbRecovery {
     String status(){return !supported()?"Нужен Android 11 или новее":AppPreferences.isDemoModeEnabled(context)?"Демо: восстановление ADB не выполняется":!enabled()?"Выключено":status;}
     synchronized void start(){
         if(started)return;started=true;
-        worker.scheduleWithFixedDelay(()->attempt(false),0,20,TimeUnit.SECONDS);
+        periodic=worker.scheduleWithFixedDelay(()->attempt(false),0,20,TimeUnit.SECONDS);
+    }
+    synchronized void stop(){
+        generation.incrementAndGet();
+        if(periodic!=null)periodic.cancel(false);
+        periodic=null;started=false;
     }
     void setEnabled(boolean value){
         synchronized(settingLock){
@@ -45,7 +51,7 @@ final class AdbRecovery {
         start();if(!queued.compareAndSet(false,true))return;
         worker.execute(()->{try{attempt(true);}finally{queued.set(false);}});
     }
-    private boolean current(int gen){return enabled()&&generation.get()==gen&&!AppPreferences.isDemoModeEnabled(context);}
+    private boolean current(int gen){HelperSession owner=HelperSession.current();return owner!=null&&owner.isOpen()&&VehicleSleepController.get(context).pollingAllowed()&&enabled()&&generation.get()==gen&&!AppPreferences.isDemoModeEnabled(context);}
     private boolean permission(){return context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS)==PackageManager.PERMISSION_GRANTED;}
     private boolean wifi(){
         ConnectivityManager cm=context.getSystemService(ConnectivityManager.class);

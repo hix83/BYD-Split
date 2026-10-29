@@ -19,3 +19,10 @@ commit b47ead7fc9f0741ed2d4b2ff61a785da337f0500 (https://github.com/AndyShaman/B
 Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
 These adapted components are licensed under PolyForm Noncommercial License 1.0.0,
 not Apache 2.0. Full license: app/src/main/assets/BYDMate-LICENSE.txt (included in APK).
+
+DtcProtocol, DtcScanner, DtcDescriptions and the DtcBridge transport are adapted from
+BYDMate commit a36fa7b653a30517433cdac91f72bc8d07d0596d (2026-10-29).
+The offline dtc/ tables are redistributed from that same revision.
+Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
+These components and tables are licensed under PolyForm Noncommercial License 1.0.0,
+not Apache 2.0. Full license: app/src/main/assets/BYDMate-DTC-LICENSE.txt (included in APK).

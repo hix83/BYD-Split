@@ -2,6 +2,22 @@ plugins {
     id 'com.android.application'
 }
 
+// Compile against the two OEM listener signatures without shipping replacement framework classes.
+def vendorStubs = tasks.register('compileVendorStubs', JavaCompile) {
+    source fileTree('src/vendorStubs/java')
+    classpath = files(android.bootClasspath)
+    destinationDirectory = layout.buildDirectory.dir('vendor-stubs/classes')
+    sourceCompatibility = '17'
+    targetCompatibility = '17'
+}
+def vendorStubJar = tasks.register('vendorStubJar', Jar) {
+    dependsOn vendorStubs
+    from vendorStubs.map { it.destinationDirectory }
+    archiveFileName = 'vendor-api-stubs.jar'
+    destinationDirectory = layout.buildDirectory.dir('vendor-stubs')
+}
+dependencies { compileOnly files(vendorStubJar) }
+
 android {
     namespace 'ru.logunov.bydsplit'
     compileSdk 35
@@ -10,8 +26,8 @@ android {
         applicationId 'ru.logunov.bydsplit'
         minSdk 27
         targetSdk 35
-        versionCode 40
-        versionName '0.9.5'
+        versionCode 41
+        versionName '0.9.6'
         testInstrumentationRunner providers.gradleProperty('testRunner').getOrElse('ru.logunov.bydsplit.StatisticsInstrumentation')
     }
 

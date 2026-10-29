@@ -20,64 +20,69 @@ final class ParkingCameraAutomation implements LocationListener {
     private final TemperatureRules engine = new TemperatureRules();
     private final Handler main = new Handler(Looper.getMainLooper());
     private ScheduledExecutorService worker;
+    private ScheduledFuture<?> polling;
+    private final VehicleSleepController sleep;
+    private volatile boolean requested;
+    private Map<Integer,Long> savedPending=new HashMap<>();
     private volatile Location location;
     private boolean gps;
-    private long lastTick;
-    private long screenOffAt;
     private volatile boolean newSession;
-    private boolean receiverRegistered;
-    private final android.content.BroadcastReceiver wakeReceiver=new android.content.BroadcastReceiver(){
-        @Override public void onReceive(Context c,android.content.Intent intent){
-            if(android.content.Intent.ACTION_SCREEN_OFF.equals(intent.getAction()))screenOffAt=SystemClock.elapsedRealtime();
-            else if(android.content.Intent.ACTION_SCREEN_ON.equals(intent.getAction())&&screenOffAt>0){
-                if(SystemClock.elapsedRealtime()-screenOffAt>5*60_000L)newSession=true;
-                screenOffAt=0;
-            }
-        }
-    };
     private static final String[] ACTIONS={"Руль","Подогрев водителя","Подогрев пассажира","Вентиляция водителя","Вентиляция пассажира","Камера"};
     ParkingCameraAutomation(Context context) {
         this.context=context.getApplicationContext();
         locationManager=(LocationManager)context.getSystemService(Context.LOCATION_SERVICE);
+        sleep=VehicleSleepController.get(context);
         android.content.SharedPreferences saved=this.context.getSharedPreferences("automation_pending_off",0);
         for(int action=0;action<5;action++) {
             long deadline=saved.getLong("off_"+action,0);
             if(deadline>0)engine.restoreOff(action,SystemClock.elapsedRealtime()+Math.max(0,deadline-System.currentTimeMillis()));
         }
+        savedPending=engine.pendingOffs();
     }
     void start() {
         if(AppPreferences.isDemoModeEnabled(context)) { stop(); return; }
-        if(!receiverRegistered){
-            android.content.IntentFilter filter=new android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_ON);
-            filter.addAction(android.content.Intent.ACTION_SCREEN_OFF);
-            if(android.os.Build.VERSION.SDK_INT>=33)context.registerReceiver(wakeReceiver,filter,Context.RECEIVER_NOT_EXPORTED);
-            else context.registerReceiver(wakeReceiver,filter);
-            receiverRegistered=true;
-        }
+        requested=true;
         if(worker==null) {
             worker=Executors.newSingleThreadScheduledExecutor();
-            worker.scheduleWithFixedDelay(this::tick,0,3,TimeUnit.SECONDS);
         }
-        if(!gps && context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED) {
+        sleep.addListener(this,this::syncVehicleState);
+    }
+    private void syncVehicleState() {
+        if(!requested)return;
+        if(!sleep.automationAllowed()) {
+            if(polling!=null)polling.cancel(false);polling=null;
+            setGps(false);location=null;
+            if(sleep.mode()!=VehicleSleepState.Mode.UNKNOWN)newSession=true;
+        }else if(polling==null||polling.isCancelled())polling=worker.scheduleWithFixedDelay(this::tick,0,3,TimeUnit.SECONDS);
+    }
+    private void setGps(boolean wanted) {
+        if(!wanted&&gps){locationManager.removeUpdates(this);gps=false;}
+        if(wanted&&!gps && context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED) {
             try { locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,3000L,5f,this);gps=true; }
             catch(RuntimeException ignored) { }
         }
     }
     void stop() {
-        if(receiverRegistered){context.unregisterReceiver(wakeReceiver);receiverRegistered=false;}
+        requested=false;
+        sleep.removeListener(this);
         if(gps)locationManager.removeUpdates(this);
         gps=false;
         if(worker!=null)worker.shutdownNow();
         worker=null;
+        polling=null;
     }
     private void tick() {
         try {
-            if(AppPreferences.isDemoModeEnabled(context))return;
-            long now=SystemClock.elapsedRealtime();
-            if(newSession || (lastTick>0 && now-lastTick>5*60_000L)){engine.newSession();newSession=false;}
-            lastTick=now;
+            if(!requested||!sleep.automationAllowed()||AppPreferences.isDemoModeEnabled(context))return;
+            if(newSession){engine.newSession();newSession=false;}
             List<TemperatureRules.Rule> rules=AutomationStore.load(context);
+            boolean needsGps=false,enabled=false;
+            for(TemperatureRules.Rule rule:rules)if(rule.enabled){enabled=true;for(TemperatureRules.Condition condition:rule.conditions)if(condition.placeKey!=null)needsGps=true;}
+            final boolean useGps=needsGps;
+            main.post(()->setGps(requested&&sleep.automationAllowed()&&useGps));
+            if(!enabled&&engine.pendingOffs().isEmpty())return;
             Float[] temperatures=LocalAdbManager.get(context).readAutomationTemperatures();
+            if(!requested||!sleep.automationAllowed())return;
             Map<String,Boolean> zones=new HashMap<>();
             Location fix=location;
             if(fix!=null && SystemClock.elapsedRealtimeNanos()-fix.getElapsedRealtimeNanos()<30_000_000_000L) {
@@ -91,17 +96,22 @@ final class ParkingCameraAutomation implements LocationListener {
                 }
             }
             for(String rule:engine.evaluate(rules,temperatures[0],temperatures[1],zones,SystemClock.elapsedRealtime(),(action,level)->{
-                if(action==5) { main.post(()->ParkingCameraOverlay.show(context));AutomationJournal.add("Камера · открытие запрошено");return; }
+                if(!requested||!sleep.automationAllowed())throw new IllegalStateException("Vehicle is not READY");
+                if(action==5) { main.post(()->{if(requested&&sleep.automationAllowed())ParkingCameraOverlay.show(context);});AutomationJournal.add("Камера · открытие запрошено");return; }
                 String error=LocalAdbManager.get(context).applyComfortRule(action,level);
                 AutomationJournal.add(ACTIONS[action]+" · "+(error==null?"подтверждено, уровень "+level:error));
                 if(error!=null)throw new IllegalStateException(error);
             })) {AutomationJournal.add("Выполнено правило · "+rule);AutomationBanner.show(context,rule); }
         } catch(Exception error) { android.util.Log.w("BYD_RULES","Rule evaluation failed",error); }
         finally {
+            Map<Integer,Long> pending=engine.pendingOffs();
+            if(!pending.equals(savedPending)) {
             android.content.SharedPreferences.Editor saved=context.getSharedPreferences("automation_pending_off",0).edit().clear();
-            for(Map.Entry<Integer,Long> off:engine.pendingOffs().entrySet())
+            for(Map.Entry<Integer,Long> off:pending.entrySet())
                 saved.putLong("off_"+off.getKey(),System.currentTimeMillis()+Math.max(0,off.getValue()-SystemClock.elapsedRealtime()));
             saved.commit();
+            savedPending=pending;
+            }
         }
     }
     @Override public void onLocationChanged(Location value){location=new Location(value);}

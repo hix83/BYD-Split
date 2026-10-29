@@ -31,6 +31,7 @@ public final class ShellInputDaemon {
 
     @SuppressLint("BlockedPrivateApi")
     public static void main(String[] args) throws Exception {
+        HelperLifetime.attach(args);
         Class<?> inputManagerClass = Class.forName(
                 "android.hardware.input.InputManager");
         Method getInstance = inputManagerClass.getDeclaredMethod("getInstance");

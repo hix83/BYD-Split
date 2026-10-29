@@ -12,7 +12,9 @@ source_dir=app/src/main/java/ru/logunov/bydsplit
   "$source_dir/StatisticsSensorDecoder.java" "$source_dir/HvBatteryPower.java" "$source_dir/BatteryPriceHistory.java" "$source_dir/TripEnergyCounter.java" "$source_dir/TripFuelCounter.java" "$source_dir/VehicleSessionState.java" "$source_dir/TripAccumulator.java" "$source_dir/FuelLedger.java" \
   "$source_dir/DmiEnergyFlow.java" "$source_dir/TemperatureRules.java" \
   "$source_dir/MusicSignal.java" "$source_dir/AmbientPalette.java" "$source_dir/AmbientLightState.java" \
-  "$source_dir/MaxCallClassifier.java" "$source_dir/MaxTaskParser.java" tests/*.java
+  "$source_dir/MaxCallClassifier.java" "$source_dir/MaxTaskParser.java" \
+  "$source_dir/HelperSession.java" "$source_dir/HelperLifetime.java" "$source_dir/VehicleSleepState.java" \
+  "$source_dir/DtcProtocol.java" "$source_dir/DtcScanner.java" "$source_dir/DtcDescriptions.java" tests/*.java
 for test_file in tests/*Test.java; do
   test_class=$(basename "$test_file" .java)
   "${java_bin}java" -cp "$test_classes" "ru.logunov.bydsplit.$test_class"

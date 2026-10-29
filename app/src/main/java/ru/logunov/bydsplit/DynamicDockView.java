@@ -82,7 +82,8 @@ final class DynamicDockView extends FrameLayout {
     }
 
     void setActive(boolean active) {
-        active = active && getVisibility() == VISIBLE && !editorOpen;
+        active = active && getVisibility() == VISIBLE && !editorOpen
+                && (AppPreferences.isDemoModeEnabled(getContext())||VehicleSleepController.get(getContext()).pollingAllowed());
         if (musicGlow != null) musicGlow.setActive(active);
         if (active == listening) return;
         listening = active;
