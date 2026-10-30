@@ -451,6 +451,23 @@ final class LocalAdbManager {
         }catch(Exception error){return null;}
     }
 
+    /** BYDMate hybrid FidMap: Statistic SOC / electric range / fuel range. Reads only. */
+    synchronized int[] readEvRange(java.util.function.BooleanSupplier allowed) {
+        if(!allowed.getAsBoolean())return null;
+        try {
+            String output=client.shell("service call autoservice 7 i32 1014 i32 1246777400; "
+                    +"service call autoservice 5 i32 1014 i32 1246765118; "
+                    +"service call autoservice 5 i32 1014 i32 1246773304; "
+                    +"service call autoservice 5 i32 1014 i32 1246785600; "
+                    +"service call autoservice 5 i32 1014 i32 1148190736; "
+                    +"service call autoservice 5 i32 1014 i32 1148190752; "
+                    +"service call autoservice 7 i32 1001 i32 1128267816; "
+                    +"service call autoservice 5 i32 1000 i32 1031798832");
+            // Parse each reply independently: one unavailable field must not shift the rest.
+            return EvRangeMath.decodeBatch(output,8);
+        } catch(Exception error){client.close();Log.w(TAG,"Cannot read EV range",error);return null;}
+    }
+
     synchronized VehicleTelemetrySnapshot readVehicleTelemetry() {
         try {
             client.connect();

@@ -53,11 +53,12 @@ final class StatisticsStore extends SQLiteOpenHelper {
         }
     }
     StatisticsStore(Context context) { this(context, "song_statistics.db"); }
-    StatisticsStore(Context context, String name) { super(context.getApplicationContext(), name, null, 5); }
+    StatisticsStore(Context context, String name) { super(context.getApplicationContext(), name, null, 6); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE journal (id INTEGER PRIMARY KEY, type TEXT NOT NULL, start INTEGER, end INTEGER, active INTEGER DEFAULT 0, km REAL DEFAULT 0, used REAL DEFAULT 0, recovered REAL DEFAULT 0, moving INTEGER DEFAULT 0, observed INTEGER DEFAULT 0, missing INTEGER DEFAULT 0, max REAL DEFAULT 0, engine INTEGER DEFAULT 0, electric_price REAL, fuel_price REAL, litres REAL, grid REAL, odometer REAL, full INTEGER DEFAULT 0, note TEXT DEFAULT '', fuel_start REAL, fuel_end REAL, fuel_invalid INTEGER DEFAULT 0, energy_start REAL, energy_end REAL, energy_invalid INTEGER DEFAULT 0, soc_start REAL, price_source TEXT DEFAULT 'настроенный тариф', charge_loss REAL DEFAULT 0, source TEXT DEFAULT 'launcher', source_id INTEGER, native_energy REAL, native_fuel REAL, hidden INTEGER DEFAULT 0, deleted INTEGER DEFAULT 0, power_missing INTEGER DEFAULT 0)");
         db.execSQL("CREATE UNIQUE INDEX journal_byd_id ON journal(source,source_id)");
         db.execSQL("CREATE INDEX journal_start ON journal(start)");
+        createEvConsumption(db);
     }
     @Override public void onUpgrade(SQLiteDatabase db, int old, int version) {
         if (old < 2) {
@@ -75,6 +76,32 @@ final class StatisticsStore extends SQLiteOpenHelper {
         }
         if(old<4)upgradeHistory(db);
         if(old<5)db.execSQL("ALTER TABLE journal ADD COLUMN power_missing INTEGER DEFAULT 0");
+        if(old<6){
+            createEvConsumption(db);
+            // v5 records flag every observed engine/unknown-engine sample and missing HV power.
+            // Only complete, closed, wholly electric launcher trips can seed the new history.
+            if(old>=5)db.execSQL("INSERT INTO ev_consumption(trip_id,at,km,kwh,ms) SELECT id,end,km,used-recovered,observed FROM journal WHERE source='launcher' AND type='trip' AND active=0 AND deleted=0 AND engine=0 AND missing=0 AND power_missing=0 AND observed>0 AND km>=0.1 AND used>=0 AND recovered>=0 AND end>=? AND end<=?",
+                    new Object[]{System.currentTimeMillis()-EvConsumption.MAX_AGE_MS,System.currentTimeMillis()});
+        }
+    }
+    private void createEvConsumption(SQLiteDatabase db){
+        db.execSQL("CREATE TABLE ev_consumption (id INTEGER PRIMARY KEY, trip_id INTEGER NOT NULL, at INTEGER NOT NULL, km REAL NOT NULL, kwh REAL NOT NULL, ms INTEGER NOT NULL)");
+        db.execSQL("CREATE INDEX ev_consumption_at ON ev_consumption(at,id)");
+    }
+    synchronized void recordEvConsumption(long trip,long at,double km,double kwh,long ms){
+        if(trip<=0||ms<=0||!Double.isFinite(km)||!Double.isFinite(kwh)||km<0)return;
+        SQLiteDatabase db=getWritableDatabase();ContentValues value=new ContentValues();
+        value.put("trip_id",trip);value.put("at",at);value.put("km",km);value.put("kwh",kwh);value.put("ms",ms);db.insertOrThrow("ev_consumption",null,value);
+        db.delete("ev_consumption","at<?",new String[]{Long.toString(at-EvConsumption.MAX_AGE_MS)});
+        db.execSQL("DELETE FROM ev_consumption WHERE id < (SELECT max(id)-10000 FROM ev_consumption)");
+    }
+    synchronized EvConsumption.Average evConsumption(long now){
+        List<EvConsumption.Row> rows=new ArrayList<>();
+        // Archived launcher observations remain valid; native imports never create EV rows.
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT e.trip_id,e.km,e.kwh FROM ev_consumption e JOIN journal j ON j.id=e.trip_id WHERE j.deleted=0 AND e.at>=? AND e.at<=? ORDER BY e.at DESC,e.id DESC LIMIT 10000",new String[]{Long.toString(now-EvConsumption.MAX_AGE_MS),Long.toString(now)})){
+            while(c.moveToNext())rows.add(new EvConsumption.Row(c.getLong(0),c.getDouble(1),c.getDouble(2)));
+        }
+        return EvConsumption.average(rows);
     }
     private void upgradeHistory(SQLiteDatabase db){
         db.execSQL("ALTER TABLE journal ADD COLUMN source TEXT DEFAULT 'launcher'");
@@ -139,6 +166,13 @@ final class StatisticsStore extends SQLiteOpenHelper {
         if(type.equals("fuel"))v.put("litres",amount);else v.put("grid",amount);
         if(odo!=null)v.put("odometer",odo);v.put("full",full?1:0);v.put("note","Внесено вручную");
         getWritableDatabase().insertOrThrow("journal",null,v);
+    }
+    /** Read-only compact snapshot for the visible EV widget; no history scan or imports. */
+    synchronized double[] widgetTrip(long now) {
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT start,end,km FROM journal WHERE type='trip' AND active=1 AND hidden=0 AND deleted=0 AND source='launcher' ORDER BY start DESC LIMIT 1",null)){
+            if(!c.moveToFirst()||now<c.getLong(1)||now-c.getLong(1)>120000)return null;
+            return new double[]{Math.max(0,c.getLong(1)-c.getLong(0))/60000.,c.getDouble(2)};
+        }
     }
     synchronized List<Entry> list(long since) {
         List<Entry> entries=new ArrayList<>();

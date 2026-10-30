@@ -85,6 +85,7 @@ final class DynamicDockView extends FrameLayout {
         active = active && getVisibility() == VISIBLE && !editorOpen
                 && (AppPreferences.isDemoModeEnabled(getContext())||VehicleSleepController.get(getContext()).pollingAllowed());
         if (musicGlow != null) musicGlow.setActive(active);
+        for(EvRangeWidget widget:evWidgets)widget.setActive(active);
         if (active == listening) return;
         listening = active;
         if (active) controller.addListener(update); else controller.removeListener(update);
@@ -93,7 +94,9 @@ final class DynamicDockView extends FrameLayout {
     @Override protected void onDetachedFromWindow() { stopEdgeScroll(); setActive(false); super.onDetachedFromWindow(); }
     private int gravity(int alignment) { return alignment == 0 ? Gravity.LEFT : alignment == 2 ? Gravity.RIGHT : Gravity.CENTER_HORIZONTAL; }
 
+    private final java.util.List<EvRangeWidget> evWidgets=new java.util.ArrayList<>();
     private void rebuild() {
+        for(EvRangeWidget widget:evWidgets)widget.setActive(false);evWidgets.clear();
         removeCallbacks(finishReorder);
         draggedItem = null; insertionIndex = -1;
         int position = dockScroll == null ? 0 : dockScroll.getScrollX();
@@ -124,6 +127,10 @@ final class DynamicDockView extends FrameLayout {
             }
             tile.addView(caption, new LinearLayout.LayoutParams(-1, sd(item.field == null || editorOpen ? 29 : 21)));
             cell.addView(tile, new FrameLayout.LayoutParams(-1, -1));
+            if(item==DockConfiguration.Item.EV_RANGE){
+                tile.removeAllViews();EvRangeWidget widget=new EvRangeWidget(activity);
+                tile.addView(widget,new LinearLayout.LayoutParams(-1,-1));evWidgets.add(widget);widget.setActive(listening&&!editorOpen);
+            }
             cell.setOnLongClickListener(v -> {
                 if (!editorOpen) edit();
                 else v.startDragAndDrop(ClipData.newPlainText("dock", item.name()), new View.DragShadowBuilder(v), item, 0);
@@ -146,7 +153,7 @@ final class DynamicDockView extends FrameLayout {
                     remove.setContentDescription("Удалить: " + item.title);
                     FrameLayout.LayoutParams badge = new FrameLayout.LayoutParams(sd(40), sd(40), Gravity.TOP | Gravity.RIGHT);
                     cell.addView(remove, badge);
-                    remove.setOnClickListener(v -> { draft.remove(item); refreshEditor(); });
+                    remove.setOnClickListener(v -> { draft.remove(item); refreshEditor(); if(item==DockConfiguration.Item.EV_RANGE)library.post(()->((ScrollView)library.getParent()).smoothScrollTo(0,0)); });
                 }
                 cell.setOnDragListener((v, event) -> handleDrag(v, event, item));
             } else {
@@ -266,10 +273,16 @@ final class DynamicDockView extends FrameLayout {
         insertionIndex = index;
         List<DockConfiguration.Item> order = new ArrayList<>(draft);
         order.remove(draggedItem); order.add(insertionIndex, draggedItem);
+        java.util.Map<DockConfiguration.Item,Float> positions=new java.util.EnumMap<>(DockConfiguration.Item.class);
+        float cursor=dockRow.getChildAt(0).getLeft();
+        for(DockConfiguration.Item item:order){
+            View original=dockRow.getChildAt(draft.indexOf(item));
+            LinearLayout.LayoutParams params=(LinearLayout.LayoutParams)original.getLayoutParams();
+            positions.put(item,cursor);cursor+=original.getWidth()+params.leftMargin+params.rightMargin;
+        }
         for (int i = 0; i < dockRow.getChildCount(); i++) {
             View cell = dockRow.getChildAt(i);
-            int slot = order.indexOf((DockConfiguration.Item) cell.getTag());
-            float translation = dockRow.getChildAt(slot).getLeft() - cell.getLeft();
+            float translation = positions.get((DockConfiguration.Item)cell.getTag()) - cell.getLeft();
             cell.animate().translationX(translation).setDuration(REORDER_DURATION)
                     .setInterpolator(new android.view.animation.DecelerateInterpolator());
         }
@@ -306,7 +319,9 @@ final class DynamicDockView extends FrameLayout {
     private void refreshLibrary() {
         library.removeAllViews(); count.setText("На панели: " + draft.size() + " / 20");
         int index = 0;
-        for (DockConfiguration.Item item : DockConfiguration.Item.values()) {
+        List<DockConfiguration.Item> catalog=new ArrayList<>(java.util.Arrays.asList(DockConfiguration.Item.values()));
+        catalog.remove(DockConfiguration.Item.EV_RANGE);catalog.add(0,DockConfiguration.Item.EV_RANGE);
+        for (DockConfiguration.Item item : catalog) {
             if (draft.contains(item)) continue;
             LinearLayout choice = new LinearLayout(activity); choice.setOrientation(LinearLayout.VERTICAL);
             choice.setGravity(Gravity.CENTER); choice.setPadding(dp(5), dp(5), dp(5), dp(5));

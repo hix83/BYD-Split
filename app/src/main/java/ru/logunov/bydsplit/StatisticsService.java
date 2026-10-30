@@ -19,6 +19,9 @@ public final class StatisticsService extends Service {
     private int chargeIdleSamples;
     private long lastHistory;
     private final VehicleSessionState session=new VehicleSessionState();
+    private final EvConsumption.Integrator evIntegrator=new EvConsumption.Integrator();
+    private double evKm,evKwh;
+    private long evMs,evTrip,evAt;
     static volatile StatisticsSample latest;
     static volatile long lastSampleAt;
     static volatile String historyStatus="Штатная история BYD: ожидание чтения";
@@ -72,6 +75,7 @@ public final class StatisticsService extends Service {
             if(!sleep.pollingAllowed())return;
             now=System.currentTimeMillis();
             if(sample==null) {
+                breakEvObservation();
                 status="Нет телеметрии · ожидание ADB";
                 if(lastGood>0&&now-lastGood>120000) finishAll("Потеря связи · поездка неполная",true);
                 return;
@@ -86,6 +90,7 @@ public final class StatisticsService extends Service {
             if(session.evidence && !sample.charging) {
                 if(trip==null){trip=new TripAccumulator();tripId=begin("trip",now,sample);}
             }
+            learnEv(sample,now);
             if(trip!=null && session.evidence) {
                 trip.electricity.sample(sample.lifetimeElectricityKwh);
                 trip.fuel.sample(sample.lifetimeFuelLitres);
@@ -111,8 +116,22 @@ public final class StatisticsService extends Service {
             status=sample.watts==null&&sample.lifetimeElectricityKwh==null?"Нет показаний мощности и BMS · энергия неполная":trip!=null?(sample.speed!=null&&sample.speed>1?"Записывается поездка · BMS":"Записывается расход на стоянке · BMS"):charge!=null?"Записывается зарядка":"Машина выключена · ожидание включения или зарядки";
             if (sample.watts == null && sample.lifetimeElectricityKwh != null) status += " · шаг 0,1 кВт·ч";
             if (trip != null) status += sample.lifetimeFuelLitres == null ? " · счётчик топлива недоступен" : trip.fuel.invalid ? " · сбой счётчика топлива" : " · топливо: авто";
-        } catch(Exception error) {android.util.Log.w("BYD_STATISTICS","Journal read failed",error);status="Не удалось прочитать телеметрию";}
+        } catch(Exception error) {evIntegrator.reset();android.util.Log.w("BYD_STATISTICS","Journal read failed",error);status="Не удалось прочитать телеметрию";}
     }
+    private void learnEv(StatisticsSample sample,long now){
+        if(trip==null){breakEvObservation();return;}
+        if(evTrip!=tripId){breakEvObservation();evTrip=tripId;}
+        EvConsumption.Segment interval=evIntegrator.add(SystemClock.elapsedRealtime(),sample.speed,sample.watts,sample.odometer,
+                sample.engineKnown,sample.engine,sample.plugged||!sample.chargeConnectionKnown,sample.powerState);
+        if(interval==null){flushEv();return;}
+        evKm+=interval.km;evKwh+=interval.kwh;evMs+=interval.ms;evAt=now;
+        if(evMs>=30000)flushEv();
+    }
+    private void flushEv(){
+        if(evMs==0)return;
+        store.recordEvConsumption(evTrip,evAt,evKm,evKwh,evMs);evKm=0;evKwh=0;evMs=0;
+    }
+    private void breakEvObservation(){flushEv();evIntegrator.reset();evTrip=0;}
     private long begin(String type,long now,StatisticsSample sample) {
         lastSave=0;
         android.content.SharedPreferences preferences=AppPreferences.get(this);
@@ -126,6 +145,7 @@ public final class StatisticsService extends Service {
                 type.equals("charge")?preferences.getFloat("charge_loss_percent",0):0);
     }
     private void finishTrip(String note,boolean incomplete) {
+        breakEvObservation();
         if(trip==null)return;
         if(incomplete){trip.missingMs+=1000;trip.fuel.loseClosingEdge();trip.electricity.loseClosingEdge();}
         store.checkpoint(tripId,trip,false,note);trip=null;

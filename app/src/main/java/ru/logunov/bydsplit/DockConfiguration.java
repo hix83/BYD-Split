@@ -38,14 +38,16 @@ final class DockConfiguration {
         MAX_COOL("Макс. охлаждение", R.drawable.song_oem_ac_max, ComfortState.Field.MAX),
         FAN_DOWN("Вентилятор −", R.drawable.song_oem_ac_wind_level_min_normal, ComfortState.Field.FAN),
         FAN_UP("Вентилятор +", R.drawable.song_oem_ac_wind_level_max_normal, ComfortState.Field.FAN),
-        PHONE("Телефон · ICCOA (экспериментально)", R.drawable.dock_ui7_phone);
+        PHONE("Телефон · ICCOA (экспериментально)", R.drawable.dock_ui7_phone),
+        EV_RANGE("Запас хода EV · виджет", R.drawable.ui7_ev_range);
         final String title; final int icon; final ComfortState.Field field;
-        final int slots = 1;
+        final int slots;
         Item(String title,int icon){this(title,icon,null);}
-        Item(String title,int icon,ComfortState.Field field){this.title=title;this.icon=icon;this.field=field;}
+        Item(String title,int icon,ComfortState.Field field){this.title=title;this.icon=icon;this.field=field;this.slots="EV_RANGE".equals(name())?3:1;}
         boolean required(){return this==SONG||this==SETTINGS;}
         String caption(){
             switch(this){
+                case EV_RANGE:return "Запас EV";
                 case PHONE:return "Телефон β";
                 case DRIVER_HEAT:return "Подогр. вод.";
                 case PASSENGER_HEAT:return "Подогр. пас.";

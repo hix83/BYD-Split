@@ -26,3 +26,10 @@ The offline dtc/ tables are redistributed from that same revision.
 Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
 These components and tables are licensed under PolyForm Noncommercial License 1.0.0,
 not Apache 2.0. Full license: app/src/main/assets/BYDMate-DTC-LICENSE.txt (included in APK).
+
+EvRangeMath formula and native hybrid range mapping are adapted from BYDMate
+RangeCalculator / ManualRangeCalculator, service/LiveRange.kt and nativestack/FidMap.kt,
+commit 873be5d8d8a4aa213f9795c91d36b889d965eee7.
+Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
+These adaptations are licensed under PolyForm Noncommercial License 1.0.0,
+not Apache 2.0. Full license: app/src/main/assets/BYDMate-LICENSE.txt (included in APK).

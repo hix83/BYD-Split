@@ -395,6 +395,10 @@ public final class MainActivity extends Activity {
             activity.runOnUiThread(activity::configureDock);
         }
     }
+    static void applyEvStatusFromSettings(){
+        MainActivity activity=currentActivity.get();
+        if(activity!=null&&!activity.isFinishing()&&!activity.isDestroyed())activity.runOnUiThread(()->{if(activity.vehicleDashboardView!=null)activity.vehicleDashboardView.refreshEvStatus();});
+    }
 
     static boolean handleSteeringPulse(boolean longPress) {
         MainActivity activity = currentActivity.get();
@@ -483,6 +487,7 @@ public final class MainActivity extends Activity {
                     case MUSIC: activateQuickApp(quickMusicApp); break;
                     case MESSAGES: activateQuickApp(quickMaxApp); break;
                     case PHONE: openPhoneProjection(); break;
+                    case EV_RANGE: EvRangeSettings.show(this); break;
                     case SETTINGS: toggleSettings(); break;
                     case CLIMATE: openComfort(false); break;
                     case SEATS: toggleInternalPage("seats", () -> openComfort(true)); break;

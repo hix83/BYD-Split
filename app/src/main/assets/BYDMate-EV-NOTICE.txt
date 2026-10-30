@@ -1,0 +1,8 @@
+EV forecast formula and native hybrid range mapping adapted from BYDMate:
+https://github.com/AndyShaman/BYDMate
+Revision: 873be5d8d8a4aa213f9795c91d36b889d965eee7
+Sources: domain/calculator/RangeCalculator.kt, ManualRangeCalculator.kt,
+service/LiveRange.kt, data/nativestack/FidMap.kt and ParamDecoder.kt.
+Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
+License: PolyForm Noncommercial 1.0.0; full text: BYDMate-LICENSE.txt.
+UI and reserve-aware DM-i forecast adaptation are local to BYD Split.

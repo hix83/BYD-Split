@@ -201,8 +201,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         View revealGrip = new View(context);
         revealGrip.setBackground(rounded(0xD9B9C2CC, 4));
         FrameLayout.LayoutParams gripParams = new FrameLayout.LayoutParams(
-                dp(58), dp(5), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        gripParams.topMargin = dp(6);
+                dp(72), dp(7), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        gripParams.topMargin = dp(12);
         revealHandle.addView(revealGrip, gripParams);
 
         boolean[] revealTriggered = {false};
@@ -247,10 +247,10 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         revealEdge.setContentDescription("Показать управление панелью");
         revealEdge.setOnTouchListener(revealListener);
         addView(revealEdge, new LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(14), Gravity.TOP));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(20), Gravity.TOP));
         revealHandle.setOnTouchListener(revealListener);
         addView(revealHandle, new LayoutParams(
-                dp(104), dp(28), Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+                dp(180), dp(48), Gravity.TOP | Gravity.CENTER_HORIZONTAL));
     }
 
     void switchApp(AppEntry nextEntry, int pageIndex, int pageCount,

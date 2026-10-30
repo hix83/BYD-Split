@@ -2,7 +2,7 @@ package ru.logunov.bydsplit;
 
 final class StatisticsSample {
     final Double speed, watts, odometer, lifetimeFuelLitres, lifetimeElectricityKwh, soc;
-    final boolean engine, charging, engineKnown;
+    final boolean engine, charging, engineKnown, plugged, chargeConnectionKnown;
     final String chargeMode;
     final Integer powerState, batteryPowerKw;
     StatisticsSample(VehicleTelemetrySnapshot vehicle, Double watts, Double odometer) {
@@ -24,6 +24,8 @@ final class StatisticsSample {
         this.odometer = odometer;
         engineKnown = vehicle.engineRpm != null;
         engine = vehicle.engineRpm != null && vehicle.engineRpm > 0;
+        plugged=vehicle.chargeGunState!=null&&vehicle.chargeGunState>=2&&vehicle.chargeGunState<=4;
+        chargeConnectionKnown=vehicle.chargeGunState!=null;
         chargeMode = vehicle.chargeGunState != null && vehicle.chargeGunState == 3 ? "DC"
                 : vehicle.chargeGunState != null && vehicle.chargeGunState == 2 ? "AC" : "UNKNOWN";
         // Cable inserted alone is not evidence of an active charging session.

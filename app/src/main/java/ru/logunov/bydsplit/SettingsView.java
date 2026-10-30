@@ -226,6 +226,12 @@ final class SettingsView extends LinearLayout
 
         LinearLayout dockCard = card();
         dockCard.addView(sectionTitle("Нижняя панель"));
+        Switch evStatus=settingsSwitch("Запас хода EV в статусе автомобиля",EvRangeController.showStatus(activity));
+        evStatus.setOnCheckedChangeListener((button,enabled)->{AppPreferences.get(activity).edit().putBoolean(EvRangeController.SHOW_STATUS,enabled).apply();MainActivity.applyEvStatusFromSettings();});
+        addWithTop(dockCard,evStatus,8);
+        Button evRangeSettings=actionButton("Прогноз запаса хода EV");
+        evRangeSettings.setOnClickListener(v->EvRangeSettings.show(activity));
+        addWithTop(dockCard,evRangeSettings,8);
         Switch dynamicDock = settingsSwitch("Динамическая панель", DockConfiguration.dynamic(activity));
         dynamicDock.setOnCheckedChangeListener((button, checked) -> {
             AppPreferences.get(activity).edit().putBoolean(DockConfiguration.MODE, checked).apply();

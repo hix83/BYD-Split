@@ -69,6 +69,11 @@ final class VehicleDashboardView extends View {
     private final RectF batteryBounds = new RectF(), fuelBounds = new RectF();
     private final boolean demoMode;
     private boolean animationFrameScheduled;
+    private final Runnable rangeChanged=this::invalidate;
+    @Override protected void onAttachedToWindow(){super.onAttachedToWindow();syncRange();}
+    @Override protected void onWindowVisibilityChanged(int visibility){super.onWindowVisibilityChanged(visibility);if(rangeChanged!=null&&isAttachedToWindow())syncRange();}
+    @Override protected void onVisibilityChanged(android.view.View view,int visibility){super.onVisibilityChanged(view,visibility);if(rangeChanged!=null&&isAttachedToWindow())syncRange();}
+    private void syncRange(){if(EvRangeController.showStatus(getContext())&&isShown()&&getWindowVisibility()==VISIBLE)EvRangeController.get(getContext()).add(rangeChanged);else EvRangeController.get(getContext()).remove(rangeChanged);}
     private final Runnable animationTick = () -> {
         animationFrameScheduled = false;
         if (isAttachedToWindow()) {
@@ -102,9 +107,11 @@ final class VehicleDashboardView extends View {
         telemetry = value == null ? VehicleTelemetrySnapshot.EMPTY : value;
         invalidate();
     }
+    void refreshEvStatus(){syncRange();invalidate();}
 
     @Override
     protected void onDetachedFromWindow() {
+        EvRangeController.get(getContext()).remove(rangeChanged);
         removeCallbacks(animationTick);
         animationFrameScheduled = false;
         super.onDetachedFromWindow();
@@ -122,6 +129,9 @@ final class VehicleDashboardView extends View {
         drawBackground(canvas, width, height);
         drawHeader(canvas, width, height);
         drawVehicle(canvas, width, height);
+        if(EvRangeController.showStatus(getContext())){
+            drawText(canvas,EvRangeController.get(getContext()).socText(),width*.5f,height*.248f,width*.026f,TEXT_PRIMARY,Paint.Align.CENTER);
+        }
 
         drawQuickActions(canvas, width, height);
     }
@@ -160,6 +170,11 @@ final class VehicleDashboardView extends View {
                 telemetry.batteryMinTempC + "–" + telemetry.batteryMaxTempC + " °C";
         drawText(canvas, "Батарея  " + batteryTemperature,
                 width * .08f, height * .302f, width * .028f, TEXT_SECONDARY, Paint.Align.LEFT);
+        if(EvRangeController.showStatus(getContext())){
+            EvRangeController range=EvRangeController.get(getContext());
+            drawText(canvas,range.nativeText(),width*.08f,height*.330f,width*.024f,TEXT_PRIMARY,Paint.Align.LEFT);
+            drawText(canvas,range.forecastText()+" · до "+Math.round(range.reserve())+"%",width*.08f,height*.355f,width*.023f,TEXT_SECONDARY,Paint.Align.LEFT);
+        }
         drawText(canvas, "ОЖ ДВС  " + (demoMode ? "82 °C" : telemetry.coolantTempC == null ? "— °C" : telemetry.coolantTempC + " °C"),
                 width * .92f, height * .265f, width * .028f, TEXT_SECONDARY, Paint.Align.RIGHT);
         String voltage = demoMode ? "13,8 В" : telemetry.auxiliaryVoltage == null ? "— В" :
