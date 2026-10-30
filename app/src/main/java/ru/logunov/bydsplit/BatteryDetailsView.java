@@ -18,6 +18,7 @@ final class BatteryDetailsView extends LinearLayout {
     private BatteryCellReadings cellReadings;
     private boolean cellsAttempted;
     private ScheduledExecutorService cellsReader;
+    private HelperSession cellsOwner;
     private TextView imbalanceStatus;
     private final Runnable imbalanceListener=this::updateImbalance;
     private final Runnable freshnessTick=new Runnable(){public void run(){if(!active)return;updateCellCharts();postDelayed(this,1000);}};
@@ -95,10 +96,9 @@ final class BatteryDetailsView extends LinearLayout {
         section(content,"Лимиты BMS и ячейки");
         row(content,new String[]{"chargeLimit","dischargeLimit"},new String[]{"Макс. мощность заряда","Макс. мощность разряда"});
         row(content,new String[]{"minCell","maxCell","deltaCell"},new String[]{"Ячейка · минимум","Ячейка · максимум","Разброс"});
-        section(content,"Электромоторы и инверторы");
+        section(content,"Передний электропривод");
         row(content,new String[]{"frontTemp","frontInv","frontRpm"},new String[]{"Передний мотор","Передний инвертор","Передний · об/мин"});
-        row(content,new String[]{"rearTemp","rearInv","rearRpm"},new String[]{"Задний мотор","Задний инвертор","Задний · об/мин"});
-        TextView motorsNote=label("Температуры моторов/инверторов и задний привод: адреса BYDMate пока не подтверждены на Song L, показания не выводятся.",12,muted);
+        TextView motorsNote=label("Температуры переднего мотора и инвертора читаются из штатных датчиков DM-i. Заднего электропривода в этой Song L нет.",12,muted);
         motorsNote.setPadding(0,dp(8),0,dp(4));content.addView(motorsNote);
         row(content,new String[]{"accelerator","brake"},new String[]{"Педаль газа","Педаль тормоза"});
         section(content,"Климат");
@@ -110,7 +110,7 @@ final class BatteryDetailsView extends LinearLayout {
         section(content,"Батарея · история");
         row(content,new String[]{"mileage","lifetime"},new String[]{"Пробег BMS","Энергия BMS"});
         row(content,new String[]{"sessionAvg","allAvg"},new String[]{"Средний SOC после зарядки","Средний SOC · наблюдения"});
-        TextView note=label("—: нет достоверного показания. Задний электромотор может отсутствовать в комплектации. Средняя температура — середина минимума и максимума. Средний SOC собирается нашим приложением раз в минуту, пока оно получает телеметрию; история BYDMate не переносится. %/ч: плюс — расход, минус — заряд. Режим HEV сам по себе не подтверждает механическую связь ДВС с колёсами.",13,muted);
+        TextView note=label("—: нет достоверного показания. Средняя температура — середина минимума и максимума. Средний SOC собирается нашим приложением раз в минуту, пока оно получает телеметрию; история BYDMate не переносится. %/ч: плюс — расход, минус — заряд. Режим HEV сам по себе не подтверждает механическую связь ДВС с колёсами.",13,muted);
         note.setPadding(0,dp(14),0,dp(12));content.addView(note);
     }
     private void editCapacity() {
@@ -171,22 +171,16 @@ final class BatteryDetailsView extends LinearLayout {
     void setActive(boolean enabled) {
         enabled=enabled&&(demo||VehicleSleepController.get(getContext()).pollingAllowed());
         if(dtcView!=null)dtcView.setActive(enabled);
-        if(active==enabled)return;active=enabled;generation++;
+        if(active==enabled){syncCellReader();return;}active=enabled;generation++;
         if(reader!=null){reader.shutdownNow();reader=null;}
-        if(cellsReader!=null){cellsReader.shutdownNow();cellsReader=null;}
+        stopCellReader();
         removeCallbacks(freshnessTick);
         BatteryWatchController.get().removeListener(imbalanceListener);
+        syncCellReader();
         if(!enabled)return;
         if(!technical)BatteryWatchController.get().addListener(imbalanceListener);
         final int token=generation;
         if(!technical)post(freshnessTick);
-        if(!technical&&!demo) {
-            cellsReader=Executors.newSingleThreadScheduledExecutor();
-            cellsReader.scheduleWithFixedDelay(()->{
-                BatteryCellReadings readings=LocalAdbManager.readBatteryCells(getContext());
-                post(()->{if(active&&token==generation){cellReadings=readings;cellsAttempted=true;updateCellCharts();}});
-            },0,1,TimeUnit.SECONDS);
-        }
         reader=Executors.newSingleThreadScheduledExecutor();
         reader.scheduleWithFixedDelay(() -> {
             if(technical) {
@@ -197,6 +191,25 @@ final class BatteryDetailsView extends LinearLayout {
                     : LocalAdbManager.get(getContext()).readBatteryDetails();
             post(() -> {if(active && token==generation)update(data);});
         },0,3,TimeUnit.SECONDS);
+    }
+    private void stopCellReader(){
+        if(cellsOwner!=null){android.util.Log.i("BYD_SLEEP","BMS scan owner closed: "+VehicleSleepController.get(getContext()).mode());cellsOwner.close();}cellsOwner=null;
+        if(cellsReader!=null)cellsReader.shutdownNow();cellsReader=null;
+    }
+    private void syncCellReader(){
+        VehicleSleepState.Mode mode=VehicleSleepController.get(getContext()).mode();
+        if(!active||technical||demo||(mode!=VehicleSleepState.Mode.RUNNING&&mode!=VehicleSleepState.Mode.CHARGING)){stopCellReader();return;}
+        if(cellsReader!=null)return;
+        try{
+            final HelperSession owner=HelperSession.observe(null,null);cellsOwner=owner;
+            final int token=generation;
+            cellsReader=Executors.newSingleThreadScheduledExecutor();
+            cellsReader.scheduleWithFixedDelay(()->{
+                if(!owner.isOpen())return;
+                BatteryCellReadings readings=LocalAdbManager.readBatteryCells(getContext(),owner);
+                post(()->{if(active&&token==generation&&owner.isOpen()){cellReadings=readings;cellsAttempted=true;updateCellCharts();}});
+            },0,1,TimeUnit.SECONDS);
+        }catch(Exception error){stopCellReader();}
     }
     @Override protected void onDetachedFromWindow(){setActive(false);super.onDetachedFromWindow();}
     private String number(Number n,String unit,int decimals){return n==null?"—":String.format(Locale.forLanguageTag("ru"),"%."+decimals+"f",n.doubleValue())+" "+unit;}

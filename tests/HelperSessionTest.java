@@ -42,6 +42,13 @@ public final class HelperSessionTest {
                 stuck=child(withHook);blocked.close();
                 check(stuck.waitFor(5,TimeUnit.SECONDS)&&stuck.exitValue()==0,"hung OEM cleanup left orphan helper");
             } finally {blocked.close();if(stuck!=null)stuck.destroyForcibly();}
+            HelperSession timed=HelperSession.open();Process expired=null;
+            try {
+                String[] owner=timed.arguments().trim().split(" ");String[] limited=new String[owner.length+1];limited[0]="max-life";System.arraycopy(owner,0,limited,1,owner.length);
+                expired=child(limited);
+                check(expired.waitFor(5,TimeUnit.SECONDS)&&expired.exitValue()==0,"scanner survived independent deadline with live owner and blocked cleanup");
+                check(timed.isOpen(),"deadline killed its owner");
+            }finally{timed.close();if(expired!=null)expired.destroyForcibly();}
             System.out.println("HelperSessionTest PASS: owner close, replacement, stale close, missing/dead owner");
         } finally {
             a.close(); if (b != null) b.close();
@@ -69,8 +76,9 @@ public final class HelperSessionTest {
 
     public static final class Probe {
         public static void main(String[] args) throws Exception {
-            if(args.length>0&&args[0].equals("blocked-hook"))Runtime.getRuntime().addShutdownHook(new Thread(()->{try{Thread.sleep(15000);}catch(Exception ignored){}}));
+            if(args.length>0&&(args[0].equals("blocked-hook")||args[0].equals("max-life")))Runtime.getRuntime().addShutdownHook(new Thread(()->{try{Thread.sleep(15000);}catch(Exception ignored){}}));
             java.net.Socket owner=HelperLifetime.attach(args);
+            if(args.length>0&&args[0].equals("max-life"))HelperLifetime.limit(250);
             owner.getOutputStream().write("STATE 2 1\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
             owner.getOutputStream().flush();
             System.out.println("READY"); System.out.flush();

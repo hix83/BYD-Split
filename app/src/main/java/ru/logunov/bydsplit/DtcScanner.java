@@ -17,9 +17,14 @@ final class DtcScanner {
     private final Device device; private final Clock clock; private final Supplier<String> guard;
     private final Supplier<Integer> gear;private final BooleanSupplier ready;
     private long start;private int frames;
-    DtcScanner(Device device,Clock clock,Supplier<String> guard,Supplier<Integer> gear,BooleanSupplier ready){this.device=device;this.clock=clock;this.guard=guard;this.gear=gear;this.ready=ready;}
+    private final boolean legacy;
+    DtcScanner(Device device,Clock clock,Supplier<String> guard,Supplier<Integer> gear,BooleanSupplier ready){this(device,clock,guard,gear,ready,false);}
+    DtcScanner(Device device,Clock clock,Supplier<String> guard,Supplier<Integer> gear,BooleanSupplier ready,boolean legacy){this.device=device;this.clock=clock;this.guard=guard;this.gear=gear;this.ready=ready;this.legacy=legacy;}
     private void gate() {
-        if(!DtcProtocol.GUARD.equals(guard.get()))throw new IllegalStateException("diag_busy");
+        String diagnosticGuard=guard.get();
+        boolean absent=diagnosticGuard==null||diagnosticGuard.trim().isEmpty();
+        if(absent&&!legacy)throw new IllegalStateException("guard_absent");
+        if(!absent&&!DtcProtocol.GUARD.equals(diagnosticGuard))throw new IllegalStateException("diag_busy");
         if(!Integer.valueOf(1).equals(gear.get()))throw new IllegalStateException("not_park");
         if(!ready.getAsBoolean())throw new IllegalStateException("not_ready");
         if(Thread.currentThread().isInterrupted())throw new IllegalStateException("cancelled");
@@ -63,7 +68,11 @@ final class DtcScanner {
             if(raw==null)break;
             frames++;
             DtcProtocol.Match match=DtcProtocol.match(raw,address,service,service==0x22?(sub<<8)|parameter:sub);
-            if("other".equals(match.kind)||"pending".equals(match.kind))continue;
+            if("other".equals(match.kind)){
+                if(legacy)throw new IllegalStateException("foreign_traffic");
+                continue;
+            }
+            if("pending".equals(match.kind))continue;
             clock.sleep(400);device.drain();return match;
         }
         return new DtcProtocol.Match("no_answer",null);

@@ -8,6 +8,9 @@ public final class VehicleSleepStateTest {
         check(s.sample(7200001,0,1)==VehicleSleepState.Mode.OFF_PENDING,"OFF not debounced");
         check(s.confirm(7290000)==VehicleSleepState.Mode.OFF_PENDING,"OFF confirmed too early");
         check(s.confirm(7290001)==VehicleSleepState.Mode.SLEEP,"confirmed OFF did not sleep");
+        check(s.invalidate(7290001)==VehicleSleepState.Mode.SLEEP,"observer loss woke sleeping car");
+        check(s.sample(7290001,null,null)==VehicleSleepState.Mode.SLEEP,"missing snapshot woke sleeping car");
+        check(s.sample(7290001,0,1)==VehicleSleepState.Mode.SLEEP,"fresh OFF restarted debounce and polls");
         check(s.sample(7290002,0,2)==VehicleSleepState.Mode.CHARGING,"AC connected while asleep not resumed");
         check(s.confirm(9000000)==VehicleSleepState.Mode.CHARGING,"paused/missing current AC session lost");
         check(s.sample(9000001,0,3)==VehicleSleepState.Mode.CHARGING,"DC charging slept");

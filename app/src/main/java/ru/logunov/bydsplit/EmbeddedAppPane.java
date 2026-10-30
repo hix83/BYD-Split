@@ -108,6 +108,8 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
     private int voiceGestureGeneration;
     private boolean voiceHoldReady;
     private boolean released;
+    private volatile boolean hostActive=true;
+    private boolean needsTaskRestore;
     private volatile VoiceState voiceState = VoiceState.IDLE;
 
     private enum VoiceState {
@@ -1254,6 +1256,37 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
         }
     }
 
+    void setHostActive(boolean active){
+        if(hostActive==active||released)return;
+        hostActive=active;appSwitchGeneration++;
+        clearTransitionSnapshot();resetInteractiveState();
+        if(!active){
+            needsTaskRestore=true;
+            if(virtualDisplay==null)return;
+            final int display=virtualDisplay.getDisplay().getDisplayId();
+            shellBridgeClient.handoffDisplay(display,()->!hostActive&&!released,success->post(()->{
+                if(!success){Log.w(TAG,paneName+" handoff not confirmed");return;}
+                if(!hostActive&&virtualDisplay!=null&&virtualDisplay.getDisplay().getDisplayId()==display){
+                    virtualDisplay.release();virtualDisplay=null;
+                    Log.i(TAG,paneName+" handed off; embedded display released");
+                }
+            }));
+        }else{
+            post(()->{
+                if(!hostActive||released)return;
+                boolean restoreExisting=virtualDisplay!=null;
+                attachSurfaceOrCreateDisplay(surfaceView.getHolder());
+                if(restoreExisting&&virtualDisplay!=null){
+                    int display=virtualDisplay.getDisplay().getDisplayId();
+                    needsTaskRestore=false;
+                    shellBridgeClient.restoreOnDisplay(entry.component.flattenToString(),display,success->{
+                        if(!success)Log.w(TAG,paneName+" task restore not confirmed");
+                    });
+                }
+            });
+        }
+    }
+
     void release() {
         if (released) {
             return;
@@ -1481,7 +1514,7 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
 
     @SuppressLint("WrongConstant")
     private void createDisplayAndLaunch() {
-        if (virtualDisplay != null || getWidth() <= 0 || getHeight() <= 0
+        if (!hostActive || virtualDisplay != null || getWidth() <= 0 || getHeight() <= 0
                 || !surfaceView.getHolder().getSurface().isValid()) {
             return;
         }
@@ -1505,23 +1538,16 @@ final class EmbeddedAppPane extends FrameLayout implements SurfaceHolder.Callbac
 
         int displayId = virtualDisplay.getDisplay().getDisplayId();
         String launchedComponent = entry.component.flattenToString();
-        shellBridgeClient.launchOnDisplay(
-                launchedComponent,
-                displayId,
-                success -> post(() -> {
-                    if (success) {
-                        Log.i(TAG, entry.component + " -> display " + displayId);
-                        postDelayed(() ->
-                                cacheDisplayedFrame(launchedComponent), 80);
-                    } else {
-                        showFailure(getResources().getString(
-                                R.string.bridge_unavailable));
-                    }
-                }));
+        java.util.function.Consumer<Boolean> finished=success->post(()->{
+            if(success){Log.i(TAG,entry.component+" -> display "+displayId);postDelayed(()->cacheDisplayedFrame(launchedComponent),80);}
+            else showFailure(getResources().getString(R.string.bridge_unavailable));
+        });
+        if(needsTaskRestore){needsTaskRestore=false;shellBridgeClient.restoreOnDisplay(launchedComponent,displayId,finished);}
+        else shellBridgeClient.launchOnDisplay(launchedComponent,displayId,finished);
     }
 
     private void attachSurfaceOrCreateDisplay(SurfaceHolder holder) {
-        if (released) {
+        if (released || !hostActive) {
             return;
         }
         Surface surface = holder.getSurface();

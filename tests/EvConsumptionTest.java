@@ -41,6 +41,19 @@ public final class EvConsumptionTest {
         a=EvConsumption.average(rows);check(a.trips==10);near(a.km,10);
         a=EvConsumption.average(Arrays.asList(new EvConsumption.Row(1,0,.1),new EvConsumption.Row(1,5,.8)));
         near(a.per100(),18);
+        EvConsumption.Average baseline=new EvConsumption.Average(55.4,12.8,10);
+        EvConsumption.Estimate estimate=EvConsumption.blend(new EvConsumption.Average(0,0,0),baseline);
+        near(estimate.per100,12.8*100/55.4);near(estimate.ownShare,0);
+        estimate=EvConsumption.blend(new EvConsumption.Average(4,.8,1),baseline);
+        near(estimate.per100,baseline.per100());near(estimate.ownShare,0);
+        estimate=EvConsumption.blend(new EvConsumption.Average(25,5,2),baseline);
+        near(estimate.per100,20*.25+baseline.per100()*.75);near(estimate.ownShare,.25);
+        estimate=EvConsumption.blend(new EvConsumption.Average(100,20,4),baseline);
+        near(estimate.per100,20);near(estimate.ownShare,1);
+        estimate=EvConsumption.blend(new EvConsumption.Average(5,1,1),new EvConsumption.Average(0,0,0));
+        near(estimate.per100,20);near(estimate.ownShare,1);
+        check(EvConsumption.blend(new EvConsumption.Average(0,0,0),new EvConsumption.Average(3,.6,1)).per100==null);
+        check(EvConsumption.blend(new EvConsumption.Average(5,-1,1),new EvConsumption.Average(5,0,1)).per100==null);
         System.out.println("EV learning: engine transitions, unknown state, charging, gaps, regeneration, idle, counter rollback, weighted window and trip limit passed");
     }
 }

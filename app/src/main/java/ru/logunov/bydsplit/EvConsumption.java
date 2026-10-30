@@ -20,6 +20,18 @@ final class EvConsumption {
         Average(double km,double kwh,int trips){this.km=km;this.kwh=kwh;this.trips=trips;}
         Double per100(){double value=kwh*100/km;return km+1e-6>=MIN_KM&&Double.isFinite(value)&&value>=1&&value<=100?value:null;}
     }
+    /** Blend estimates, not samples: native history may overlap our observed trips. */
+    static final class Estimate {
+        final Double per100;final double ownShare;
+        Estimate(Double value,double share){per100=value;ownShare=share;}
+    }
+    static Estimate blend(Average own,Average nativeHistory){
+        Double measured=own.per100(),baseline=nativeHistory.per100();
+        if(measured==null)return new Estimate(baseline,0);
+        if(baseline==null)return new Estimate(measured,1);
+        double share=Math.min(1,own.km/WINDOW_KM);
+        return new Estimate(measured*share+baseline*(1-share),share);
+    }
     static Average average(List<Row> newestFirst){
         double km=0,kwh=0;Set<Long> trips=new HashSet<>();
         for(Row row:newestFirst){

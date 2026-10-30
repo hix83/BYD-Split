@@ -10,9 +10,9 @@ final class EvRangeSettings {
         EvRangeController data=EvRangeController.get(activity);
         LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);
         int pad=dp(activity,24);root.setPadding(pad,dp(activity,8),pad,pad);
-        TextView help=new TextView(activity);help.setText("Прогноз использует реальный расход последних 100 км электрических участков, до 10 поездок за 30 дней. Нужны минимум 5 км с подтверждённо выключенным ДВС. Рекуперация учитывается; зарядка и пропуски данных исключаются. Включите запись поездок для обучения. Ёмкость и резерв задаются ниже; настройки машины не меняются.");root.addView(help);
+        TextView help=new TextView(activity);help.setText("Расчётный запас EV использует расход электрических участков за 30 дней: до 100 км и 10 поездок. Пока собственных замеров меньше 5 км, берём электрические поездки из журнала BYD с известным нулевым расходом бензина. Затем доля собственных данных растёт вместе с пробегом и достигает 100% на 100 км. Если истории BYD нет, нужны минимум 5 км собственных замеров. Рекуперация учитывается; зарядка и пропуски исключаются. Включите запись поездок. Ёмкость и резерв задаются ниже.");root.addView(help);
         Double energy=data.energy();
-        TextView summary=new TextView(activity);summary.setText(data.nativeText()+" · "+data.socText()+"\n"+data.forecastText()+(energy==null?"":String.format(java.util.Locale.ROOT," · выше резерва ≈ %.1f кВт·ч",energy))+"\n"+data.learningText());summary.setPadding(0,dp(activity,10),0,0);root.addView(summary);
+        TextView summary=new TextView(activity);summary.setText(data.calculatedText()+" · "+data.socText()+(energy==null?"":String.format(java.util.Locale.ROOT," · выше резерва ≈ %.1f кВт·ч",energy))+"\n"+data.learningText());summary.setPadding(0,dp(activity,10),0,0);root.addView(summary);
         String[] labels={"Ёмкость батареи, кВт·ч (1–1000)","Резерв SOC, % (0–99)"};
         double[] values={data.capacity(),data.reserve()};EditText[] inputs=new EditText[2];
         for(int i=0;i<2;i++){
@@ -25,7 +25,7 @@ final class EvRangeSettings {
             root.addView(inputs[i],new LinearLayout.LayoutParams(-1,dp(activity,44)));
         }
         for(int i=0;i<root.getChildCount();i++)if(root.getChildAt(i) instanceof TextView){TextView t=(TextView)root.getChildAt(i);t.setTextColor(ThemePalette.text(activity));t.setTypeface(activity.getResources().getFont(R.font.ui7_regular));}
-        TextView title=new TextView(activity);title.setText("Прогноз EV · экспериментальный");title.setTextSize(22);title.setTextColor(ThemePalette.text(activity));title.setTypeface(activity.getResources().getFont(R.font.ui7_regular));title.setPadding(pad,dp(activity,20),pad,dp(activity,12));
+        TextView title=new TextView(activity);title.setText("Расчётный запас EV");title.setTextSize(22);title.setTextColor(ThemePalette.text(activity));title.setTypeface(activity.getResources().getFont(R.font.ui7_regular));title.setPadding(pad,dp(activity,20),pad,dp(activity,12));
         LinearLayout actions=new LinearLayout(activity);actions.setGravity(Gravity.END);actions.setPadding(0,dp(activity,16),0,0);
         Button cancel=action(activity,"Отмена",false),save=action(activity,"Сохранить",true);
         actions.addView(cancel,new LinearLayout.LayoutParams(dp(activity,120),dp(activity,44)));

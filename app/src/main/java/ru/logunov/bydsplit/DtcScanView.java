@@ -47,7 +47,7 @@ final class DtcScanView extends LinearLayout {
                 JSONObject b=blocks.getJSONObject(i);String outcome=b.optString("outcome");
                 if(Arrays.asList("ok","nrc","truncated","multiframe").contains(outcome))answered++;
                 byte[] list=DtcProtocol.unhex(b.optString("list"));
-                if(DtcProtocol.count(DtcProtocol.unhex(b.optString("count")))>0&&(list.length==0||!"ok".equals(outcome)||list.length<3||(list.length-3)%4!=0))unread++;
+                if(DtcProtocol.count(DtcProtocol.unhex(b.optString("count")))>0&&(list.length==0||!"ok".equals(outcome)||list.length<=3||(list.length-3)%4!=0))unread++;
                 for(DtcProtocol.Row row:DtcProtocol.rows(list)){if(row.kind.equals("NOW"))now++;else if(row.kind.equals("OLD"))old++;else pending++;}
             }
             String at=new SimpleDateFormat("dd.MM.yyyy HH:mm",Locale.getDefault()).format(new Date(report.optLong("at")));

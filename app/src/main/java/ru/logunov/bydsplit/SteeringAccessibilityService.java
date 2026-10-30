@@ -36,6 +36,7 @@ public final class SteeringAccessibilityService extends AccessibilityService {
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
+        if(!VehicleSleepController.get(this).automationAllowed())return;
         CharSequence packageName = event.getPackageName();
         if (packageName != null
                 && "ru.oneme.app".contentEquals(packageName)) {
@@ -71,6 +72,7 @@ public final class SteeringAccessibilityService extends AccessibilityService {
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
+        if(!VehicleSleepController.get(this).automationAllowed())return false;
         Log.i(TAG, "key code=" + event.getKeyCode()
                 + " scan=" + event.getScanCode()
                 + " action=" + event.getAction());

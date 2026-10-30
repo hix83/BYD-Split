@@ -18,7 +18,7 @@ final class DtcScanController {
     private DtcDescriptions descriptions;
     private HelperSession owner;
     private int generation;
-    boolean running;int done;String message="";JSONObject report;private JSONObject demoReport;
+    boolean running;private boolean preparing;int done;String message="";JSONObject report;private JSONObject demoReport;
     JSONObject displayedReport(){return AppPreferences.isDemoModeEnabled(context)?demoReport:report;}
     private final Runnable timeout=()->fail(generation,"Сканирование остановлено по времени. Последний отчёт сохранён.");
     private DtcScanController(Context c){context=c;sleep=VehicleSleepController.get(c);try{String saved=c.getSharedPreferences("dtc",0).getString("last","");if(!saved.isEmpty())report=new JSONObject(saved);}catch(Exception ignored){}}
@@ -32,7 +32,7 @@ final class DtcScanController {
         running=true;done=0;message="Проверка режима P и доступа к диагностике…";
         final int token=++generation;
         try {
-            owner=HelperSession.observe(line->main.post(()->accept(token,line)),()->main.post(()->fail(token,"Связь со сканером потеряна. Последний отчёт сохранён.")));
+            owner=HelperSession.observe(line->main.post(()->accept(token,line)),()->main.post(()->{if(!preparing)fail(token,"Связь со сканером потеряна. Последний отчёт сохранён.");}));
             String arguments=owner.arguments();
             sleep.addListener(this,()->{if(running&&!sleep.automationAllowed())cancel();});
             main.postDelayed(timeout,100000);publish();
@@ -48,11 +48,11 @@ final class DtcScanController {
             main.removeCallbacks(timeout);
             if(!"DONE".equals(value.optString("state"))){fail(token,reason(value.optString("reason")));return;}
             // The helper has finished and can exit while the offline descriptions load.
-            running=false;if(owner!=null)owner.close();owner=null;sleep.removeListener(this);
+            preparing=true;if(owner!=null)owner.close();owner=null;
             message="Подготовка отчёта…";publish();
             worker.execute(()->{
                 try{describe(value);}catch(Exception ignored){}
-                main.post(()->{if(token!=generation)return;report=value;done=18;message="Проверка завершена";
+                main.post(()->{if(token!=generation)return;running=false;preparing=false;sleep.removeListener(this);report=value;done=18;message="Проверка завершена";
                     context.getSharedPreferences("dtc",0).edit().putString("last",value.toString()).apply();publish();});
             });
         }catch(Exception error){fail(token,"Не удалось прочитать ответ сканера. Последний отчёт сохранён.");}
@@ -74,10 +74,10 @@ final class DtcScanController {
         }
     }
     private InputStreamReader open(String name)throws Exception{return new InputStreamReader(context.getAssets().open("dtc/"+name+".tsv"),java.nio.charset.StandardCharsets.UTF_8);}
-    void cancel(){if(!running&&owner==null)return;generation++;running=false;main.removeCallbacks(timeout);if(owner!=null)owner.close();owner=null;sleep.removeListener(this);message="Сканирование остановлено. Последний отчёт сохранён.";publish();}
+    void cancel(){if(!running&&owner==null)return;generation++;running=false;preparing=false;main.removeCallbacks(timeout);if(owner!=null)owner.close();owner=null;sleep.removeListener(this);message="Сканирование остановлено. Последний отчёт сохранён.";publish();}
     private void fail(int token,String reason){if(token!=generation||!running)return;cancel();message=reason;publish();}
     private static String reason(String reason){
-        switch(reason){case "not_park":return "Сканирование доступно только в P.";case "not_ready":return "Машина выключена: проверка остановлена.";case "diag_busy":case "passive_traffic":return "Диагностика занята другой программой. Повторите позже.";case "budget":return "Достигнут предел времени проверки. Последний отчёт сохранён.";case "no_frames":return "Блоки не ответили. Это не означает отсутствие ошибок.";default:return "Диагностика недоступна или прервана на этой прошивке. Последний отчёт сохранён.";}
+        switch(reason){case "guard_absent":return "На этой прошивке отсутствует статус штатного менеджера диагностики. Нужна адаптация сканера; запросы к блокам не отправлены.";case "not_park":return "Сканирование доступно только в P.";case "not_ready":return "Машина выключена: проверка остановлена.";case "diag_busy":case "passive_traffic":case "foreign_traffic":return "Диагностика занята другой программой. Повторите позже.";case "budget":return "Достигнут предел времени проверки. Последний отчёт сохранён.";case "no_frames":return "Блоки не ответили. Это не означает отсутствие ошибок.";default:return "Диагностика недоступна или прервана на этой прошивке. Последний отчёт сохранён.";}
     }
     private static JSONObject demo(){try{return new JSONObject().put("demo",true).put("at",System.currentTimeMillis()).put("model",0).put("results",new JSONArray()
             .put(new JSONObject().put("address",0x782).put("outcome","ok").put("count","5901FF010001").put("list","5902FFD1668709").put("identity","62F19432330000000B"))

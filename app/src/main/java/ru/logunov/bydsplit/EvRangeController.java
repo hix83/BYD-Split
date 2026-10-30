@@ -27,6 +27,7 @@ final class EvRangeController {
     private Float voltage;
     private double[] trip;
     private EvConsumption.Average learned=new EvConsumption.Average(0,0,0);
+    private EvConsumption.Average nativeHistory=new EvConsumption.Average(0,0,0);
     private EvRangeController(Context c){context=c;sleep=VehicleSleepController.get(c);}
     void add(Runnable listener){boolean first=listeners.isEmpty();listeners.add(listener);if(first)sleep.addListener(this,this::sync);listener.run();}
     void remove(Runnable listener){listeners.remove(listener);if(listeners.isEmpty()){sleep.removeListener(this);main.removeCallbacks(clock);cancel();}}
@@ -46,11 +47,12 @@ final class EvRangeController {
                 try(StatisticsStore store=new StatisticsStore(context)){localTrip=store.widgetTrip(System.currentTimeMillis());}catch(RuntimeException ignored){}
             final double[] tripValue=localTrip;
             EvConsumption.Average average=new EvConsumption.Average(0,0,0);
+            EvConsumption.Average baseline=new EvConsumption.Average(0,0,0);
             if(demo)average=new EvConsumption.Average(20,3.26,2);
-            else if(token==generation)try(StatisticsStore store=new StatisticsStore(context)){average=store.evConsumption(System.currentTimeMillis());}catch(RuntimeException ignored){}
-            final EvConsumption.Average learnedValue=average;
+            else if(token==generation)try(StatisticsStore store=new StatisticsStore(context)){average=store.evConsumption(System.currentTimeMillis());baseline=store.nativeEvConsumption(System.currentTimeMillis());}catch(RuntimeException ignored){}
+            final EvConsumption.Average learnedValue=average,baselineValue=baseline;
             main.post(()->{if(token!=generation)return;
-                learned=learnedValue;
+                learned=learnedValue;nativeHistory=baselineValue;
                 soc=raw==null?null:EvRangeMath.soc(raw[0]);
                 ev=raw==null?null:EvRangeMath.nativeKm(raw[1]);fuel=raw==null?null:EvRangeMath.nativeKm(raw[2]);
                 fuelPercent=raw!=null&&raw[3]>=0&&raw[3]<=100?raw[3]:null;
@@ -66,15 +68,19 @@ final class EvRangeController {
     Integer fuel(){return fresh()?fuel:null;}
     double setting(String key,float fallback){return AppPreferences.get(context).getFloat(key,fallback);}
     double capacity(){return setting(CAPACITY,AppPreferences.isDemoModeEnabled(context)?18.3f:0);}
-    Double consumption(){return learned.per100();}
+    EvConsumption.Estimate estimate(){return EvConsumption.blend(learned,nativeHistory);}
+    Double consumption(){return estimate().per100;}
     double reserve(){return setting(RESERVE,25);}
     Double forecast(){Double average=consumption();return average==null?null:EvRangeMath.forecast(soc(),capacity(),reserve(),average);}
     Double energy(){return EvRangeMath.remaining(soc(),capacity(),reserve());}
     void notifyChanged(){for(Runnable listener:new ArrayList<>(listeners))listener.run();}
-    String nativeText(){return ev()==null?"EV — км":"EV ≈ "+ev()+" км";}
+    String calculatedText(){Double km=forecast();return km==null?"EV — км":String.format(java.util.Locale.ROOT,"EV ≈ %.0f км",km);}
     String socText(){return soc()==null?"SOC —%":String.format(java.util.Locale.ROOT,"SOC %.0f%%",soc());}
-    String forecastText(){Double km=forecast();return consumption()==null?"Прогноз: обучение EV":km==null?"Прогноз — км":String.format(java.util.Locale.ROOT,"Прогноз ≈ %.0f км",km);}
-    String learningText(){Double average=consumption();return average==null?String.format(java.util.Locale.ROOT,"Обучение EV: %.1f / 5 км · нужен подтверждённый расход",learned.km):String.format(java.util.Locale.ROOT,"Расход EV: %.1f кВт·ч/100 км · %.1f км · поездок: %d",average,learned.km,learned.trips);}
+    String learningText(){
+        EvConsumption.Estimate value=estimate();
+        String source=value.ownShare>=1?"собственные замеры":value.ownShare<=0?"история BYD":String.format(java.util.Locale.ROOT,"свои %.0f%% · история BYD %.0f%%",value.ownShare*100,(1-value.ownShare)*100);
+        return value.per100==null?String.format(java.util.Locale.ROOT,"Обучение EV: свои %.1f / 5 км · нет подходящей истории BYD",learned.km):String.format(java.util.Locale.ROOT,"Расход EV: %.1f кВт·ч/100 км · %s\nСобственные участки: %.1f км · история BYD: %.1f км",value.per100,source,learned.km,nativeHistory.km);
+    }
     String tripText(){return fresh()&&trip!=null?String.format(java.util.Locale.ROOT,"%.0f мин · %.1f км",trip[0],trip[1]):"Поездка — мин · — км";}
     String tankText(){return "Бак "+(fresh()&&fuelPercent!=null?fuelPercent:"—")+"%";}
     String climateText(){return "Салон "+(fresh()&&inside!=null?inside:"—")+"° · Батарея "+(fresh()&&batteryTemp!=null?batteryTemp:"—")+"° · "+(fresh()&&voltage!=null?String.format(java.util.Locale.ROOT,"%.1f",voltage):"—")+" В";}

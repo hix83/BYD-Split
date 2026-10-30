@@ -10,13 +10,14 @@ import java.util.*;
 
 /** Emulator-only UI check, deliberately leaves the demo widget visible for review. */
 public final class EvRangeInstrumentation extends Instrumentation {
-    public void onCreate(Bundle args){super.onCreate(args);start();}
+    private int theme=1;
+    public void onCreate(Bundle args){super.onCreate(args);theme=args.getInt("theme",1);start();}
     private AlertDialog dialog;
     public void onStart(){
         Bundle result=new Bundle();
         try{
             check(Build.HARDWARE.contains("ranchu")||Build.HARDWARE.contains("goldfish"),"Emulator required");
-            AppPreferences.get(getTargetContext()).edit().putBoolean(DockConfiguration.MODE,true).putInt(DockConfiguration.HEIGHT_PERCENT,100)
+            AppPreferences.get(getTargetContext()).edit().putInt("theme_mode",theme).putBoolean(DockConfiguration.MODE,true).putInt(DockConfiguration.HEIGHT_PERCENT,100)
                 .putBoolean(EvRangeController.SHOW_STATUS,true)
                 .putFloat(EvRangeController.CAPACITY,18.3f).putFloat("ev_range_consumption",99f).putFloat(EvRangeController.RESERVE,25f).commit();
             DockConfiguration.save(getTargetContext(),Arrays.asList(DockConfiguration.Item.SONG,DockConfiguration.Item.EV_RANGE,DockConfiguration.Item.DRIVER_HEAT,DockConfiguration.Item.SETTINGS),1);
@@ -25,7 +26,7 @@ public final class EvRangeInstrumentation extends Instrumentation {
             SystemClock.sleep(1200);waitForIdleSync();
             DynamicDockView dock=(DynamicDockView)field(activity,"dynamicDock");
             check(find(activity.getWindow().getDecorView(),EvRangeWidget.class)!=null,"widget missing");
-            main(()->{EvRangeController c=EvRangeController.get(activity);check(c.ev()!=null&&c.ev()==72,"native demo range");check(Math.abs(c.forecast()-48.276)<.02,"forecast");});
+            main(()->{EvRangeController c=EvRangeController.get(activity);check(c.ev()!=null&&c.ev()==72,"native demo range");check(Math.abs(c.forecast()-48.276)<.02,"forecast");check(c.calculatedText().equals("EV ≈ 48 км"),"EV must show our calculation, not native range");});
             View grip=description(activity.getWindow().getDecorView(),"Потяните вниз, чтобы показать управление панелью");
             float density=activity.getResources().getDisplayMetrics().density;
             check(grip!=null&&Math.abs(grip.getHeight()-48*density)<=1&&Math.abs(grip.getWidth()-180*density)<=1,"grip touch area");

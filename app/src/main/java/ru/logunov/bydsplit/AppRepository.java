@@ -61,6 +61,24 @@ final class AppRepository {
         return Collections.unmodifiableList(result);
     }
 
+    List<AppEntry> loadShortcutApps(boolean music){
+        Set<String> declared=new HashSet<>();
+        Intent intent=new Intent(Intent.ACTION_MAIN).addCategory(music?Intent.CATEGORY_APP_MUSIC:Intent.CATEGORY_APP_MESSAGING);
+        for(ResolveInfo match:packageManager.queryIntentActivities(intent,PackageManager.MATCH_ALL))
+            if(match.activityInfo!=null)declared.add(match.activityInfo.packageName);
+        List<AppEntry> result=new ArrayList<>();
+        for(AppEntry app:loadLaunchableApps()){
+            String pkg=app.component.getPackageName(),label=app.label.toLowerCase(Locale.ROOT);
+            int category=android.content.pm.ApplicationInfo.CATEGORY_UNDEFINED;
+            try{category=packageManager.getApplicationInfo(pkg,0).category;}catch(PackageManager.NameNotFoundException ignored){}
+            boolean matches=declared.contains(pkg)||(music?
+                category==android.content.pm.ApplicationInfo.CATEGORY_AUDIO||pkg.equals("ru.yandex.music")||pkg.equals("com.yandex.music")||pkg.equals("com.spotify.music")||pkg.equals("com.maxmpz.audioplayer")||label.contains("music")||label.contains("музык"):
+                category==android.content.pm.ApplicationInfo.CATEGORY_SOCIAL||pkg.equals("ru.oneme.app")||pkg.startsWith("org.telegram.")||pkg.startsWith("com.whatsapp")||pkg.equals("com.viber.voip")||pkg.equals("org.thoughtcrime.securesms")||pkg.equals("com.vkontakte.android")||pkg.equals("com.tencent.mm")||pkg.equals("com.google.android.apps.messaging")||pkg.equals("com.android.mms")||label.contains("messenger")||label.contains("мессенджер"));
+            if(matches)result.add(app);
+        }
+        return result;
+    }
+
     AppEntry resolve(ComponentName component) {
         if (component == null) {
             return null;

@@ -8,10 +8,10 @@ public final class DtcScannerTest {
         long at=1000;public long now(){return at;}public void sleep(long ms){at+=ms;}
     }
     private static final class Device implements DtcScanner.Device {
-        final Clock clock;int sent,closed;boolean silent,traffic,reject;final Queue<byte[]> queue=new ArrayDeque<>();
+        final Clock clock;int sent,closed;boolean silent,traffic,reject,foreign;final Queue<byte[]> queue=new ArrayDeque<>();
         Device(Clock clock){this.clock=clock;}
         public void register(){if(traffic)queue.add(new byte[]{1});}
-        public int send(byte[] request){sent++;if(reject)return -1;if(!silent){int address=((request[1]&255)<<8)|(request[2]&255);queue.add(frame(address,DtcProtocol.unhex("5901FF010000")));}return 0;}
+        public int send(byte[] request){sent++;if(reject)return -1;if(!silent){int address=((request[1]&255)<<8)|(request[2]&255);queue.add(frame(foreign?0x747:address,DtcProtocol.unhex("5901FF010000")));}return 0;}
         public byte[] poll(long ms){byte[] frame=queue.poll();clock.at+=frame==null?ms:10;return frame;}
         public void drain(){queue.clear();}public void close(){closed++;}
     }
@@ -42,9 +42,21 @@ public final class DtcScannerTest {
         clock=new Clock();device=new Device(clock);final Device changing=device;
         scan=new DtcScanner(device,clock,()->DtcProtocol.GUARD,()->changing.sent==0?1:2,()->true).run(r->{});
         check(device.sent==1&&scan.reason.equals("not_park")&&device.closed==1,"scan continued out of P");
-        for(String guard:new String[]{"","busy"}){clock=new Clock();device=new Device(clock);scan=new DtcScanner(device,clock,()->guard,()->1,()->true).run(r->{});check(device.sent==0&&device.closed==1,"guard ignored");}
+        for(String guard:new String[]{"","busy"}){clock=new Clock();device=new Device(clock);scan=new DtcScanner(device,clock,()->guard,()->1,()->true).run(r->{});check(device.sent==0&&device.closed==1,"guard ignored");check(scan.reason.equals(guard.isEmpty()?"guard_absent":"diag_busy"),"missing guard confused with busy");}
         clock=new Clock();device=new Device(clock);scan=new DtcScanner(device,clock,()->DtcProtocol.GUARD,()->null,()->true).run(r->{});check(device.sent==0,"unknown gear allowed");
         clock=new Clock();device=new Device(clock);scan=new DtcScanner(device,clock,()->DtcProtocol.GUARD,()->1,()->false).run(r->{});check(device.sent==0,"OFF scan allowed");
+        clock=new Clock();device=new Device(clock);
+        scan=new DtcScanner(device,clock,()->"",()->1,()->true,true).run(r->{});
+        check(scan.state.equals("DONE")&&device.sent==18&&device.closed==1,"legacy Song gateway unavailable");
+        clock=new Clock();device=new Device(clock);device.foreign=true;
+        scan=new DtcScanner(device,clock,()->"",()->1,()->true,true).run(r->{});
+        check(scan.reason.equals("foreign_traffic")&&device.sent==1&&device.closed==1,"legacy competing traffic ignored");
+        clock=new Clock();device=new Device(clock);final Device legacyDevice=device;
+        scan=new DtcScanner(device,clock,()->legacyDevice.sent==0?"":"busy",()->1,()->true,true).run(r->{});
+        check(scan.reason.equals("diag_busy")&&device.sent==1,"legacy ignored new manager activity");
+        clock=new Clock();device=new Device(clock);
+        scan=new DtcScanner(device,clock,()->"",()->1,()->false,true).run(r->{});
+        check(scan.reason.equals("not_ready")&&device.sent==0,"legacy scan allowed OFF");
         DtcDescriptions descriptions=new DtcDescriptions(new StringReader("1\tzh\tBrake sensor\n2\tzh\tDifferent text\n"),new StringReader("m\tDM\nn\tEV\n"),new StringReader("m\tBRAKES\tU116687\t1\nn\tBRAKES\tU116687\t2\n"),new StringReader("304\tm\n"));
         check(descriptions.lookup(304,"BRAKES","U1166-87").exact,"model-specific description lost");
         check(descriptions.lookup(999,"BRAKES","U1166-87")==null,"ambiguous similar description guessed");

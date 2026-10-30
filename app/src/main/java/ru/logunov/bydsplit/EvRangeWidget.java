@@ -13,7 +13,7 @@ final class EvRangeWidget extends View {
     EvRangeWidget(Activity activity){super(activity);data=EvRangeController.get(activity);paint.setTypeface(getResources().getFont(R.font.ui7_regular));}
     void setActive(boolean enabled){if(active==enabled)return;active=enabled;if(enabled)data.add(update);else data.remove(update);}
     @Override protected void onDetachedFromWindow(){setActive(false);super.onDetachedFromWindow();}
-    private String dataDescription(){return data.nativeText()+", "+data.socText()+", "+data.tripText()+", "+data.tankText()+", "+data.climateText();}
+    private String dataDescription(){return data.calculatedText()+", "+data.socText()+", "+data.tripText()+", "+data.tankText()+", "+data.climateText();}
     private void text(Canvas c,String value,float x,float y,float size,int color){paint.setColor(color);paint.setTextSize(size);c.drawText(value,x,y,paint);}
     @Override protected void onDraw(Canvas c){
         float w=getWidth(),h=getHeight(),s=Math.min(w/270f,h/76f);float left=(w-250*s)/2;
@@ -26,7 +26,8 @@ final class EvRangeWidget extends View {
         Float soc=data.soc();if(soc!=null){paint.setColor(accent);paint.setStrokeCap(Paint.Cap.ROUND);c.drawArc(cx-r,cy-r,cx+r,cy+r,-90,soc*3.6f,false,paint);paint.setStrokeCap(Paint.Cap.BUTT);}
         paint.setStyle(Paint.Style.FILL);paint.setTextAlign(Paint.Align.CENTER);
         text(c,soc==null?"—%":Math.round(soc)+"%",cx,44*s,15*s,primary);
-        text(c,data.ev()==null?"—":String.valueOf(data.ev()),left+122*s,43*s,26*s,primary);
+        Double calculatedKm=data.forecast();
+        text(c,calculatedKm==null?"—":String.valueOf(Math.round(calculatedKm)),left+122*s,43*s,26*s,primary);
         text(c,"EV · км",left+122*s,56*s,10*s,accent);
         text(c,data.fuel()==null?"—":String.valueOf(data.fuel()),left+215*s,42*s,22*s,primary);
         text(c,"Бензин · км",left+215*s,56*s,10*s,muted);

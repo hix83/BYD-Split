@@ -35,6 +35,13 @@ final class LocalAdbManager {
 
     private final Context context;
     private final LocalAdbClient client;
+    private volatile HelperSession embeddedLaunchSession;
+    private volatile Object embeddedLaunchOwner;
+
+    void cancelEmbeddedLaunch(Object owner) {
+        HelperSession session = embeddedLaunchSession;
+        if (session != null && embeddedLaunchOwner == owner) session.close();
+    }
 
     static synchronized LocalAdbManager get(Context context) {
         if (instance == null) {
@@ -111,6 +118,7 @@ final class LocalAdbManager {
     }
 
     synchronized boolean startHelpers(boolean includeSteering) {
+        if(!AppPreferences.isDemoModeEnabled(context)&&!VehicleSleepController.get(context).automationAllowed())return false;
         HelperSession owner = HelperSession.current();
         if (owner == null || !owner.isOpen()) return false;
         String apk = context.getApplicationInfo().sourceDir;
@@ -146,41 +154,60 @@ final class LocalAdbManager {
 
     synchronized boolean launchOnDisplay(
             String component, String packageName, int displayId) {
+        return launchOnDisplay(component, packageName, displayId, () -> true, null);
+    }
+
+    synchronized boolean launchOnDisplay(String component, String packageName, int displayId,
+                                        java.util.function.BooleanSupplier allowed, Object owner) {
+        if (!allowed.getAsBoolean()) return false;
         try {
             client.connect();
             if("ru.oneme.app".equals(packageName)&&MaxCallRouter.active()
                     && moveMaxTasksToDisplay(displayId))return true;
-            String output = client.shell(
-                    "am start --display " + displayId
-                            + " -f 0x00010000 -n " + component
-                            + "; sleep 0.2"
-                            + "; task_id=$(am stack list | awk -v target='"
-                            + packageName
-                            + "/' -v display='displayId=" + displayId
-                            + "' '/^RootTask id=/{split($2,p,\"=\");"
-                            + "root=p[2]; on_display=index($0,display)>0} "
-                            + "on_display && index($0,target)>0{print root;"
-                            + "exit}'); if [ -z \"$task_id\" ]; then "
-                            + "task_id=$(am stack list | awk -v target='"
-                            + packageName
-                            + "/' '/^RootTask id=/{split($2,p,\"=\");"
-                            + "root=p[2]} index($0,target)>0{print root;"
-                            + "exit}'); [ -z \"$task_id\" ] || "
-                            + "am display move-stack \"$task_id\" "
-                            + displayId + " >/dev/null 2>&1; sleep 0.1; fi"
-                            + "; am stack list | awk -v target='"
-                            + packageName
-                            + "/' -v display='displayId=" + displayId
-                            + "' '/^RootTask id=/{on_display="
-                            + "index($0,display)>0} on_display && "
-                            + "index($0,target)>0{print \"BYD_SPLIT_LAUNCH_OK\";"
-                            + "exit}'");
+            // A launcher activity may reuse its task on display 0 before Android
+            // honours --display. Move an existing task first, without opening it
+            // full-screen (and without restarting playback or the activity).
+            if (restoreEmbeddedTask(packageName, displayId)) return true;
+            String apk=context.getApplicationInfo().sourceDir;
+            if(apk==null||!SAFE_APK_PATH.matcher(apk).matches())return false;
+            String output;
+            try(HelperSession operation=HelperSession.observe(null,null)){
+                embeddedLaunchOwner = owner;
+                embeddedLaunchSession = operation;
+                if (!allowed.getAsBoolean()) return false;
+                output=client.shell("CLASSPATH="+apk+" app_process /system/bin ru.logunov.bydsplit.EmbeddedLaunchBridge "
+                        +component+" "+displayId+operation.arguments());
+            } finally {
+                embeddedLaunchSession = null;
+                embeddedLaunchOwner = null;
+            }
             return output.contains("BYD_SPLIT_LAUNCH_OK");
         } catch (Exception error) {
             client.close();
             Log.e(TAG, "Cannot launch on virtual display", error);
             return false;
         }
+    }
+
+    synchronized boolean restoreEmbeddedTask(String packageName,int displayId){
+        if(displayId<1||displayId>999||!packageName.matches("[A-Za-z0-9_.]+"))return false;
+        String apk=context.getApplicationInfo().sourceDir;
+        if(apk==null||!SAFE_APK_PATH.matcher(apk).matches())return false;
+        try(HelperSession operation=HelperSession.observe(null,null)){
+            String result=client.shell("CLASSPATH="+apk+" app_process /system/bin ru.logunov.bydsplit.TaskDisplayBridge restore "+displayId+" "+packageName+operation.arguments());
+            java.util.regex.Matcher count=Pattern.compile("RESTORED:([0-9]+)").matcher(result);
+            return count.find()&&Integer.parseInt(count.group(1))>0;
+        }catch(Exception error){client.close();Log.w(TAG,"Embedded task restore failed",error);return false;}
+    }
+
+    synchronized boolean handoffDisplay(int displayId){
+        if(displayId<1||displayId>999)return false;
+        String apk=context.getApplicationInfo().sourceDir;
+        if(apk==null||!SAFE_APK_PATH.matcher(apk).matches())return false;
+        try(HelperSession operation=HelperSession.observe(null,null)){
+            String result=client.shell("CLASSPATH="+apk+" app_process /system/bin ru.logunov.bydsplit.TaskDisplayBridge "+displayId+operation.arguments());
+            return result.contains("HANDED_OFF:");
+        }catch(Exception error){client.close();Log.w(TAG,"Embedded task handoff failed",error);return false;}
     }
 
     synchronized boolean moveMaxTasksToDisplay(int displayId) {
@@ -410,13 +437,14 @@ final class LocalAdbManager {
         }
     }
 
-    static BatteryCellReadings readBatteryCells(Context context) {
+    static BatteryCellReadings readBatteryCells(Context context,HelperSession owner) {
+        if(owner==null||!owner.isOpen())return null;
         String apk=context.getApplicationInfo().sourceDir;
         if(apk==null||!SAFE_APK_PATH.matcher(apk).matches())return null;
         // A full numbered sweep takes several seconds. Never hold the shared control connection.
         try(LocalAdbClient dedicated=new LocalAdbClient(new LocalAdbKeyStore(context.getApplicationContext()))) {
             return BatteryCellReadings.parse(dedicated.shell("CLASSPATH="+apk
-                    +" app_process /system/bin ru.logunov.bydsplit.BatteryCellBridge"));
+                    +" app_process /system/bin ru.logunov.bydsplit.BatteryCellBridge"+owner.arguments()));
         } catch(Exception error){Log.w(TAG,"Cannot read individual BMS measurements",error);return null;}
     }
 

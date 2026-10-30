@@ -11,6 +11,7 @@ public final class ComfortCommandWriter {
         }finally{data.recycle();reply.recycle();}
     }
     public static void main(String[] args){
+        HelperLifetime.limit(5000);
         try{
             int action=Integer.parseInt(args[0]),level=Integer.parseInt(args[1]);
             if(action<0||action>4||level<0||level>(action==0?1:3))throw new IllegalArgumentException();
@@ -27,5 +28,6 @@ public final class ComfortCommandWriter {
             for(int i=0;i<8;i++){Thread.sleep(250);if(transact(service,5,device,read,0)==wanted){System.out.println("OK:"+wanted);return;}}
             System.out.println("UNCONFIRMED");
         }catch(Exception e){System.out.println("ERROR:"+e.getClass().getSimpleName());}
+        finally{HelperLifetime.exit();}
     }
 }

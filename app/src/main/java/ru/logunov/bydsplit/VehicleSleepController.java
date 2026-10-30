@@ -88,7 +88,7 @@ final class VehicleSleepController {
         if (observer != null) observer.close(); observer = null;
         main.removeCallbacks(confirm);
         publish(policy.invalidate(SystemClock.elapsedRealtime()));
-        main.removeCallbacks(retry); main.postDelayed(retry, 30000);
+        main.removeCallbacks(retry); if(mode!=VehicleSleepState.Mode.SLEEP)main.postDelayed(retry, 30000);
     }
     private void accept(int token, String line) {
         if (token != generation || listeners.isEmpty()) return;
@@ -117,6 +117,6 @@ final class VehicleSleepController {
         mode = next;
         Log.i("BYD_SLEEP", "mode=" + mode);
         for (Runnable listener : new java.util.ArrayList<>(listeners.values())) listener.run();
-        if(next==VehicleSleepState.Mode.SLEEP)worker.execute(()->LocalAdbManager.closeIdleConnections(context));
+        if(next==VehicleSleepState.Mode.SLEEP){main.removeCallbacks(retry);worker.execute(()->LocalAdbManager.closeIdleConnections(context));}
     }
 }

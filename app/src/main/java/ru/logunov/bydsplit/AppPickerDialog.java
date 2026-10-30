@@ -26,6 +26,10 @@ final class AppPickerDialog {
     }
 
     static void show(Context context, List<AppEntry> apps, Consumer<AppEntry> onSelected) {
+        show(context,context.getString(R.string.choose_app),apps,onSelected);
+    }
+
+    static AlertDialog show(Context context,String title,List<AppEntry> apps,Consumer<AppEntry> onSelected){
         int padding = dp(context, 20);
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -34,8 +38,8 @@ final class AppPickerDialog {
         EditText search = new EditText(context);
         search.setHint(R.string.search_apps);
         search.setSingleLine(true);
-        search.setTextColor(Color.rgb(30, 35, 42));
-        search.setHintTextColor(Color.rgb(110, 118, 130));
+        search.setTextColor(ThemePalette.text(context));
+        search.setHintTextColor(context.getColor(R.color.text_secondary));
         content.addView(search, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(context, 56)
@@ -52,8 +56,8 @@ final class AppPickerDialog {
                 1f
         ));
 
-        AlertDialog dialog = new AlertDialog.Builder(context)
-                .setTitle(R.string.choose_app)
+        AlertDialog dialog = new AlertDialog.Builder(context,ThemePalette.dialogTheme(context))
+                .setTitle(title)
                 .setView(content)
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
@@ -88,10 +92,11 @@ final class AppPickerDialog {
                                     | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
                 }
-                dialog.getWindow().setLayout(dp(context, 620), dp(context, 620));
+                dialog.getWindow().setLayout(Math.min(dp(context,620),context.getResources().getDisplayMetrics().widthPixels-dp(context,32)),Math.min(dp(context,620),context.getResources().getDisplayMetrics().heightPixels-dp(context,32)));
             }
         });
         dialog.show();
+        return dialog;
     }
 
     private static int dp(Context context, int value) {
@@ -158,7 +163,7 @@ final class AppPickerDialog {
                 TextView label = new TextView(context);
                 label.setId(android.R.id.text1);
                 label.setTextSize(18);
-                label.setTextColor(Color.rgb(30, 35, 42));
+                label.setTextColor(ThemePalette.text(context));
                 LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
                 );

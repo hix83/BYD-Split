@@ -1,5 +1,7 @@
 package ru.logunov.bydsplit;
 
+import android.app.Activity;
+import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
@@ -22,12 +24,14 @@ import android.widget.TextView;
 final class ParkingCameraOverlay {
     private static View currentView;
     private static WebView currentWebView;
+    private static Dialog currentDialog;
 
     private ParkingCameraOverlay() {
     }
 
     static boolean canShow(Context context) {
-        return Settings.canDrawOverlays(context);
+        return MainActivity.parkingCameraWindowHost() != null
+                || Settings.canDrawOverlays(context);
     }
 
     static boolean isShowing() {
@@ -40,7 +44,8 @@ final class ParkingCameraOverlay {
         }
         String url = AppPreferences.getParkingCameraUrl(context);
         String name = AppPreferences.getParkingCameraName(context);
-        render(context.getApplicationContext(), name, url);
+        Activity host = MainActivity.parkingCameraWindowHost();
+        render(host != null ? host : context.getApplicationContext(), name, url);
         return true;
     }
 
@@ -142,8 +147,31 @@ final class ParkingCameraOverlay {
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.CENTER;
         params.y = 0;
-        manager.addView(touchLayer, params);
         currentView = touchLayer;
+        if (context instanceof Activity) {
+            // An owned application window stays above the embedded surfaces.
+            // Android may hide TYPE_APPLICATION_OVERLAY globally while an
+            // embedded Settings/permission screen is visible.
+            Dialog dialog = new Dialog(context);
+            dialog.setTitle("BYD Split · Камеры");
+            dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+            dialog.setContentView(touchLayer);
+            android.view.Window window = dialog.getWindow();
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                    | WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            window.setTitle("BYD Split · Камеры");
+            currentDialog = dialog;
+            dialog.setOnDismissListener(ignored -> {
+                if (currentDialog == dialog) dismiss(context);
+            });
+            dialog.show();
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        } else {
+            params.setTitle("BYD Split · Камеры");
+            manager.addView(touchLayer, params);
+        }
         MainActivity.onParkingCameraVisibilityChanged(true);
         root.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220)
                 .setInterpolator(new DecelerateInterpolator()).start();
@@ -151,7 +179,11 @@ final class ParkingCameraOverlay {
 
     private static void dismiss(Context context) {
         boolean wasShowing = currentView != null;
-        if (currentView != null) {
+        Dialog dialog = currentDialog;
+        currentDialog = null;
+        if (dialog != null) {
+            dialog.dismiss();
+        } else if (currentView != null) {
             try {
                 ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE))
                         .removeView(currentView);

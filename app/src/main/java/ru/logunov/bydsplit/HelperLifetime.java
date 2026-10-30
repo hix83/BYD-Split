@@ -32,15 +32,7 @@ final class HelperLifetime {
                 try { while (reader.read() != -1) { } } catch (Exception ignored) { }
                 finally {
                     try { owner.close(); } catch (Exception ignored) { }
-                    // OEM unregister calls may block in a shutdown hook. Never leave an orphan
-                    // waiting for a dead vendor Binder after its application has gone away.
-                    Thread deadline = new Thread(() -> {
-                        try { Thread.sleep(2000); } catch (InterruptedException ignored) { }
-                        Runtime.getRuntime().halt(0);
-                    }, "byd-helper-exit-deadline");
-                    deadline.setDaemon(true);
-                    deadline.start();
-                    System.exit(0);
+                    exit();
                 }
             }, "byd-helper-lifetime");
             guard.setDaemon(true);
@@ -50,6 +42,18 @@ final class HelperLifetime {
             owner.close();
             throw error;
         }
+    }
+
+    /** Bound even native cleanup that blocks forever. */
+    static void exit() {
+        Thread deadline=new Thread(()->{try{Thread.sleep(2000);}catch(InterruptedException ignored){}Runtime.getRuntime().halt(0);},"byd-helper-exit-deadline");
+        deadline.setDaemon(true);deadline.start();System.exit(0);
+    }
+    /** A manual scanner must expire even while its owner and UI remain alive. */
+    static void limit(long millis) {
+        if(millis<=0)throw new IllegalArgumentException("Invalid lifetime");
+        Thread deadline=new Thread(()->{try{Thread.sleep(millis);}catch(InterruptedException ignored){}exit();},"byd-helper-max-lifetime");
+        deadline.setDaemon(true);deadline.start();
     }
 
     private HelperLifetime() { }

@@ -33,6 +33,12 @@ final class ShellBridgeClient {
     private final AtomicReference<String> latestMove = new AtomicReference<>();
     private final AtomicBoolean moveDrainScheduled = new AtomicBoolean();
     private final LocalAdbManager localAdb;
+    private volatile boolean hostActive = true;
+
+    void setHostActive(boolean active) {
+        hostActive = active;
+        if (!active) localAdb.cancelEmbeddedLaunch(this);
+    }
 
     ShellBridgeClient(Context context) {
         localAdb = LocalAdbManager.get(context);
@@ -64,6 +70,7 @@ final class ShellBridgeClient {
     }
 
     void close() {
+        setHostActive(false);
         executor.shutdownNow();
     }
 
@@ -76,17 +83,32 @@ final class ShellBridgeClient {
             return;
         }
         executor.execute(() -> {
+            if (!hostActive) { callback.accept(false); return; }
             int separator = componentName.indexOf('/');
             String packageName = componentName.substring(0, separator);
             boolean success = localAdb.launchOnDisplay(
-                    componentName, packageName, displayId);
-            if (!success) {
+                    componentName, packageName, displayId, () -> hostActive, this);
+            if (!success && hostActive) {
                 SystemClock.sleep(250);
                 success = localAdb.launchOnDisplay(
-                        componentName, packageName, displayId);
+                        componentName, packageName, displayId, () -> hostActive, this);
             }
             callback.accept(success);
         });
+    }
+
+    void restoreOnDisplay(String component,int displayId,Consumer<Boolean> callback){
+        if(!COMPONENT_NAME.matcher(component).matches()||component.indexOf('/')<=0||displayId<1||displayId>999){callback.accept(false);return;}
+        executor.execute(()->{
+            if (!hostActive) { callback.accept(false); return; }
+            String pkg=component.substring(0,component.indexOf('/'));
+            boolean restored=localAdb.restoreEmbeddedTask(pkg,displayId);
+            callback.accept(restored||localAdb.launchOnDisplay(component,pkg,displayId,()->hostActive,this));
+        });
+    }
+
+    void handoffDisplay(int displayId,java.util.function.BooleanSupplier needed,Consumer<Boolean> callback){
+        executor.execute(()->{if(needed.getAsBoolean())callback.accept(localAdb.handoffDisplay(displayId));});
     }
 
     void closeApp(String packageName, int displayId,

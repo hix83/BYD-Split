@@ -172,8 +172,7 @@ final class VehicleDashboardView extends View {
                 width * .08f, height * .302f, width * .028f, TEXT_SECONDARY, Paint.Align.LEFT);
         if(EvRangeController.showStatus(getContext())){
             EvRangeController range=EvRangeController.get(getContext());
-            drawText(canvas,range.nativeText(),width*.08f,height*.330f,width*.024f,TEXT_PRIMARY,Paint.Align.LEFT);
-            drawText(canvas,range.forecastText()+" · до "+Math.round(range.reserve())+"%",width*.08f,height*.355f,width*.023f,TEXT_SECONDARY,Paint.Align.LEFT);
+            drawText(canvas,range.calculatedText(),width*.08f,height*.330f,width*.024f,TEXT_PRIMARY,Paint.Align.LEFT);
         }
         drawText(canvas, "ОЖ ДВС  " + (demoMode ? "82 °C" : telemetry.coolantTempC == null ? "— °C" : telemetry.coolantTempC + " °C"),
                 width * .92f, height * .265f, width * .028f, TEXT_SECONDARY, Paint.Align.RIGHT);

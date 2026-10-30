@@ -208,6 +208,8 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        shellBridgeClient.setHostActive(true);
+        for(EmbeddedAppPane pane:new ArrayList<>(activePanes))if(pane.isAttachedToWindow())pane.setHostActive(true);
         if (classicMusicGlow != null) classicMusicGlow.setActive(!DockConfiguration.dynamic(this));
         if (dynamicDock != null) dynamicDock.setActive(DockConfiguration.dynamic(this));
         BatteryWatchService.sync(this);
@@ -239,6 +241,22 @@ public final class MainActivity extends Activity {
 
     private void applyVehicleSleep() {
         if(sleepController==null)return;
+        boolean helpersAllowed=AppPreferences.isDemoModeEnabled(this)||sleepController.automationAllowed();
+        shellBridgeClient.setHostActive(resumed && helpersAllowed);
+        if(helpersAllowed){
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if(helperSession==null||!helperSession.isOpen()){
+                try{
+                    helperSession=HelperSession.open();
+                    shellBridgeClient.bootstrap(!AppPreferences.isDemoModeEnabled(this),success->{
+                        if(!success)android.util.Log.w("BYD_SPLIT","Helpers not started after READY");
+                    });
+                }catch(Exception error){android.util.Log.e("BYD_SPLIT","Cannot resume helpers",error);}
+            }
+        }else{
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if(helperSession!=null&&helperSession.isOpen()){android.util.Log.i("BYD_SLEEP","Input helpers owner closed: "+sleepController.mode());helperSession.close();}
+        }
         boolean active=resumed&&sleepController.pollingAllowed();
         if(classicMusicGlow!=null)classicMusicGlow.setActive(active);
         if(dynamicDock!=null)dynamicDock.setActive(active);
@@ -312,6 +330,13 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onStop(){
+        shellBridgeClient.setHostActive(false);
+        for(EmbeddedAppPane pane:new ArrayList<>(activePanes))pane.setHostActive(false);
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
         if(sleepController!=null)sleepController.removeListener(this);
         if (helperSession != null) helperSession.close();
@@ -371,6 +396,12 @@ public final class MainActivity extends Activity {
         activity.runOnUiThread(() ->
                 activity.moveCarouselCyclic(leftPane));
         return true;
+    }
+
+    static android.app.Activity parkingCameraWindowHost() {
+        MainActivity activity = currentActivity.get();
+        return activity != null && activity.resumed && !activity.isFinishing()
+                && !activity.isDestroyed() ? activity : null;
     }
 
     static void onParkingCameraVisibilityChanged(boolean visible) {
@@ -481,19 +512,17 @@ public final class MainActivity extends Activity {
         if (classicMusicGlow != null) classicMusicGlow.setActive(!dynamic && resumed);
         if (dynamic && dynamicDock == null) {
             dynamicDock = new DynamicDockView(this, item -> {
-                switch (item) {
-                    case SONG: showVehicleDashboard(true); break;
-                    case CAMERA: showParkingCamera(); break;
-                    case MUSIC: activateQuickApp(quickMusicApp); break;
-                    case MESSAGES: activateQuickApp(quickMaxApp); break;
-                    case PHONE: openPhoneProjection(); break;
-                    case EV_RANGE: EvRangeSettings.show(this); break;
-                    case SETTINGS: toggleSettings(); break;
-                    case CLIMATE: openComfort(false); break;
-                    case SEATS: toggleInternalPage("seats", () -> openComfort(true)); break;
-                    default: break;
-                }
-            });
+                if(item.isApp())activateLargeApp(repository.resolve(item.component()));
+                else if(item==DockConfiguration.Item.SONG)showVehicleDashboard(true);
+                else if(item==DockConfiguration.Item.CAMERA)showParkingCamera();
+                else if(item==DockConfiguration.Item.MUSIC)activateQuickApp(quickMusicApp);
+                else if(item==DockConfiguration.Item.MESSAGES)activateQuickApp(quickMaxApp);
+                else if(item==DockConfiguration.Item.PHONE)openPhoneProjection();
+                else if(item==DockConfiguration.Item.EV_RANGE)EvRangeSettings.show(this);
+                else if(item==DockConfiguration.Item.SETTINGS)toggleSettings();
+                else if(item==DockConfiguration.Item.CLIMATE)openComfort(false);
+                else if(item==DockConfiguration.Item.SEATS)toggleInternalPage("seats",()->openComfort(true));
+            },this::refreshQuickAssignments);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(dynamicDock.heightDp()));
             params.setMargins(dp(8), 0, dp(8), dp(8));
             screenRoot.addView(dynamicDock, params);
@@ -706,8 +735,18 @@ public final class MainActivity extends Activity {
         return selected == null ? findFirstInstalled(defaultPackages) : selected;
     }
 
+    private void refreshQuickAssignments(){
+        availableApps=null;
+        quickMusicApp=resolveQuickApp(AppPreferences.KEY_QUICK_MUSIC_APP,PACKAGE_YANDEX_MUSIC,PACKAGE_YANDEX_MUSIC_ALT);
+        quickMaxApp=resolveQuickApp(AppPreferences.KEY_QUICK_MAX_APP,PACKAGE_MAX);
+        updateCompactDockSelection();
+    }
+
     private void chooseQuickApp(String preferenceKey) {
-        AppPickerDialog.show(this, getAvailableApps(), selected -> {
+        boolean music=AppPreferences.KEY_QUICK_MUSIC_APP.equals(preferenceKey);
+        List<AppEntry> apps=repository.loadShortcutApps(music);
+        if(apps.isEmpty()){Toast.makeText(this,music?"Музыкальные приложения не найдены":"Мессенджеры не найдены",Toast.LENGTH_SHORT).show();return;}
+        AppPickerDialog.show(this,music?"Музыка · выбрать приложение":"Сообщения · выбрать приложение",apps,selected -> {
             preferences.edit().putString(preferenceKey,
                     selected.component.flattenToString()).apply();
             render();
@@ -723,6 +762,18 @@ public final class MainActivity extends Activity {
             return;
         }
         activateQuickApp(quickPhoneApp);
+    }
+
+    private void activateLargeApp(AppEntry entry){
+        if(entry==null){Toast.makeText(this,"Приложение недоступно или удалено",Toast.LENGTH_SHORT).show();return;}
+        closeInternalPage(false);hidePicker();
+        if(!showingVehicleDashboard&&driverApp!=null&&driverApp.component.getPackageName().equals(entry.component.getPackageName()))showVehicleDashboard(true);
+        int previous=farAppIndex,index=indexOf(farApps,entry.component);
+        if(index<0){farApps.add(entry);index=farApps.size()-1;}
+        farAppIndex=index;updateCurrentEntries();saveCarousel(false);
+        if(farEmbeddedPane==null)refreshPane(KEY_FAR_APP);
+        else farEmbeddedPane.switchApp(entry,index,farApps.size(),Integer.compare(index,previous));
+        updateCompactDockSelection();
     }
 
     private void activateQuickApp(AppEntry entry) {
@@ -1012,6 +1063,7 @@ public final class MainActivity extends Activity {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
         }
+        driverEmbeddedPane.setHostActive(resumed);
         driverEmbeddedPane.switchApp(
                 selected, pageIndex, driverApps.size(), 0);
     }

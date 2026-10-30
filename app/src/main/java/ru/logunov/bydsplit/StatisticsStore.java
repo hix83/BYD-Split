@@ -103,6 +103,14 @@ final class StatisticsStore extends SQLiteOpenHelper {
         }
         return EvConsumption.average(rows);
     }
+    /** A baseline from actual native trip energy, never the dashboard's remaining range. */
+    synchronized EvConsumption.Average nativeEvConsumption(long now){
+        List<EvConsumption.Row> rows=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,km,native_energy FROM journal WHERE source='byd' AND type='trip' AND active=0 AND deleted=0 AND hidden=0 AND native_fuel=0 AND native_energy>=0 AND km>0 AND end>=? AND end<=? ORDER BY end DESC,id DESC LIMIT 10",new String[]{Long.toString(now-EvConsumption.MAX_AGE_MS),Long.toString(now)})){
+            while(c.moveToNext())rows.add(new EvConsumption.Row(c.getLong(0),c.getDouble(1),c.getDouble(2)));
+        }
+        return EvConsumption.average(rows);
+    }
     private void upgradeHistory(SQLiteDatabase db){
         db.execSQL("ALTER TABLE journal ADD COLUMN source TEXT DEFAULT 'launcher'");
         db.execSQL("ALTER TABLE journal ADD COLUMN source_id INTEGER");

@@ -51,6 +51,24 @@ public final class EvConsumptionInstrumentation extends Instrumentation {
                 EvConsumption.Average average=store.evConsumption(now);
                 check(Math.abs(average.km-8)<.001&&Math.abs(average.per100()-16)<.001,"legacy EV trip seeding included mixed or incomplete trips");
             }
+            getTargetContext().deleteDatabase(name);
+            try(StatisticsStore store=new StatisticsStore(getTargetContext(),name)){
+                SQLiteDatabase db=store.getWritableDatabase();
+                for(int kind=0;kind<8;kind++){
+                    long id=store.begin("trip",now-700000,6,60);
+                    db.execSQL("UPDATE journal SET source='byd',active=0,end=?,km=10,native_energy=2,native_fuel=0 WHERE id=?",new Object[]{now-1000,id});
+                    if(kind==1)db.execSQL("UPDATE journal SET native_fuel=1 WHERE id="+id);
+                    if(kind==2)db.execSQL("UPDATE journal SET native_fuel=NULL WHERE id="+id);
+                    if(kind==3)db.execSQL("UPDATE journal SET native_energy=-1 WHERE id="+id);
+                    if(kind==4)db.execSQL("UPDATE journal SET hidden=1 WHERE id="+id);
+                    if(kind==5)db.execSQL("UPDATE journal SET deleted=1 WHERE id="+id);
+                    if(kind==6)db.execSQL("UPDATE journal SET end=? WHERE id=?",new Object[]{now-EvConsumption.MAX_AGE_MS-1,id});
+                    if(kind==7)db.execSQL("UPDATE journal SET active=1 WHERE id="+id);
+                }
+                EvConsumption.Average history=store.nativeEvConsumption(now);
+                check(Math.abs(history.km-10)<.001&&Math.abs(history.per100()-20)<.001,"native baseline eligibility");
+                check(store.evConsumption(now).per100()==null,"native rows polluted own history");
+            }
             result.putString("result","PASS: v5 migration preserves journal, no fabricated history, EV parts of mixed trips, persistence, archive, deletion, expiry");
         }catch(Throwable error){result.putString("error",android.util.Log.getStackTraceString(error));}
         finally{getTargetContext().deleteDatabase(name);}

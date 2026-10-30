@@ -14,6 +14,8 @@ public final class BatteryCellBridge {
         Object manager=null,listener=null;Class<?> listenerType=null;
         boolean subscribed=false;
         try {
+            HelperLifetime.limit(15000);
+            HelperLifetime.attach(args);
             IBinder service=(IBinder)Class.forName("android.os.ServiceManager").getMethod("getService",String.class).invoke(null,"autoservice");
             int cells=ComfortCommandWriter.transact(service,5,1001,1134559240,0);
             int actual=ComfortCommandWriter.transact(service,5,1009,1132462136,0);
@@ -56,6 +58,6 @@ public final class BatteryCellBridge {
                 try{if(listener!=null)manager.getClass().getMethod("unregisterListener",listenerType).invoke(manager,listener);}catch(Exception ignored){}
             }
         }
-        System.exit(0);
+        HelperLifetime.exit();
     }
 }

@@ -6,6 +6,8 @@ import android.hardware.bydauto.mqtt.AbsBYDAutoMqttListener;
 import android.os.*;
 import org.json.*;
 import java.net.Socket;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileLock;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
@@ -26,6 +28,11 @@ public final class DtcBridge {
     public static void main(String[] args){
         try {
             owner=HelperLifetime.attach(args);
+            HelperLifetime.limit(95000);
+            RandomAccessFile lockFile=new RandomAccessFile("/data/local/tmp/byd-split-dtc.lock","rw");
+            FileLock lock=lockFile.getChannel().tryLock();
+            if(lock==null){emit(new JSONObject().put("kind","finished").put("state","UNAVAILABLE").put("reason","diag_busy"));HelperLifetime.exit();return;}
+            Runtime.getRuntime().addShutdownHook(new Thread(()->{try{lock.release();lockFile.close();}catch(Exception ignored){}}));
             if(Looper.myLooper()==null)Looper.prepareMainLooper();
             Object thread=Class.forName("android.app.ActivityThread").getMethod("systemMain").invoke(null);
             Context context=(Context)thread.getClass().getMethod("getSystemContext").invoke(thread);
@@ -39,17 +46,21 @@ public final class DtcBridge {
                     if(model<=0||model==255||model==65535)try{model=Integer.parseInt(property("persist.sys.AutoType"));}catch(Exception ignored){model=0;}
                     final int modelCode=model;
                     DtcScanner scanner=new DtcScanner(device,new DtcScanner.Clock(){public long now(){return SystemClock.elapsedRealtime();}public void sleep(long ms)throws Exception{Thread.sleep(ms);}},
-                            ()->property("sys.diagmgrsrv.task_bk"),()->read(1011,555745336),()->read(1023,315621408)==2);
+                            ()->property("sys.diagmgrsrv.task_bk"),()->read(1011,555745336),()->read(1023,315621408)==2,legacyFirmware());
                     final int[] done={0};
                     DtcScanner.Scan scan=scanner.run(r->{try{emit(new JSONObject().put("kind","progress").put("done",++done[0]).put("result",result(r)));}catch(Exception error){throw new IllegalStateException("owner_lost");}});
                     JSONArray rows=new JSONArray();for(DtcScanner.Result r:scan.results)rows.put(result(r));
                     emit(new JSONObject().put("kind","finished").put("state",scan.state).put("reason",scan.reason).put("model",modelCode).put("results",rows).put("at",System.currentTimeMillis()));
-                }catch(Throwable error){try{emit(new JSONObject().put("kind","finished").put("state","UNAVAILABLE").put("reason",error.getClass().getSimpleName()));}catch(Exception ignored){}}
-                finally {device.close();System.exit(0);}
+                }catch(Throwable error){android.util.Log.e("BYD_DTC","Scan failed",error);try{emit(new JSONObject().put("kind","finished").put("state","UNAVAILABLE").put("reason",error.getClass().getSimpleName()));}catch(Exception ignored){}}
+                finally {HelperLifetime.exit();}
             },"byd-dtc-scan").start();
             Looper.loop();
-        }catch(Throwable error){try{if(owner!=null)emit(new JSONObject().put("kind","finished").put("state","UNAVAILABLE").put("reason",error.getClass().getSimpleName()));}catch(Exception ignored){}}
-        System.exit(0);
+        }catch(Throwable error){android.util.Log.e("BYD_DTC","Startup failed",error);try{if(owner!=null)emit(new JSONObject().put("kind","finished").put("state","UNAVAILABLE").put("reason",error.getClass().getSimpleName()));}catch(Exception ignored){}}
+        HelperLifetime.exit();
+    }
+    /** Verified Song L DM-i legacy gateway; never enable guardless scans on arbitrary models. */
+    private static boolean legacyFirmware(){
+        return "161".equals(property("persist.sys.AutoType"))&&"DiLink5.0".equals(property("ro.product.device"));
     }
     private static final class NativeDevice implements DtcScanner.Device {
         private static final int RX=0x9900010a,TX=0xaa00010a;

@@ -66,7 +66,7 @@ public final class VehiclePowerBridge {
                 if (result != 0) throw new IllegalStateException("Power observer refused " + result);
             }
             IBinder service = (IBinder)Class.forName("android.os.ServiceManager").getMethod("getService", String.class).invoke(null, "autoservice");
-            service.linkToDeath(() -> System.exit(0), 0);
+            service.linkToDeath(() -> HelperLifetime.exit(), 0);
             synchronized (VehiclePowerBridge.class) {
                 power = ComfortCommandWriter.transact(service, 5, POWER_DEVICE, POWER, 0);
                 cable = ComfortCommandWriter.transact(service, 5, CHARGE_DEVICE, CABLE, 0);
@@ -74,6 +74,6 @@ public final class VehiclePowerBridge {
             }
             Looper.loop();
         } catch (Throwable error) { System.err.println("Power observer stopped: " + error); }
-        System.exit(0);
+        HelperLifetime.exit();
     }
 }

@@ -30,6 +30,7 @@ public final class ClusterMusicWriter {
         } finally {data.recycle();reply.recycle();}
     }
     public static void main(String[] args) {
+        HelperLifetime.limit(5000);
         try {
             int dev=device("INSTRUMENT");
             Integer info=symbol("Instrument","INSTRUMENT_MUSIC_INFO_SET"),
@@ -47,5 +48,6 @@ public final class ClusterMusicWriter {
             System.out.println("OK");
         }catch(ClassNotFoundException error){System.out.println("UNSUPPORTED");}
         catch(Exception error){System.out.println("ERROR:"+error.getClass().getSimpleName());}
+        finally{HelperLifetime.exit();}
     }
 }

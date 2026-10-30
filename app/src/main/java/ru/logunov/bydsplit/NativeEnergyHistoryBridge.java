@@ -11,8 +11,10 @@ import java.nio.file.StandardCopyOption;
 public final class NativeEnergyHistoryBridge {
     private static final File SOURCE=new File("/sdcard/energydata/EC_database.db");
     public static void main(String[] args){
+        HelperLifetime.limit(15000);
         try{System.out.println("BYD_HISTORY="+readRows(SOURCE,new File("/data/local/tmp")));}
         catch(Exception e){System.out.println("BYD_HISTORY_ERROR="+e.getMessage());}
+        finally{HelperLifetime.exit();}
     }
     static JSONArray readRows(File source,File temporaryRoot) throws Exception {
         File dir=null;

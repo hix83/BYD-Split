@@ -20,6 +20,9 @@ final class VehicleSleepState {
         if (Integer.valueOf(2).equals(power)) { offSince = -1; return mode = Mode.RUNNING; }
         // Preserve charging and cable-connected sessions even when current is missing or charging is paused.
         if (cable != null && cable >= 2) { offSince = -1; return mode = Mode.CHARGING; }
+        // Once OFF was confirmed, losing the observer is not evidence of a wake.
+        // READY, a connected cable or explicit ACC still pass through their normal paths.
+        if(mode==Mode.SLEEP&&!Integer.valueOf(1).equals(power))return mode;
         if (!Integer.valueOf(0).equals(power) || !Integer.valueOf(1).equals(cable)) {
             offSince = -1;
             return mode = Mode.UNKNOWN;

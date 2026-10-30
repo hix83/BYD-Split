@@ -9,7 +9,12 @@ public class TechSnapshotTest {
   raw[1]=Float.floatToIntBits(Float.NaN);s=new TechSnapshot(null,raw);check(!s.values.containsKey("batteryWatts"));
   raw[1]=Float.floatToIntBits(3000);s=new TechSnapshot(null,raw);check(!s.values.containsKey("current"));
   raw[1]=Float.floatToIntBits(-1f);s=new TechSnapshot(null,raw);check(!s.values.containsKey("current"));check(!s.values.containsKey("batteryWatts"));
-  System.out.println("Tech decoding checks passed");
+  raw[5]=3;raw[6]=2;s=new TechSnapshot(null,raw);
+  check(s.values.get("frontTemp")==3);check(s.values.get("frontInv")==2);
+  for(Object[] field:TechSnapshot.FIELDS)check(!((String)field[0]).startsWith("rear"));
+  raw[5]=-10011;raw[6]=65535;s=new TechSnapshot(null,raw);
+  check(!s.values.containsKey("frontTemp")&&!s.values.containsKey("frontInv"));
+  System.out.println("Tech decoding checks passed: DM-i front temperatures, missing values, no rear drive");
  }
  static void check(boolean b){if(!b)throw new AssertionError();}
 }

@@ -20,16 +20,22 @@ final class DynamicDockView extends FrameLayout {
     interface Host { void activate(DockConfiguration.Item item); }
     private final Activity activity;
     private final Host host;
+    private final Runnable assignmentsChanged;
+    private java.util.Map<String,String> draftAssignments;
+    private android.app.AlertDialog assignmentDialog;
     private final ComfortController controller;
     private final List<Runnable> bindings = new ArrayList<>();
     private final Runnable update = () -> { for (Runnable binding : bindings) binding.run(); };
-    private final java.util.EnumSet<DockConfiguration.Item> navigation = java.util.EnumSet.noneOf(DockConfiguration.Item.class);
+    private final java.util.Set<DockConfiguration.Item> navigation = new java.util.HashSet<>();
     private boolean listening, editorOpen;
     private int heightPercent;
     private Dialog editorDialog;
     private List<DockConfiguration.Item> draft;
     private int draftAlignment;
     private GridLayout library;
+    private boolean appsPage;
+    private List<AppEntry> catalogApps;
+    private Button functionsTab,appsTab;
     private TextView count;
     private HorizontalScrollView dockScroll;
     private LinearLayout dockRow;
@@ -49,8 +55,9 @@ final class DynamicDockView extends FrameLayout {
         }
     };
 
-    DynamicDockView(Activity activity, Host host) {
-        super(activity); this.activity = activity; this.host = host;
+    DynamicDockView(Activity activity,Host host){this(activity,host,()->{});}
+    DynamicDockView(Activity activity, Host host,Runnable assignmentsChanged) {
+        super(activity); this.activity = activity; this.host = host;this.assignmentsChanged=assignmentsChanged;
         controller = ComfortController.get(activity);
         heightPercent = DockConfiguration.heightPercent(activity);
         setPadding(sd(6), sd(7), sd(6), sd(7));
@@ -117,7 +124,7 @@ final class DynamicDockView extends FrameLayout {
             tile.setOrientation(LinearLayout.VERTICAL); tile.setGravity(Gravity.CENTER);
             tile.setPadding(sd(3), 0, sd(3), 0);
             ImageView icon = icon(item);
-            if (item.ordinal() > DockConfiguration.Item.SETTINGS.ordinal())
+            if (!item.isApp() && item.ordinal() > DockConfiguration.Item.SETTINGS.ordinal())
                 icon.setPadding(sd(4), sd(4), sd(4), sd(4));
             tile.addView(icon, new LinearLayout.LayoutParams(sd(40), sd(40)));
             TextView caption = text(item.caption(), 10); caption.setTextSize(10 * heightPercent / 100f); caption.setGravity(Gravity.CENTER); caption.setSingleLine(true);
@@ -140,20 +147,31 @@ final class DynamicDockView extends FrameLayout {
             if (editorOpen) {
                 cell.setContentDescription("Переместить: " + item.title);
                 cell.setBackground(shape(ThemePalette.color(activity, 0xff2b3743, 0xffe8eef5), 0));
-                icon.setColorFilter(ThemePalette.text(activity));
+                if(!item.isApp())icon.setColorFilter(ThemePalette.text(activity));
                 if (!item.required()) {
                     ImageButton remove = new ImageButton(activity);
-                    remove.setImageResource(R.drawable.song_oem_dock_delete);
+                    remove.setImageResource(R.drawable.song_dock_remove_badge);
                     remove.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                    remove.setImageTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
-                    remove.setPadding(0, 0, 0, 0);
+                    remove.setPadding(sd(11), sd(11), sd(11), sd(11));
                     GradientDrawable badgeMask = shape(Color.WHITE, 0); badgeMask.setCornerRadius(dp(20));
                     remove.setBackgroundTintList(null);
                     remove.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x33ffffff), null, badgeMask));
                     remove.setContentDescription("Удалить: " + item.title);
-                    FrameLayout.LayoutParams badge = new FrameLayout.LayoutParams(sd(40), sd(40), Gravity.TOP | Gravity.RIGHT);
+                    FrameLayout.LayoutParams badge = new FrameLayout.LayoutParams(sd(40), sd(40),
+                            Gravity.TOP | (item==DockConfiguration.Item.EV_RANGE?Gravity.RIGHT:Gravity.CENTER_HORIZONTAL));
+                    badge.topMargin=sd(-8);
+                    if(item!=DockConfiguration.Item.EV_RANGE)badge.leftMargin=sd(22);
                     cell.addView(remove, badge);
                     remove.setOnClickListener(v -> { draft.remove(item); refreshEditor(); if(item==DockConfiguration.Item.EV_RANGE)library.post(()->((ScrollView)library.getParent()).smoothScrollTo(0,0)); });
+                }
+                if(item==DockConfiguration.Item.MUSIC||item==DockConfiguration.Item.MESSAGES){
+                    ImageButton edit=new ImageButton(activity);edit.setImageResource(R.drawable.song_dock_edit_badge);
+                    edit.setScaleType(ImageView.ScaleType.FIT_CENTER);edit.setPadding(sd(11),sd(11),sd(11),sd(11));
+                    edit.setBackgroundTintList(null);edit.setBackgroundColor(Color.TRANSPARENT);
+                    edit.setContentDescription("Назначить приложение: "+item.title);
+                    FrameLayout.LayoutParams at=new FrameLayout.LayoutParams(sd(40),sd(40),Gravity.TOP|Gravity.CENTER_HORIZONTAL);
+                    at.topMargin=sd(-8);at.rightMargin=sd(22);cell.addView(edit,at);
+                    edit.setOnClickListener(v->chooseAssignment(item));
                 }
                 cell.setOnDragListener((v, event) -> handleDrag(v, event, item));
             } else {
@@ -169,7 +187,7 @@ final class DynamicDockView extends FrameLayout {
                     int activeColor = pending ? ThemePalette.color(activity, 0xffffc25b, 0xff916000)
                             : heating ? ThemePalette.color(activity, 0xffffa06b, 0xffb7460e) : activity.getColor(R.color.accent);
                     if(item==DockConfiguration.Item.CYCLE)setIcon(icon,raw!=null&&raw==1?R.drawable.song_oem_internal_cycle_mode_had:R.drawable.song_oem_out_cycle_mode_had,true);
-                    icon.setColorFilter(on || pending ? activeColor : ThemePalette.text(activity));
+                    if(!item.isApp())icon.setColorFilter(on || pending ? activeColor : ThemePalette.text(activity));
                     cell.setAlpha(available ? 1 : .6f); cell.setSelected(on);
                     String state = raw == null ? "нет данных" : item.field.seat() ? "уровень " + (raw - 1) : item.field == ComfortState.Field.FAN ? "скорость " + raw : on ? "включено" : "выключено";
                     if(item==DockConfiguration.Item.CYCLE&&raw!=null)state=raw==1?"рециркуляция в салоне":"забор воздуха снаружи";
@@ -273,7 +291,7 @@ final class DynamicDockView extends FrameLayout {
         insertionIndex = index;
         List<DockConfiguration.Item> order = new ArrayList<>(draft);
         order.remove(draggedItem); order.add(insertionIndex, draggedItem);
-        java.util.Map<DockConfiguration.Item,Float> positions=new java.util.EnumMap<>(DockConfiguration.Item.class);
+        java.util.Map<DockConfiguration.Item,Float> positions=new java.util.HashMap<>();
         float cursor=dockRow.getChildAt(0).getLeft();
         for(DockConfiguration.Item item:order){
             View original=dockRow.getChildAt(draft.indexOf(item));
@@ -318,17 +336,27 @@ final class DynamicDockView extends FrameLayout {
     private void refreshEditor() { if (editorOpen) { rebuild(); refreshLibrary(); } }
     private void refreshLibrary() {
         library.removeAllViews(); count.setText("На панели: " + draft.size() + " / 20");
+        if(functionsTab!=null){functionsTab.setAlpha(appsPage?.55f:1);appsTab.setAlpha(appsPage?1:.55f);}
+        if(appsPage){refreshAppsLibrary();return;}
         int index = 0;
         List<DockConfiguration.Item> catalog=new ArrayList<>(java.util.Arrays.asList(DockConfiguration.Item.values()));
         catalog.remove(DockConfiguration.Item.EV_RANGE);catalog.add(0,DockConfiguration.Item.EV_RANGE);
         for (DockConfiguration.Item item : catalog) {
             if (draft.contains(item)) continue;
             LinearLayout choice = new LinearLayout(activity); choice.setOrientation(LinearLayout.VERTICAL);
+            choice.setClipChildren(false); choice.setClipToPadding(false);
             choice.setGravity(Gravity.CENTER); choice.setPadding(dp(5), dp(5), dp(5), dp(5));
             choice.setBackground(shape(ThemePalette.color(activity, 0xff2b3743, 0xffe8eef5), 0));
             choice.setContentDescription("Добавить: " + item.title);
             ImageView image = icon(item); image.setColorFilter(ThemePalette.text(activity));
-            choice.addView(image, new LinearLayout.LayoutParams(dp(40), dp(40)));
+            FrameLayout iconHolder=new FrameLayout(activity);iconHolder.setClipChildren(false);iconHolder.setClipToPadding(false);
+            iconHolder.addView(image,new FrameLayout.LayoutParams(-1,-1));
+            ImageView addBadge=new ImageView(activity);addBadge.setImageResource(R.drawable.song_dock_add_badge);
+            addBadge.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            FrameLayout.LayoutParams addPosition=new FrameLayout.LayoutParams(dp(18),dp(18),Gravity.TOP|Gravity.RIGHT);
+            addPosition.topMargin=dp(-4);addPosition.rightMargin=dp(-5);
+            iconHolder.addView(addBadge,addPosition);
+            choice.addView(iconHolder,new LinearLayout.LayoutParams(dp(40),dp(40)));
             TextView label = text(item.caption(), 12); label.setGravity(Gravity.CENTER); label.setSingleLine(true);
             choice.addView(label, new LinearLayout.LayoutParams(-1, -2));
             choice.setEnabled(draft.size() < DockConfiguration.MAX); choice.setAlpha(choice.isEnabled() ? 1 : .4f);
@@ -338,11 +366,48 @@ final class DynamicDockView extends FrameLayout {
         }
     }
 
+    private void refreshAppsLibrary(){
+        if(catalogApps==null)catalogApps=new AppRepository(activity).loadLaunchableApps();
+        int index=0;
+        for(AppEntry app:catalogApps){
+            DockConfiguration.Item item=DockConfiguration.Item.app(app);
+            if(draft.contains(item))continue;
+            LinearLayout choice=new LinearLayout(activity);choice.setOrientation(LinearLayout.VERTICAL);choice.setGravity(Gravity.CENTER);
+            choice.setPadding(dp(5),dp(5),dp(5),dp(5));choice.setClipChildren(false);choice.setClipToPadding(false);
+            choice.setBackground(shape(ThemePalette.color(activity,0xff2b3743,0xffe8eef5),0));
+            choice.setContentDescription("Добавить приложение: "+app.label);
+            FrameLayout holder=new FrameLayout(activity);holder.setClipChildren(false);holder.setClipToPadding(false);
+            holder.addView(icon(item),new FrameLayout.LayoutParams(-1,-1));
+            ImageView badge=new ImageView(activity);badge.setImageResource(R.drawable.song_dock_add_badge);badge.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            FrameLayout.LayoutParams badgeParams=new FrameLayout.LayoutParams(dp(18),dp(18),Gravity.TOP|Gravity.RIGHT);badgeParams.topMargin=dp(-4);badgeParams.rightMargin=dp(-5);holder.addView(badge,badgeParams);
+            choice.addView(holder,new LinearLayout.LayoutParams(dp(40),dp(40)));
+            TextView label=text(app.label,12);label.setGravity(Gravity.CENTER);label.setSingleLine(true);label.setEllipsize(android.text.TextUtils.TruncateAt.END);choice.addView(label,new LinearLayout.LayoutParams(-1,-2));
+            choice.setEnabled(draft.size()<DockConfiguration.MAX);choice.setAlpha(choice.isEnabled()?1:.4f);
+            choice.setOnClickListener(v->{if(draft.size()<DockConfiguration.MAX){draft.add(item);refreshEditor();dockScroll.post(()->dockScroll.fullScroll(View.FOCUS_RIGHT));}});
+            GridLayout.LayoutParams params=new GridLayout.LayoutParams(GridLayout.spec(index/6),GridLayout.spec(index%6,1f));params.width=0;params.height=dp(78);params.setMargins(dp(3),dp(3),dp(3),dp(3));library.addView(choice,params);index++;
+        }
+        if(index==0)library.addView(text("Все доступные приложения уже на панели",14));
+    }
+
+    private void chooseAssignment(DockConfiguration.Item item){
+        boolean music=item==DockConfiguration.Item.MUSIC;
+        List<AppEntry> apps=new AppRepository(activity).loadShortcutApps(music);
+        if(apps.isEmpty()){Toast.makeText(activity,music?"Музыкальные приложения не найдены":"Мессенджеры не найдены",Toast.LENGTH_SHORT).show();return;}
+        assignmentDialog=AppPickerDialog.show(activity,music?"Музыка · выбрать приложение":"Сообщения · выбрать приложение",apps,selected->{
+            if(!editorOpen)return;
+            draftAssignments.put(music?AppPreferences.KEY_QUICK_MUSIC_APP:AppPreferences.KEY_QUICK_MAX_APP,selected.component.flattenToString());
+            Toast.makeText(activity,"Выбрано: "+selected.label+" · нажмите «Готово», чтобы сохранить",Toast.LENGTH_SHORT).show();
+        });
+        assignmentDialog.setOnDismissListener(d->assignmentDialog=null);
+    }
+
     private void edit() {
         if (editorOpen) return;
         ViewGroup original = (ViewGroup) getParent(); if (original == null) return;
-        editorOpen = true; setActive(false);
+        editorOpen = true; appsPage=false;catalogApps=null;setActive(false);
         draft = new ArrayList<>(DockConfiguration.read(activity));
+        draftAssignments=new java.util.HashMap<>();
+        for(String key:new String[]{AppPreferences.KEY_QUICK_MUSIC_APP,AppPreferences.KEY_QUICK_MAX_APP})draftAssignments.put(key,AppPreferences.get(activity).getString(key,null));
         draftAlignment = Math.max(0, Math.min(2, AppPreferences.get(activity).getInt(DockConfiguration.ALIGN, 1)));
         int originalIndex = original.indexOfChild(this);
         ViewGroup.LayoutParams originalParams = getLayoutParams();
@@ -355,14 +420,18 @@ final class DynamicDockView extends FrameLayout {
         LinearLayout card = new LinearLayout(activity); card.setOrientation(LinearLayout.VERTICAL); card.setPadding(dp(14), dp(10), dp(14), dp(10));
         card.setBackground(shape(ThemePalette.color(activity, 0xff1d252e, 0xfff8f9fb), 0)); card.setElevation(dp(12));
         LinearLayout header = new LinearLayout(activity); header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(text("Библиотека кнопок и виджетов", 20), new LinearLayout.LayoutParams(0, -2, 1));
+        header.addView(text("Библиотека панели", 20), new LinearLayout.LayoutParams(0, -2, 1));
         Button cancel = action("Отмена", false, () -> closeEditor(false)); Button save = action("Готово", true, () -> closeEditor(true));
         LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(dp(100), dp(42));
         cancelParams.setMarginStart(dp(14)); header.addView(cancel, cancelParams);
         LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(dp(100), dp(42));
         saveParams.setMarginStart(dp(8)); header.addView(save, saveParams); card.addView(header);
-        card.addView(text("Нажмите элемент библиотеки, чтобы добавить. Перетаскивайте кнопки на панели. Корзина возвращает кнопку в библиотеку.", 13));
+        card.addView(text("Нажмите элемент библиотеки, чтобы добавить. Перетаскивайте кнопки на панели. Минус убирает кнопку с панели, плюс добавляет из библиотеки.", 13));
         LinearLayout options = new LinearLayout(activity); options.setGravity(Gravity.CENTER_VERTICAL);
+        functionsTab=action("Функции",true,()->{appsPage=false;refreshLibrary();});
+        appsTab=action("APP",true,()->{appsPage=true;refreshLibrary();});
+        options.addView(functionsTab,new LinearLayout.LayoutParams(dp(110),dp(38)));
+        LinearLayout.LayoutParams appTabParams=new LinearLayout.LayoutParams(dp(80),dp(38));appTabParams.setMargins(dp(8),0,dp(12),0);options.addView(appsTab,appTabParams);
         count = text("", 14); options.addView(count, new LinearLayout.LayoutParams(0, -2, 1));
         Spinner alignment = new Spinner(activity);
         alignment.setAdapter(new ArrayAdapter<>(activity, android.R.layout.simple_spinner_dropdown_item, new String[]{"Кнопки слева", "Кнопки по центру", "Кнопки справа"}));
@@ -373,15 +442,17 @@ final class DynamicDockView extends FrameLayout {
         ScrollView scroll = new ScrollView(activity); library = new GridLayout(activity); library.setColumnCount(6); scroll.addView(library);
         card.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         int width = Math.min(activity.getResources().getDisplayMetrics().widthPixels - dp(32), dp(1050));
-        int height = Math.min(dp(330), Math.max(dp(190), activity.getResources().getDisplayMetrics().heightPixels - dp(heightDp() + 40)));
+        int screenHeight=Math.max(activity.getWindow().getDecorView().getHeight(),activity.getResources().getDisplayMetrics().heightPixels);
+        int height = Math.max(1, Math.min(dp(660), screenHeight - dp(heightDp() + 40)));
         FrameLayout.LayoutParams libraryParams = new FrameLayout.LayoutParams(width, height, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         libraryParams.bottomMargin = dp(heightDp() + 20); layer.addView(card, libraryParams);
         dialog.setContentView(layer);
         dialog.setOnDismissListener(d -> {
+            if(assignmentDialog!=null)assignmentDialog.dismiss();assignmentDialog=null;draftAssignments=null;
             stopEdgeScroll(); editorOpen = false; editorDialog = null;
             layer.removeView(this); original.removeView(placeholder);
             original.addView(this, Math.min(originalIndex, original.getChildCount()), originalParams);
-            draft = null; library = null; count = null; rebuild(); setActive(true);
+            draft = null; library = null; count = null;catalogApps=null;functionsTab=null;appsTab=null; rebuild(); setActive(true);
         });
         Window window = dialog.getWindow();
         window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
@@ -395,14 +466,21 @@ final class DynamicDockView extends FrameLayout {
 
     void closeEditor(boolean save) {
         if (editorDialog == null) return;
-        if (save) DockConfiguration.save(activity, draft, draftAlignment);
+        if (save){
+            DockConfiguration.save(activity,draft,draftAlignment);
+            android.content.SharedPreferences.Editor preferences=AppPreferences.get(activity).edit();
+            for(java.util.Map.Entry<String,String> entry:draftAssignments.entrySet())preferences.putString(entry.getKey(),entry.getValue());
+            preferences.apply();
+        }
         editorDialog.dismiss();
+        if(save)assignmentsChanged.run();
     }
     /** OEM resources have large transparent margins. Fit their visible art to the historic dock scale. */
     private ImageView icon(DockConfiguration.Item item) {
         ImageView image = new ImageView(activity);
         image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        setIcon(image,item.icon,item.ordinal()>DockConfiguration.Item.SETTINGS.ordinal());
+        if(item.isApp())image.setImageDrawable(item.appIcon!=null?item.appIcon:activity.getDrawable(android.R.drawable.sym_def_app_icon));
+        else setIcon(image,item.icon,item.ordinal()>DockConfiguration.Item.SETTINGS.ordinal());
         return image;
     }
     private void setIcon(ImageView image,int resource,boolean crop){

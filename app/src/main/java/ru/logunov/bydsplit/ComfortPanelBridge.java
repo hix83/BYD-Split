@@ -53,6 +53,7 @@ public final class ComfortPanelBridge {
                 .invoke(manager,device,featureIds(state,field),state.acValues(field,value));
     }
     public static void main(String[] args) {
+        HelperLifetime.limit(5000);
         try {
             ComfortPanelBridge bridge=new ComfortPanelBridge();
             if(args.length==1 && args[0].equals("read")) {
@@ -86,6 +87,6 @@ public final class ComfortPanelBridge {
             if(args.length==1 && args[0].equals("check"))error.printStackTrace(System.out);
         }
         // Some DiLink SDK versions create a Binder/Looper thread while initializing.
-        System.exit(0);
+        HelperLifetime.exit();
     }
 }
