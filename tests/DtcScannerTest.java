@@ -11,7 +11,7 @@ public final class DtcScannerTest {
         final Clock clock;int sent,closed;boolean silent,traffic,reject,foreign;final Queue<byte[]> queue=new ArrayDeque<>();
         Device(Clock clock){this.clock=clock;}
         public void register(){if(traffic)queue.add(new byte[]{1});}
-        public int send(byte[] request){sent++;if(reject)return -1;if(!silent){int address=((request[1]&255)<<8)|(request[2]&255);queue.add(frame(foreign?0x747:address,DtcProtocol.unhex("5901FF010000")));}return 0;}
+        public int send(byte[] request){sent++;if(reject)return -1;if(!silent){int address=((request[1]&255)<<8)|(request[2]&255);queue.add(frame(foreign?0x747:address,DtcProtocol.unhex(request[4]==0x22?"7F2231":"5901FF010000")));}return 0;}
         public byte[] poll(long ms){byte[] frame=queue.poll();clock.at+=frame==null?ms:10;return frame;}
         public void drain(){queue.clear();}public void close(){closed++;}
     }
@@ -32,7 +32,7 @@ public final class DtcScannerTest {
         check("BRAKES".equals(DtcProtocol.blockClass(0x782,DtcProtocol.unhex("62F19432330000000B"))),"ECU identity decoding");
         Clock clock=new Clock();Device device=new Device(clock);
         DtcScanner.Scan scan=new DtcScanner(device,clock,()->DtcProtocol.GUARD,()->1,()->true).run(r->{});
-        check(scan.state.equals("DONE")&&device.sent==18&&device.closed==1,"complete count scan");
+        check(scan.state.equals("DONE")&&device.sent==36&&device.closed==1,"complete count scan");
         clock=new Clock();device=new Device(clock);device.silent=true;
         scan=new DtcScanner(device,clock,()->DtcProtocol.GUARD,()->1,()->true).run(r->{});
         check(scan.state.equals("UNAVAILABLE")&&scan.reason.equals("no_frames"),"no answers reported as clean car");
@@ -47,7 +47,7 @@ public final class DtcScannerTest {
         clock=new Clock();device=new Device(clock);scan=new DtcScanner(device,clock,()->DtcProtocol.GUARD,()->1,()->false).run(r->{});check(device.sent==0,"OFF scan allowed");
         clock=new Clock();device=new Device(clock);
         scan=new DtcScanner(device,clock,()->"",()->1,()->true,true).run(r->{});
-        check(scan.state.equals("DONE")&&device.sent==18&&device.closed==1,"legacy Song gateway unavailable");
+        check(scan.state.equals("DONE")&&device.sent==36&&device.closed==1,"legacy Song gateway unavailable");
         clock=new Clock();device=new Device(clock);device.foreign=true;
         scan=new DtcScanner(device,clock,()->"",()->1,()->true,true).run(r->{});
         check(scan.reason.equals("foreign_traffic")&&device.sent==1&&device.closed==1,"legacy competing traffic ignored");

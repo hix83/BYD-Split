@@ -33,3 +33,16 @@ commit 873be5d8d8a4aa213f9795c91d36b889d965eee7.
 Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
 These adaptations are licensed under PolyForm Noncommercial License 1.0.0,
 not Apache 2.0. Full license: app/src/main/assets/BYDMate-LICENSE.txt (included in APK).
+
+DtcEraseEngine and clear support in DtcProtocol/DtcBridge/DtcScanController,
+plus TelegramBotApi, TelegramLink and Telegram bot pairing/delivery behavior,
+are adapted from BYDMate v4.2.0, commit
+16f9f2c03cbc5e70e11bb8da21a74b2229fa4100 (2026-11-03).
+Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
+These adaptations are licensed under PolyForm Noncommercial License 1.0.0,
+not Apache 2.0. Full license: app/src/main/assets/BYDMate-DTC-LICENSE.txt (included in APK).
+The existing offline DTC tables remain at the separately credited revision above.
+
+DtcEcuNames address hints and optional F197/snapshot reads in DtcScanner are
+adapted from BYDMate DtcBlockClass/DtcBlockNames/DtcWire/DtcScanner at the
+v4.2.0 revision credited above. The same PolyForm Noncommercial terms apply.

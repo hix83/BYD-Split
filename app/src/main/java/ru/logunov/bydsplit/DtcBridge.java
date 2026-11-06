@@ -22,13 +22,22 @@ public final class DtcBridge {
     private static int read(int device,int fid){try{return ComfortCommandWriter.transact(auto,5,device,fid,0);}catch(Exception error){return -1;}}
     private static String property(String name){try{return (String)Class.forName("android.os.SystemProperties").getMethod("get",String.class).invoke(null,name);}catch(Exception error){return "";}}
     static JSONObject result(DtcScanner.Result r)throws Exception {
-        return new JSONObject().put("address",r.address).put("outcome",r.outcome).put("count",DtcProtocol.hex(r.count))
+        JSONArray snapshots=new JSONArray();for(DtcScanner.Snapshot snap:r.snapshots)snapshots.put(new JSONObject().put("code",snap.code).put("outcome",snap.outcome).put("uds",DtcProtocol.hex(snap.uds)));
+        return new JSONObject().put("name",DtcProtocol.hex(r.name)).put("nameOutcome",r.nameOutcome).put("snapshots",snapshots).put("address",r.address).put("outcome",r.outcome).put("count",DtcProtocol.hex(r.count))
                 .put("list",DtcProtocol.hex(r.list)).put("identity",DtcProtocol.hex(r.identity));
+    }
+    static JSONObject eraseResult(DtcEraseEngine.Result r)throws Exception {
+        JSONObject value=new JSONObject().put("address",r.address).put("confirm",r.confirm).put("reason",r.reason).put("verdict",DtcEraseEngine.verdict(r));
+        if(r.nrc!=null)value.put("nrc",r.nrc);
+        if(r.reread!=null)value.put("reread",result(r.reread)).put("verified",DtcEraseEngine.verified(r.reread));
+        return value;
     }
     public static void main(String[] args){
         try {
             owner=HelperLifetime.attach(args);
-            HelperLifetime.limit(95000);
+            final boolean erase=args.length==5&&"--erase".equals(args[0]);
+            if(!erase&&args.length!=3)throw new IllegalArgumentException("Invalid diagnostic operation");
+            HelperLifetime.limit(erase?125000:95000);
             RandomAccessFile lockFile=new RandomAccessFile("/data/local/tmp/byd-split-dtc.lock","rw");
             FileLock lock=lockFile.getChannel().tryLock();
             if(lock==null){emit(new JSONObject().put("kind","finished").put("state","UNAVAILABLE").put("reason","diag_busy"));HelperLifetime.exit();return;}
@@ -45,12 +54,24 @@ public final class DtcBridge {
                     int model=read(1001,1087373328);
                     if(model<=0||model==255||model==65535)try{model=Integer.parseInt(property("persist.sys.AutoType"));}catch(Exception ignored){model=0;}
                     final int modelCode=model;
+                    if(erase){
+                        String[] parts=args[1].split(",",-1);int[] addresses=new int[parts.length];
+                        for(int i=0;i<parts.length;i++)addresses[i]=Integer.parseInt(parts[i],16);
+                        DtcEraseEngine engine=new DtcEraseEngine(device,new DtcScanner.Clock(){public long now(){return SystemClock.elapsedRealtime();}public void sleep(long ms)throws Exception{Thread.sleep(ms);}},
+                                ()->property("sys.diagmgrsrv.task_bk"),()->read(1011,555745336),()->read(1023,315621408)==2,
+                                ()->{try{return Float.intBitsToFloat(ComfortCommandWriter.transact(auto,7,1013,-1807745016,0));}catch(Exception e){return Double.NaN;}},legacyFirmware());
+                        final int[] progress={0};
+                        DtcEraseEngine.Run run=engine.run(addresses,r->{try{emit(new JSONObject().put("kind","progress").put("mode","erase").put("done",++progress[0]).put("total",addresses.length*2).put("phase",r.reread==null?"erase":"reread"));}catch(Exception e){throw new IllegalStateException("owner_lost");}});
+                        JSONArray cleared=new JSONArray();for(DtcEraseEngine.Result r:run.results)cleared.put(eraseResult(r));
+                        emit(new JSONObject().put("kind","finished").put("mode","erase").put("state",run.state).put("reason",run.reason).put("model",modelCode).put("erase",cleared).put("at",System.currentTimeMillis()));
+                        return;
+                    }
                     DtcScanner scanner=new DtcScanner(device,new DtcScanner.Clock(){public long now(){return SystemClock.elapsedRealtime();}public void sleep(long ms)throws Exception{Thread.sleep(ms);}},
                             ()->property("sys.diagmgrsrv.task_bk"),()->read(1011,555745336),()->read(1023,315621408)==2,legacyFirmware());
                     final int[] done={0};
-                    DtcScanner.Scan scan=scanner.run(r->{try{emit(new JSONObject().put("kind","progress").put("done",++done[0]).put("result",result(r)));}catch(Exception error){throw new IllegalStateException("owner_lost");}});
+                    DtcScanner.Scan scan=scanner.run(r->{try{emit(new JSONObject().put("kind","progress").put("done",++done[0]).put("phase",done[0]==18?"details":"scan").put("result",result(r)));}catch(Exception error){throw new IllegalStateException("owner_lost");}});
                     JSONArray rows=new JSONArray();for(DtcScanner.Result r:scan.results)rows.put(result(r));
-                    emit(new JSONObject().put("kind","finished").put("state",scan.state).put("reason",scan.reason).put("model",modelCode).put("results",rows).put("at",System.currentTimeMillis()));
+                    emit(new JSONObject().put("kind","finished").put("state",scan.state).put("reason",scan.reason).put("model",modelCode).put("results",rows).put("extrasReason",scan.extrasReason).put("at",System.currentTimeMillis()));
                 }catch(Throwable error){android.util.Log.e("BYD_DTC","Scan failed",error);try{emit(new JSONObject().put("kind","finished").put("state","UNAVAILABLE").put("reason",error.getClass().getSimpleName()));}catch(Exception ignored){}}
                 finally {HelperLifetime.exit();}
             },"byd-dtc-scan").start();

@@ -81,6 +81,14 @@ final class LocalAdbManager {
         try{client.shellV2(daemonCommand(apk,"ru.logunov.bydsplit.DtcBridge","byd-split-dtc.log",arguments.trim()));}
         finally{client.close();}
     }
+    synchronized void startDtcErase(int[] addresses,String arguments)throws Exception {
+        String apk=context.getApplicationInfo().sourceDir;
+        if(apk==null||!SAFE_APK_PATH.matcher(apk).matches()||!arguments.matches(" --owner [0-9]+ [a-f0-9]{32}")||addresses.length==0||addresses.length>18)throw new IllegalArgumentException();
+        java.util.Set<Integer> unique=new java.util.HashSet<>();StringBuilder targets=new StringBuilder();
+        for(int address:addresses){if(!DtcProtocol.addressAllowed(address)||!unique.add(address))throw new IllegalArgumentException();if(targets.length()>0)targets.append(',');targets.append(Integer.toHexString(address));}
+        try{client.shellV2(daemonCommand(apk,"ru.logunov.bydsplit.DtcBridge","byd-split-dtc.log","--erase "+targets+arguments));}
+        finally{client.close();}
+    }
 
     synchronized String readPowerState() throws Exception {
         try {

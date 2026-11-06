@@ -107,7 +107,7 @@ final class SettingsView extends LinearLayout
         tabs.setGravity(Gravity.TOP);
         tabs.setPadding(0, dp(20), dp(12), 0);
         FrameLayout content = new FrameLayout(activity);
-        String[] labels = {"Экран и тема", "Кнопка руля", "Музыка и MAX", "Камера", "Места", "Автоматизации", "Поездки и тарифы", "Система"};
+        String[] labels = {"Экран и тема", "Кнопка руля", "Музыка и MAX", "Камера", "Места", "Автоматизации", "Поездки и тарифы", "Система", "Интеграции"};
         for (int index = 0; index < labels.length; index++) {
             Button tab = actionButton(labels[index]);
             tab.setTag(index);
@@ -165,6 +165,7 @@ final class SettingsView extends LinearLayout
         View content = page == 3 ? createCameraPage() : page == 4 ? createPlacesPage()
                 : page == 5 ? new TemperatureAutomationView(activity)
                 : page == 6 ? new StatisticsSettingsView(activity)
+                : page == 8 ? new IntegrationsSettingsView(activity)
                 : createGeneralPage(page);
         host.addView(content, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));

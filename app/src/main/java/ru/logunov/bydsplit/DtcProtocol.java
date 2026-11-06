@@ -21,18 +21,40 @@ final class DtcProtocol {
                 ||service==0x22&&sub==0xf1&&(parameter==0x94||parameter==0x97)))throw new IllegalArgumentException("Read request not allowed");
         return new byte[]{10,(byte)(address>>8),(byte)address,3,(byte)service,(byte)sub,(byte)parameter};
     }
+    /** Read-only snapshot of one full, displayed DTC; no arbitrary service or address. */
+    static byte[] snapshotRequest(int address,String code){
+        if(!addressAllowed(address)||code==null||!code.matches("[PCBU][0-3][0-9A-F]{3}-[0-9A-F]{2}"))throw new IllegalArgumentException("Snapshot not allowed");
+        int dtc=("PCBU".indexOf(code.charAt(0))<<22)|(Integer.parseInt(code.substring(1,2))<<20)|(Integer.parseInt(code.substring(2,5),16)<<8)|Integer.parseInt(code.substring(6,8),16);
+        return new byte[]{10,(byte)(address>>8),(byte)address,6,0x19,4,(byte)(dtc>>16),(byte)(dtc>>8),(byte)dtc,(byte)255};
+    }
+    static Match snapshotMatch(byte[] raw,int address,String code){
+        byte[] request=snapshotRequest(address,code);Match match=match(raw,address,0x19,4);
+        if(!"ok".equals(match.kind))return match;
+        byte[] uds=match.uds;
+        if(uds.length<6||uds[2]!=request[6]||uds[3]!=request[7]||uds[4]!=request[8])return new Match("other",null);
+        return match;
+    }
+    /** The sole write verb; never reachable through the read-request builder. */
+    static byte[] clearRequest(int address) {
+        if(!addressAllowed(address))throw new IllegalArgumentException("Clear address not allowed");
+        return new byte[]{10,(byte)(address>>8),(byte)address,4,0x14,(byte)255,(byte)255,(byte)255};
+    }
+    static boolean addressAllowed(int address){for(int a:ADDRESSES)if(a==address)return true;return false;}
     static Match match(byte[] raw,int address,int service,int sub) {
         if(raw==null||raw.length<7||u(raw,0)!=10||((u(raw,1)<<8)|u(raw,2))!=address+8)return new Match("other",null);
         if(u(raw,4)>1)return new Match("multiframe",null);
         int len=u(raw,3);
         if(raw.length<7+len)return new Match("truncated",null);
         byte[] uds=Arrays.copyOfRange(raw,7,7+len);
-        if(u(raw,6)==3&&echoes(uds,service,service,sub))return new Match("gw_timeout",null);
+        if(u(raw,6)>=3&&u(raw,6)<=5&&(uds.length==0||echoes(uds,service,service,sub)))
+            return new Match(u(raw,6)==3?"gw_timeout":u(raw,6)==4?"manager_timeout":"busy",null);
         if(uds.length>=3&&u(uds,0)==0x7f&&u(uds,1)==service)
             return new Match(u(uds,2)==0x78?"pending":"nrc",uds);
         return new Match(echoes(uds,service+0x40,service,sub)?"ok":"other",uds);
     }
     private static boolean echoes(byte[] b,int head,int service,int sub){
+        if(service==0x14)return b.length>0&&u(b,0)==head
+                &&(head==0x54&&b.length==1||b.length==4&&u(b,1)==255&&u(b,2)==255&&u(b,3)==255);
         return b.length>=(service==0x22?3:2)&&u(b,0)==head
                 &&(service==0x22?((u(b,1)<<8)|u(b,2))==sub:u(b,1)==sub);
     }

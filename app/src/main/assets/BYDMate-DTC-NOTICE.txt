@@ -3,3 +3,15 @@ BYDMate a36fa7b653a30517433cdac91f72bc8d07d0596d: DTC protocol, scan flow, descr
 Adapted to Java and BYD Split by Eduard Logunov.
 PolyForm Noncommercial License 1.0.0: BYDMate-DTC-LICENSE.txt
 https://polyformproject.org/licenses/noncommercial/1.0.0/
+
+Clear/reread protocol and Telegram bot pairing/report delivery adapted from
+BYDMate v4.2.0, commit 16f9f2c03cbc5e70e11bb8da21a74b2229fa4100 (2026-11-03).
+Required Notice: Copyright AndyShaman (https://github.com/AndyShaman/BYDMate)
+Adapted to Java and BYD Split by Eduard Logunov.
+PolyForm Noncommercial License 1.0.0: BYDMate-DTC-LICENSE.txt
+The offline dtc/ tables retain the earlier revision credited above.
+
+Song description matching extension (2026-11-06): local AutoType 161 -> manual
+61402 mapping; unique model-manual rows without a block field; explicitly
+labelled unanimous common code meanings. These are BYD Split adaptations,
+not upstream BYDMate mappings or confirmed ECU identity assignments.
