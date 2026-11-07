@@ -46,3 +46,11 @@ The existing offline DTC tables remain at the separately credited revision above
 DtcEcuNames address hints and optional F197/snapshot reads in DtcScanner are
 adapted from BYDMate DtcBlockClass/DtcBlockNames/DtcWire/DtcScanner at the
 v4.2.0 revision credited above. The same PolyForm Noncommercial terms apply.
+
+Telegram connection modes use OkHttp 4.12.0 and its Okio/Kotlin runtime
+libraries under the Apache License 2.0.
+OkHttp/Okio: Copyright Square, Inc. (https://github.com/square/okhttp,
+https://github.com/square/okio).
+Kotlin: Copyright JetBrains s.r.o. and Kotlin Programming Language contributors
+(https://github.com/JetBrains/kotlin).
+License copy: app/src/main/assets/Telegram-NETWORK-LICENSE.txt (included in APK).

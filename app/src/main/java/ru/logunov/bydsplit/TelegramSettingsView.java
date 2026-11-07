@@ -19,9 +19,10 @@ final class TelegramSettingsView extends ScrollView {
         super(context);controller=TelegramBotController.get(context);setFillViewport(true);
         content=new LinearLayout(context);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(18),dp(12),dp(18),dp(18));addView(content,new ScrollView.LayoutParams(-1,-2));
         content.addView(text("Telegram · отчёты диагностики",22));
+        content.addView(new TelegramRouteView(context,controller));
         content.addView(text("Создайте своего бота через @BotFather → /newbot. Введите токен здесь. Код привяжет отчёты к вашему личному чату или закрытой группе.",15));
         state=text("",15);content.addView(state);
-        token=new EditText(context);token.setHint("Токен своего бота");token.setSingleLine(true);token.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);token.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);token.setTextColor(ThemePalette.text(context));content.addView(token,new LinearLayout.LayoutParams(-1,dp(54)));
+        token=new EditText(context);token.setHint("Токен своего бота");token.setSingleLine(true);token.setSaveEnabled(false);token.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);token.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);token.setTextColor(ThemePalette.text(context));content.addView(token,new LinearLayout.LayoutParams(-1,dp(54)));
         begin=button("Проверить токен",()->{String value=token.getText().toString().trim();controller.begin(this,value);token.setText("");});
         help=text("",15);content.addView(help);
         copy=button("Скопировать код",()->{ClipboardManager clipboard=context.getSystemService(ClipboardManager.class);clipboard.setPrimaryClip(ClipData.newPlainText("Код подключения BYD Split",controller.code));Toast.makeText(context,"Код скопирован",Toast.LENGTH_SHORT).show();});

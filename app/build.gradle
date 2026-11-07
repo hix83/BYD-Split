@@ -16,7 +16,10 @@ def vendorStubJar = tasks.register('vendorStubJar', Jar) {
     archiveFileName = 'vendor-api-stubs.jar'
     destinationDirectory = layout.buildDirectory.dir('vendor-stubs')
 }
-dependencies { compileOnly files(vendorStubJar) }
+dependencies {
+    compileOnly files(vendorStubJar)
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}
 
 android {
     namespace 'ru.logunov.bydsplit'

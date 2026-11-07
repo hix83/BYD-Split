@@ -1,0 +1,29 @@
+name: byd-split-telegram
+services:
+  relay:
+    build: .
+    image: byd-split/telegram-relay:1.0.0
+    container_name: byd-split-telegram-relay
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18187:8080"
+    env_file: .env
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "python", "-B", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).close()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "2"
