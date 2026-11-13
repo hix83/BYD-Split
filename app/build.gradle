@@ -26,8 +26,8 @@ android {
         applicationId 'ru.logunov.bydsplit'
         minSdk 27
         targetSdk 35
-        versionCode 43
-        versionName '0.9.8'
+        versionCode 44
+        versionName '0.9.9'
         testInstrumentationRunner providers.gradleProperty('testRunner').getOrElse('ru.logunov.bydsplit.StatisticsInstrumentation')
     }
 
