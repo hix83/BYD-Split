@@ -175,7 +175,12 @@ final class LocalAdbManager {
             // A launcher activity may reuse its task on display 0 before Android
             // honours --display. Move an existing task first, without opening it
             // full-screen (and without restarting playback or the activity).
-            if (restoreEmbeddedTask(packageName, displayId)) return true;
+            TaskRestoreResult restored = restoreTask(packageName, displayId);
+            if (restored == TaskRestoreResult.RESTORED) return true;
+            // An ADB/reflection error is not evidence that the task is absent.
+            // Retry the connection instead of creating a duplicate activity.
+            if (restored == TaskRestoreResult.ERROR) return false;
+            if (!allowed.getAsBoolean()) return false;
             String apk=context.getApplicationInfo().sourceDir;
             if(apk==null||!SAFE_APK_PATH.matcher(apk).matches())return false;
             String output;
@@ -189,7 +194,9 @@ final class LocalAdbManager {
                 embeddedLaunchSession = null;
                 embeddedLaunchOwner = null;
             }
-            return output.contains("BYD_SPLIT_LAUNCH_OK");
+            boolean success = output.contains("BYD_SPLIT_LAUNCH_OK");
+            if (!success) client.close();
+            return success;
         } catch (Exception error) {
             client.close();
             Log.e(TAG, "Cannot launch on virtual display", error);
@@ -197,15 +204,20 @@ final class LocalAdbManager {
         }
     }
 
-    synchronized boolean restoreEmbeddedTask(String packageName,int displayId){
-        if(displayId<1||displayId>999||!packageName.matches("[A-Za-z0-9_.]+"))return false;
+    private enum TaskRestoreResult { RESTORED, ABSENT, ERROR }
+
+    private TaskRestoreResult restoreTask(String packageName,int displayId){
+        if(displayId<1||displayId>999||!packageName.matches("[A-Za-z0-9_.]+"))return TaskRestoreResult.ERROR;
         String apk=context.getApplicationInfo().sourceDir;
-        if(apk==null||!SAFE_APK_PATH.matcher(apk).matches())return false;
+        if(apk==null||!SAFE_APK_PATH.matcher(apk).matches())return TaskRestoreResult.ERROR;
         try(HelperSession operation=HelperSession.observe(null,null)){
             String result=client.shell("CLASSPATH="+apk+" app_process /system/bin ru.logunov.bydsplit.TaskDisplayBridge restore "+displayId+" "+packageName+operation.arguments());
             java.util.regex.Matcher count=Pattern.compile("RESTORED:([0-9]+)").matcher(result);
-            return count.find()&&Integer.parseInt(count.group(1))>0;
-        }catch(Exception error){client.close();Log.w(TAG,"Embedded task restore failed",error);return false;}
+            if(count.find())return Integer.parseInt(count.group(1))>0?TaskRestoreResult.RESTORED:TaskRestoreResult.ABSENT;
+            client.close();
+            Log.w(TAG,"Embedded task restore returned no result: "+result);
+            return TaskRestoreResult.ERROR;
+        }catch(Exception error){client.close();Log.w(TAG,"Embedded task restore failed",error);return TaskRestoreResult.ERROR;}
     }
 
     synchronized boolean handoffDisplay(int displayId){

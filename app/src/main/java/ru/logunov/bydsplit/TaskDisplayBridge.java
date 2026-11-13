@@ -26,9 +26,19 @@ public final class TaskDisplayBridge {
                 int display=info.getClass().getField("displayId").getInt(info);
                 if(!restore){if(display==source)roots.add(info);continue;}
                 android.content.ComponentName top=(android.content.ComponentName)info.getClass().getField("topActivity").get(info);
-                if(top!=null&&pkg.equals(top.getPackageName())&&(display==0||display==source))roots.add(info);
+                android.content.ComponentName base=(android.content.ComponentName)info.getClass().getField("baseActivity").get(info);
+                // An app may have a system picker or another package above its own activity.
+                if(((top!=null&&pkg.equals(top.getPackageName()))
+                        ||(base!=null&&pkg.equals(base.getPackageName())))
+                        &&(display==0||display==source))roots.add(info);
             }
-            if(restore)Collections.reverse(roots);
+            if(restore && !roots.isEmpty()) {
+                // Root infos are in front-to-back order. Prefer the task already in
+                // this pane, and restore only one task, even if old duplicates exist.
+                Object selected=roots.get(0);
+                for(Object info:roots)if(info.getClass().getField("displayId").getInt(info)==source){selected=info;break;}
+                roots.clear();roots.add(selected);
+            }
             for(Object info:roots){
                 int id=info.getClass().getField("taskId").getInt(info);
                 int target=restore?source:0;
