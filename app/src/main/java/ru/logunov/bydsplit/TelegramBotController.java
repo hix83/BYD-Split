@@ -12,15 +12,15 @@ final class TelegramBotController {
     static synchronized TelegramBotController get(Context context){if(instance==null)instance=new TelegramBotController(context.getApplicationContext());return instance;}
     interface ApiFactory {TelegramBotApi create(String token)throws TelegramBotApi.Failure;}
     private final ApiFactory apiFactory;
-    final TelegramBotStore store;
+    final TelegramBotStore store;final TelegramRouteStore routeStore;
     private final Handler main=new Handler(Looper.getMainLooper());private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final VehicleSleepController sleep;private final Set<Runnable> listeners=new LinkedHashSet<>();
     private TelegramBotApi active;private Object owner;private Future<?> task;private int generation;
     private String pendingToken="";String bot="",code="",chatName="",stage="token",status="";private long issued,afterId,chat;
     boolean busy;
     private final Runnable timeout=()->{Object current=owner;cancel(current);status="Telegram не ответил вовремя. Повторите отправку вручную.";publish();};
-    private TelegramBotController(Context c){this(c,new TelegramBotStore(c),TelegramBotApi::new);}
-    TelegramBotController(Context c,TelegramBotStore store,ApiFactory factory){this.store=store;apiFactory=factory;sleep=VehicleSleepController.get(c);if(store.connected())stage="connected";}
+    private TelegramBotController(Context c){this(c,new TelegramBotStore(c),null);}
+    TelegramBotController(Context c,TelegramBotStore store,ApiFactory factory){this.store=store;routeStore=new TelegramRouteStore(c);apiFactory=factory==null?token->new TelegramBotApi(token,null,routeStore.get()):factory;sleep=VehicleSleepController.get(c);if(store.connected())stage="connected";}
     void addListener(Runnable r){listeners.add(r);r.run();}
     void removeListener(Runnable r){listeners.remove(r);}
     private void publish(){for(Runnable r:new ArrayList<>(listeners))r.run();}

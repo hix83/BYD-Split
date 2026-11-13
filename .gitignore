@@ -14,3 +14,7 @@ photo_*.jpg
 /tmp/
 *.incomplete
 *.stderr
+
+# Telegram gateway deployment secrets
+/server/telegram-relay/.env
+/artifacts/telegram-relay-private/
