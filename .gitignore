@@ -8,6 +8,10 @@
 *.jks
 *.keystore
 keystore.properties
+song-keystore.properties
+*.p12
+*.pfx
+BYD-Split-Song-signing*.zip
 photo_*.jpg
 
 # Local firmware extraction, personal captures and incomplete device backups

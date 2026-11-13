@@ -21,6 +21,41 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }
 
+// Song and Seagull use separate private directories. No credentials belong in Git.
+def signingPath = System.getenv('BYD_SONG_SIGNING_PROPERTIES')
+def signingFile = signingPath ? rootProject.file(signingPath) :
+        (rootProject.file('song-keystore.properties').isFile() ? rootProject.file('song-keystore.properties') :
+                new File(System.getProperty('user.home'), '.byd-split/song-signing/keystore.properties'))
+if (signingPath && !signingFile.isFile()) {
+    throw new GradleException('BYD_SONG_SIGNING_PROPERTIES points to a missing file.')
+}
+def songSigning = new Properties()
+def songStore = null
+if (signingFile.isFile()) {
+    signingFile.withInputStream { songSigning.load(it) }
+    ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].each { key ->
+        if (!songSigning.getProperty(key)?.trim()) throw new GradleException("Missing Song signing property: ${key}")
+    }
+    def path = new File(songSigning.getProperty('storeFile'))
+    songStore = path.isAbsolute() ? path : new File(signingFile.parentFile, path.path)
+    if (!songStore.isFile()) throw new GradleException('Song signing keystore does not exist.')
+    try {
+        def store = java.security.KeyStore.getInstance(songSigning.getProperty('storeType', 'PKCS12'))
+        songStore.withInputStream { store.load(it, songSigning.getProperty('storePassword').toCharArray()) }
+        def alias = songSigning.getProperty('keyAlias')
+        if (!store.isKeyEntry(alias)) throw new GradleException('Song signing alias must contain a private key.')
+        def fingerprint = java.security.MessageDigest.getInstance('SHA-256')
+                .digest(store.getCertificate(alias).encoded).encodeHex().toString()
+        if (fingerprint != '63442ad5ab88b867970e1d7480aa2e849ec46f63b20c61b2da837aa43d715d10') {
+            throw new GradleException('Signing certificate does not match the published Song releases.')
+        }
+    } catch (GradleException error) {
+        throw error
+    } catch (Exception error) {
+        throw new GradleException('Cannot read Song signing key. Check the type, alias and password.')
+    }
+}
+
 android {
     namespace 'ru.logunov.bydsplit'
     compileSdk 35
@@ -34,8 +69,21 @@ android {
         testInstrumentationRunner providers.gradleProperty('testRunner').getOrElse('ru.logunov.bydsplit.StatisticsInstrumentation')
     }
 
+    signingConfigs {
+        if (songStore != null) {
+            sharedSong {
+                storeFile songStore
+                storeType songSigning.getProperty('storeType', 'PKCS12')
+                storePassword songSigning.getProperty('storePassword')
+                keyAlias songSigning.getProperty('keyAlias')
+                keyPassword songSigning.getProperty('keyPassword')
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (songStore != null) signingConfig signingConfigs.sharedSong
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
@@ -44,5 +92,12 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+    doFirst {
+        if (songStore == null) throw new GradleException(
+                'Song release signing key is not configured. See docs/SONG-SIGNING.md.')
     }
 }
