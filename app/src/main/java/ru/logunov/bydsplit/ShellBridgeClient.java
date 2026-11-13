@@ -98,13 +98,8 @@ final class ShellBridgeClient {
     }
 
     void restoreOnDisplay(String component,int displayId,Consumer<Boolean> callback){
-        if(!COMPONENT_NAME.matcher(component).matches()||component.indexOf('/')<=0||displayId<1||displayId>999){callback.accept(false);return;}
-        executor.execute(()->{
-            if (!hostActive) { callback.accept(false); return; }
-            String pkg=component.substring(0,component.indexOf('/'));
-            boolean restored=localAdb.restoreEmbeddedTask(pkg,displayId);
-            callback.accept(restored||localAdb.launchOnDisplay(component,pkg,displayId,()->hostActive,this));
-        });
+        // Use the same restore-first path and bounded reconnect retry as a dock tap.
+        launchOnDisplay(component,displayId,callback);
     }
 
     void handoffDisplay(int displayId,java.util.function.BooleanSupplier needed,Consumer<Boolean> callback){

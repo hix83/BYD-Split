@@ -61,7 +61,9 @@ public final class EmbeddedLaunchBridge {
             listenerApi=Class.forName("android.app.ITaskStackListener");
             listener=Class.forName(listenerApi.getName()+"$Stub").getMethod("asInterface",IBinder.class).invoke(null,binder);
             api.getMethod("registerTaskStackListener",listenerApi).invoke(service,listener);
-            java.lang.Process command=new ProcessBuilder("/system/bin/am","start","--display",Integer.toString(display),"-f","0x00010000","-n",component.flattenToString()).redirectErrorStream(true).start();
+            // NEW_TASK | RESET_TASK_IF_NEEDED | NO_ANIMATION: launcher semantics,
+            // never MULTIPLE_TASK, even if another launch raced the restore scan.
+            java.lang.Process command=new ProcessBuilder("/system/bin/am","start","--display",Integer.toString(display),"-f","0x10210000","-n",component.flattenToString()).redirectErrorStream(true).start();
             runningCommand.set(command);
             try{if(!command.waitFor(1500,TimeUnit.MILLISECONDS))throw new IllegalStateException("Launch command timed out");}
             finally{runningCommand.set(null);command.destroyForcibly();}
